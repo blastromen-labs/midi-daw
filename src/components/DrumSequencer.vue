@@ -64,7 +64,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { transport } from '../engine/clock.js';
+import { getActiveClock } from '../engine/activeClock.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import MidiRouteSelect from './MidiRouteSelect.vue';
 
@@ -79,11 +79,12 @@ const emit = defineEmits(['toggle-step', 'route-change']);
 const stepCount = computed(() => props.tracks[0]?.steps.length ?? 16);
 
 // Sampled via requestAnimationFrame, decoupled from the audio scheduler's timer
-// so DOM updates here never delay MIDI-critical scheduling work.
+// so DOM updates here never delay MIDI-critical scheduling work. Follows
+// whichever clock (internal master or external MIDI follower) is active.
 const liveBeat = usePlayheadBeat();
 const currentStep = computed(() => {
   const steps = stepCount.value || 16;
-  return Math.floor(liveBeat.value * transport.stepsPerBeat) % steps;
+  return Math.floor(liveBeat.value * getActiveClock().stepsPerBeat) % steps;
 });
 
 function toggleStep(trackId, stepIndex) {

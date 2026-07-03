@@ -5,6 +5,7 @@ export { PPQN };
 let midiAccess = null;
 const outputCache = new Map();
 const outputsChangeListeners = new Set();
+const inputsChangeListeners = new Set();
 
 export async function initMidi() {
   if (!navigator.requestMIDIAccess) {
@@ -15,6 +16,8 @@ export async function initMidi() {
     outputCache.clear();
     const outputs = listOutputs();
     for (const listener of outputsChangeListeners) listener(outputs);
+    const inputs = listInputs();
+    for (const listener of inputsChangeListeners) listener(inputs);
   };
   return midiAccess;
 }
@@ -37,6 +40,40 @@ export function listOutputs() {
 export function onOutputsChanged(listener) {
   outputsChangeListeners.add(listener);
   return () => outputsChangeListeners.delete(listener);
+}
+
+export function listInputs() {
+  if (!midiAccess) return [];
+  const inputs = [];
+  midiAccess.inputs.forEach((input) => {
+    inputs.push({ id: input.id, name: input.name || `Input ${inputs.length + 1}` });
+  });
+  return inputs;
+}
+
+export function onInputsChanged(listener) {
+  inputsChangeListeners.add(listener);
+  return () => inputsChangeListeners.delete(listener);
+}
+
+export function getInput(id) {
+  if (!id || !midiAccess) return null;
+  return midiAccess.inputs.get(id) ?? null;
+}
+
+// Subscribes to raw incoming MIDI messages (e.g. clock/start/stop bytes from
+// FL Studio's external sync output) on a given input port. Returns an
+// unsubscribe function; safe to call even if the input can't be found.
+export function listenToInput(inputId, onMessage) {
+  const input = getInput(inputId);
+  if (!input) return () => {};
+
+  const handler = (event) => onMessage(event.data);
+  input.onmidimessage = handler;
+
+  return () => {
+    if (input.onmidimessage === handler) input.onmidimessage = null;
+  };
 }
 
 export function getOutput(id) {

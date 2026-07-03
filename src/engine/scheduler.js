@@ -8,6 +8,7 @@ import {
 } from './midi.js';
 import { playDrum, resumeAudio } from './drumSynth.js';
 import { transport } from './clock.js';
+import { getActiveClock } from './activeClock.js';
 
 // When notes are placed back-to-back (e.g. repeated 16th notes on the same
 // pitch), the previous note's Off and the next note's On land on almost the
@@ -18,10 +19,20 @@ import { transport } from './clock.js';
 const NOTE_OFF_LEAD_MS = 5;
 const MIN_GATE_MS = 10;
 
+// `now`/`scheduleUntil` are captured once per tick, but the per-note startTime
+// below is computed via a fresh clock read a moment later (during this loop).
+// That fresh read is always marginally later than the stale snapshot — with a
+// zero-width window (as external MIDI clock sync uses, since it only ever
+// knows "now") that drift alone would fail the upper-bound check on almost
+// every note. This slack absorbs that drift; it's negligible next to the
+// internal clock's much larger lookahead window.
+const SCHEDULE_WINDOW_SLACK_SEC = 0.05;
+
 export class PlaybackEngine {
   constructor() {
     this.project = null;
     this._unsub = null;
+    this._clock = null;
     this._clockOutputs = new Set();
     this._scheduledNotes = new Set();
   }
@@ -44,12 +55,16 @@ export class PlaybackEngine {
     }
   }
 
+  // Binds to whichever clock is active right now (internal master or an
+  // external MIDI-clock follower) and stays bound to it until stop() is
+  // called, even if the active clock is switched elsewhere mid-playback.
   start() {
     if (this._unsub) return;
     this._scheduledNotes.clear();
     this._updateClockOutputs();
 
-    this._unsub = transport.onTick((type, data) => {
+    this._clock = getActiveClock();
+    this._unsub = this._clock.onTick((type, data) => {
       switch (type) {
         case 'start':
           this._onStart(data);
@@ -70,20 +85,24 @@ export class PlaybackEngine {
     });
 
     resumeAudio();
-    transport.play();
+    // Only the internal master clock needs an explicit play() — an external
+    // clock is already listening for incoming MIDI Start/Stop and emits
+    // 'start'/'stop' entirely on its own.
+    if (this._clock === transport) transport.play();
   }
 
   stop() {
-    transport.stop();
+    if (this._clock === transport) transport.stop();
     if (this._unsub) {
       this._unsub();
       this._unsub = null;
     }
     this._scheduledNotes.clear();
+    this._clock = null;
   }
 
   _delayMs(audioTime) {
-    return Math.max(0, (audioTime - transport.currentTime) * 1000);
+    return Math.max(0, (audioTime - this._clock.currentTime) * 1000);
   }
 
   // Computes a Note Off delay that always lands at least MIN_GATE_MS after
@@ -95,6 +114,15 @@ export class PlaybackEngine {
   }
 
   _onStart(data) {
+    // _scheduledNotes is only cleared in start()/stop() above, but in External
+    // Sync mode this engine is armed once and stays running across many
+    // Stop/Start cycles from the external transport — each of those is a
+    // 'start' tick here, not a fresh call to start(). Without clearing here
+    // too, note-iteration keys from the previous play session stick around
+    // and silently block re-triggering until enough loop cycles pass to
+    // produce keys never seen before (the "catches up after a few seconds" bug).
+    this._scheduledNotes.clear();
+
     if (!this.project?.sendMidiClock) return;
     broadcastStart([...this._clockOutputs], this._delayMs(data.time));
   }
@@ -122,7 +150,7 @@ export class PlaybackEngine {
       if (track.midiOutputId) {
         const onDelay = this._delayMs(time);
         sendNoteOn(track.midiOutputId, track.midiChannel, track.midiNote, s.velocity, onDelay);
-        const rawOffTime = time + transport.beatToSec(0.2);
+        const rawOffTime = time + this._clock.beatToSec(0.2);
         sendNoteOff(track.midiOutputId, track.midiChannel, track.midiNote, this._noteOffDelayMs(onDelay, rawOffTime));
       }
     }
@@ -131,17 +159,18 @@ export class PlaybackEngine {
   _onScheduleNotes({ now, scheduleUntil }) {
     if (!this.project) return;
 
-    const loopLen = transport.loopLengthBeats;
+    const clock = this._clock;
+    const loopLen = clock.loopLengthBeats;
     if (loopLen <= 0) return;
 
-    const absBeat = transport.getAbsoluteBeat();
-    const endAbsBeat = absBeat + transport.secToBeat(scheduleUntil - now) + 0.05;
+    const absBeat = clock.getAbsoluteBeat();
+    const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
 
     for (const track of this.project.midiTracks) {
       if (!track.midiOutputId) continue;
 
       for (const note of track.notes) {
-        if (note.startBeat < transport.loopStartBeat || note.startBeat >= transport.loopEndBeat) continue;
+        if (note.startBeat < clock.loopStartBeat || note.startBeat >= clock.loopEndBeat) continue;
 
         let occurrence = note.startBeat;
         if (occurrence < absBeat - 0.01) {
@@ -151,15 +180,19 @@ export class PlaybackEngine {
         }
 
         while (occurrence <= endAbsBeat) {
-          const startTime = transport.beatToAudioTime(occurrence);
+          const startTime = clock.beatToAudioTime(occurrence);
           const iteration = Math.round((occurrence - note.startBeat) / loopLen);
           const noteKey = `n-${track.id}-${note.id}-${iteration}`;
 
-          if (!this._scheduledNotes.has(noteKey) && startTime >= now - 0.002 && startTime <= scheduleUntil) {
+          if (
+            !this._scheduledNotes.has(noteKey) &&
+            startTime >= now - 0.002 &&
+            startTime <= scheduleUntil + SCHEDULE_WINDOW_SLACK_SEC
+          ) {
             this._scheduledNotes.add(noteKey);
             const onDelay = this._delayMs(startTime);
             sendNoteOn(track.midiOutputId, track.midiChannel, note.pitch, note.velocity, onDelay);
-            const rawOffTime = transport.beatToAudioTime(occurrence + note.duration);
+            const rawOffTime = clock.beatToAudioTime(occurrence + note.duration);
             sendNoteOff(track.midiOutputId, track.midiChannel, note.pitch, this._noteOffDelayMs(onDelay, rawOffTime));
           }
           occurrence += loopLen;

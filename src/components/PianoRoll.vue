@@ -128,7 +128,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { noteName, SNAP_VALUES, snapBeat, createNote, uid } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
-import { transport } from '../engine/clock.js';
+import { getActiveClock } from '../engine/activeClock.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import MidiRouteSelect from './MidiRouteSelect.vue';
 
@@ -451,7 +451,7 @@ function previewNotePulse(pitch, velocity, durationBeats) {
   const { midiOutputId, midiChannel } = track;
 
   sendNoteOn(midiOutputId, midiChannel, pitch, velocity);
-  const ms = Math.max(MIN_PREVIEW_MS, transport.beatToSec(durationBeats) * 1000);
+  const ms = Math.max(MIN_PREVIEW_MS, getActiveClock().beatToSec(durationBeats) * 1000);
   setTimeout(() => sendNoteOff(midiOutputId, midiChannel, pitch), ms);
 }
 

@@ -7,12 +7,17 @@
       :send-midi-clock="project.sendMidiClock"
       :clock-output-id="project.clockOutputId"
       :midi-outputs="midiOutputs"
+      :sync-mode="project.syncMode"
+      :clock-input-id="project.clockInputId"
+      :midi-inputs="midiInputs"
       @toggle-play="togglePlay"
       @stop="stopPlayback"
       @bpm-change="setBpm"
       @steps-change="setPatternSteps"
       @toggle-clock="project.sendMidiClock = !project.sendMidiClock"
       @clock-output-change="project.clockOutputId = $event"
+      @sync-mode-change="project.syncMode = $event"
+      @clock-input-change="project.clockInputId = $event"
     />
 
     <div class="flex-1 flex flex-col min-h-0 p-3 gap-3">
@@ -52,51 +57,113 @@ import TransportBar from './components/TransportBar.vue';
 import DrumSequencer from './components/DrumSequencer.vue';
 import PianoRoll from './components/PianoRoll.vue';
 import { createProject, createMidiTrack } from './models/project.js';
-import { initMidi, listOutputs, onOutputsChanged } from './engine/midi.js';
+import {
+  initMidi,
+  listOutputs,
+  listInputs,
+  onOutputsChanged,
+  onInputsChanged,
+  listenToInput,
+} from './engine/midi.js';
 import { transport } from './engine/clock.js';
+import { externalClock } from './engine/externalClock.js';
+import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
 
 const project = reactive(createProject());
 const playing = ref(false);
 const activeMidiTrackId = ref(project.midiTracks[0].id);
 const midiOutputs = ref([]);
+const midiInputs = ref([]);
 const midiError = ref('');
 
-let stopUnsub = null;
+let playingUnsub = null; // tracks 'start'/'stop' on whichever clock is currently active
 let outputsUnsub = null;
+let inputsUnsub = null;
+let clockInputUnsub = null; // subscription to the selected external MIDI clock input
+
+// Song-structure settings (not tempo) apply to both clocks so switching sync
+// mode mid-project doesn't lose pattern length/loop range.
+function applyPatternSettings(clock) {
+  clock.patternSteps = project.patternSteps;
+  clock.loopStartBeat = project.loopStartBeat;
+  clock.loopEndBeat = project.loopEndBeat;
+}
+
+function bindPlayingListener(clock) {
+  if (playingUnsub) playingUnsub();
+  playingUnsub = clock.onTick((type) => {
+    if (type === 'start') playing.value = true;
+    if (type === 'stop') playing.value = false;
+  });
+}
+
+// Applies project.syncMode: swaps the active clock, (re)connects the chosen
+// MIDI input to the external clock follower, and arms the playback engine so
+// it's already listening the instant an external Start message arrives.
+function engageSyncMode() {
+  if (clockInputUnsub) {
+    clockInputUnsub();
+    clockInputUnsub = null;
+  }
+  playback.stop();
+
+  if (project.syncMode === 'external') {
+    applyPatternSettings(externalClock);
+    setActiveClock(externalClock);
+    bindPlayingListener(externalClock);
+
+    if (project.clockInputId) {
+      clockInputUnsub = listenToInput(project.clockInputId, (data) => externalClock.handleMessage(data));
+    }
+
+    playback.setProject(project);
+    playback.start();
+  } else {
+    setActiveClock(transport);
+    applyPatternSettings(transport);
+    transport.bpm = project.bpm;
+    bindPlayingListener(transport);
+    playing.value = false;
+  }
+}
 
 onMounted(async () => {
   try {
     await initMidi();
     midiOutputs.value = listOutputs();
-    // Keeps the output list live when a device is plugged in/unplugged, so
+    midiInputs.value = listInputs();
+    // Keeps the device lists live when something is plugged in/unplugged, so
     // newly connected USB MIDI gear shows up without reloading the page.
     outputsUnsub = onOutputsChanged((outputs) => {
       midiOutputs.value = outputs;
+    });
+    inputsUnsub = onInputsChanged((inputs) => {
+      midiInputs.value = inputs;
     });
   } catch (e) {
     midiError.value = 'MIDI not available — use Chrome/Edge for external synth control';
   }
 
   playback.setProject(project);
-
-  // Kept in case the transport is ever stopped from somewhere other than the
-  // play/stop button (e.g. a future "stop at end of song" feature).
-  stopUnsub = transport.onTick((type) => {
-    if (type === 'stop') playing.value = false;
-  });
+  engageSyncMode();
 });
 
 onUnmounted(() => {
-  stopPlayback();
-  if (stopUnsub) stopUnsub();
+  playback.stop();
+  if (playingUnsub) playingUnsub();
   if (outputsUnsub) outputsUnsub();
+  if (inputsUnsub) inputsUnsub();
+  if (clockInputUnsub) clockInputUnsub();
 });
+
+watch(() => [project.syncMode, project.clockInputId], engageSyncMode);
 
 watch(
   () => project.bpm,
   (bpm) => {
-    transport.bpm = bpm;
+    // External mode's tempo is detected from the incoming clock, not user-set.
+    if (project.syncMode === 'internal') transport.bpm = bpm;
   },
   { immediate: true }
 );
@@ -104,14 +171,14 @@ watch(
 watch(
   () => [project.patternSteps, project.loopEndBeat],
   () => {
-    transport.patternSteps = project.patternSteps;
-    transport.loopEndBeat = project.loopEndBeat;
-    transport.loopStartBeat = project.loopStartBeat;
+    applyPatternSettings(transport);
+    applyPatternSettings(externalClock);
   },
   { immediate: true }
 );
 
 function togglePlay() {
+  if (project.syncMode === 'external') return; // controlled by the incoming MIDI clock
   if (playing.value) {
     stopPlayback();
   } else {
@@ -120,30 +187,30 @@ function togglePlay() {
 }
 
 function startPlayback() {
+  if (project.syncMode === 'external') return;
   playback.setProject(project);
   transport.bpm = project.bpm;
-  transport.patternSteps = project.patternSteps;
-  transport.loopStartBeat = project.loopStartBeat;
-  transport.loopEndBeat = project.loopEndBeat;
+  applyPatternSettings(transport);
   playback.start();
   playing.value = true;
 }
 
 function stopPlayback() {
+  if (project.syncMode === 'external') return; // Stop is driven by the incoming clock
   playback.stop();
   playing.value = false;
 }
 
 function setBpm(bpm) {
   project.bpm = Math.max(40, Math.min(300, bpm));
-  transport.bpm = project.bpm;
+  if (project.syncMode === 'internal') transport.bpm = project.bpm;
 }
 
 function setPatternSteps(steps) {
   project.patternSteps = steps;
   project.loopEndBeat = steps / 4;
-  transport.patternSteps = steps;
-  transport.loopEndBeat = project.loopEndBeat;
+  applyPatternSettings(transport);
+  applyPatternSettings(externalClock);
 
   for (const track of project.drumTracks) {
     if (track.steps.length < steps) {

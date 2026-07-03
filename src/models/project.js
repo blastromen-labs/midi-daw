@@ -50,6 +50,10 @@ export function createProject() {
     loopEndBeat: 4,
     sendMidiClock: true,
     clockOutputId: '',
+    // 'internal': this app is the master clock (default).
+    // 'external': follow incoming MIDI clock from another app (e.g. FL Studio).
+    syncMode: 'internal',
+    clockInputId: '',
     drumTracks: DRUM_TYPES.map((d) => createDrumTrack(d)),
     midiTracks: [createMidiTrack('Synth 1'), createMidiTrack('Synth 2')],
   };

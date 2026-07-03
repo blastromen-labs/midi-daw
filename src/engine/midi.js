@@ -4,6 +4,7 @@ export { PPQN };
 
 let midiAccess = null;
 const outputCache = new Map();
+const outputsChangeListeners = new Set();
 
 export async function initMidi() {
   if (!navigator.requestMIDIAccess) {
@@ -12,6 +13,8 @@ export async function initMidi() {
   midiAccess = await navigator.requestMIDIAccess({ sysex: false });
   midiAccess.onstatechange = () => {
     outputCache.clear();
+    const outputs = listOutputs();
+    for (const listener of outputsChangeListeners) listener(outputs);
   };
   return midiAccess;
 }
@@ -27,6 +30,13 @@ export function listOutputs() {
     outputs.push({ id: output.id, name: output.name || `Output ${outputs.length + 1}` });
   });
   return outputs;
+}
+
+// Notified with the fresh output list whenever a MIDI device is plugged in,
+// unplugged, or changes state — lets the UI stay live without a page reload.
+export function onOutputsChanged(listener) {
+  outputsChangeListeners.add(listener);
+  return () => outputsChangeListeners.delete(listener);
 }
 
 export function getOutput(id) {

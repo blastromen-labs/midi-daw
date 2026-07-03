@@ -52,7 +52,7 @@ import TransportBar from './components/TransportBar.vue';
 import DrumSequencer from './components/DrumSequencer.vue';
 import PianoRoll from './components/PianoRoll.vue';
 import { createProject, createMidiTrack } from './models/project.js';
-import { initMidi, listOutputs } from './engine/midi.js';
+import { initMidi, listOutputs, onOutputsChanged } from './engine/midi.js';
 import { transport } from './engine/clock.js';
 import { playback } from './engine/scheduler.js';
 
@@ -63,11 +63,17 @@ const midiOutputs = ref([]);
 const midiError = ref('');
 
 let stopUnsub = null;
+let outputsUnsub = null;
 
 onMounted(async () => {
   try {
     await initMidi();
     midiOutputs.value = listOutputs();
+    // Keeps the output list live when a device is plugged in/unplugged, so
+    // newly connected USB MIDI gear shows up without reloading the page.
+    outputsUnsub = onOutputsChanged((outputs) => {
+      midiOutputs.value = outputs;
+    });
   } catch (e) {
     midiError.value = 'MIDI not available — use Chrome/Edge for external synth control';
   }
@@ -84,6 +90,7 @@ onMounted(async () => {
 onUnmounted(() => {
   stopPlayback();
   if (stopUnsub) stopUnsub();
+  if (outputsUnsub) outputsUnsub();
 });
 
 watch(

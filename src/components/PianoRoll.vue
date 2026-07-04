@@ -197,40 +197,49 @@
         class="flex-shrink-0 border-r border-line/60"
         :style="{ width: keysWidth + 'px' }"
       ></div>
-      <div
-        ref="markerScrollRef"
-        class="flex-1 overflow-x-auto overflow-y-hidden"
-        @scroll="onMarkerScroll"
-      >
+      <div class="flex-1 min-w-0 relative pb-3.5">
         <div
-          ref="markerBarRef"
-          class="relative h-3 cursor-crosshair select-none"
-          :style="{ width: gridWidth + 'px' }"
-          title="Click: marker (play/paste) · Double-click drag: set loop · Double-click: clear loop"
-          @mousedown="onPasteBarMouseDown"
-          @touchstart="onPasteBarTouchStart"
-          @touchmove="onPasteBarTouchMove"
-          @touchend="onPasteBarTouchEnd"
-          @touchcancel="onPasteBarTouchEnd"
-          @contextmenu.prevent
+          ref="markerScrollRef"
+          class="overflow-x-auto overflow-y-hidden marker-scroll-native-hidden"
+          @scroll="onMarkerScroll"
         >
           <div
-            v-if="activeLoopRegion"
-            class="absolute top-0 bottom-0 pointer-events-none bg-accent/20 border-x border-accent/50"
-            :style="loopRegionStyle"
-          ></div>
-          <div class="absolute inset-x-0 top-1/2 h-px bg-line-light pointer-events-none"></div>
-          <div
-            v-if="showPasteMarker"
-            class="absolute top-0 bottom-0 pointer-events-none"
-            :style="{ left: beatToX(pasteMarkerBeat) + 'px' }"
+            ref="markerBarRef"
+            class="relative h-3 cursor-crosshair select-none"
+            :style="{ width: gridWidth + 'px' }"
+            title="Click: marker (play/paste) · Double-click drag: set loop · Double-click: clear loop"
+            @mousedown="onPasteBarMouseDown"
+            @touchstart="onPasteBarTouchStart"
+            @touchmove="onPasteBarTouchMove"
+            @touchend="onPasteBarTouchEnd"
+            @touchcancel="onPasteBarTouchEnd"
+            @contextmenu.prevent
           >
-            <div class="absolute top-0 bottom-0 left-0 w-px bg-violet-400"></div>
             <div
-              class="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-violet-400"
+              v-if="activeLoopRegion"
+              class="absolute top-0 bottom-0 pointer-events-none bg-accent/20 border-x border-accent/50"
+              :style="loopRegionStyle"
             ></div>
+            <div class="absolute inset-x-0 top-1/2 h-px bg-line-light pointer-events-none"></div>
+            <div
+              v-if="showPasteMarker"
+              class="absolute top-0 bottom-0 pointer-events-none"
+              :style="{ left: beatToX(pasteMarkerBeat) + 'px' }"
+            >
+              <div class="absolute top-0 bottom-0 left-0 w-px bg-violet-400"></div>
+              <div
+                class="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-violet-400"
+              ></div>
+            </div>
           </div>
         </div>
+        <!-- Custom horizontal scrollbar — native ones can't be dragged with
+             touch on mobile/tablet. Same component as the grid's vertical bar. -->
+        <TouchScrollbar
+          :container="markerScrollRef"
+          :content="markerBarRef"
+          orientation="horizontal"
+        />
       </div>
     </div>
 
@@ -2104,6 +2113,11 @@ onUnmounted(() => {
 }
 
 .overflow-y-hidden-native::-webkit-scrollbar:horizontal {
+  height: 0;
+  display: none;
+}
+
+.marker-scroll-native-hidden::-webkit-scrollbar:horizontal {
   height: 0;
   display: none;
 }

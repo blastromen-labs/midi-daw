@@ -149,30 +149,17 @@ function clientCoordOf(e) {
   return isVertical.value ? point.clientY : point.clientX;
 }
 
-function viewportTrackStart() {
-  const rect = props.container.getBoundingClientRect();
-  return isVertical.value ? rect.top : rect.left;
-}
-
-function scrollToClientCoord(clientCoord, grabOffset) {
-  if (!props.container) return;
-  const travel = thumbTravel.value;
-  const ratio = travel > 0 ? (clientCoord - viewportTrackStart() - grabOffset) / travel : 0;
-  const target = Math.min(1, Math.max(0, ratio)) * maxScroll.value;
-
-  if (isVertical.value) {
-    props.container.scrollTop = target;
-  } else {
-    props.container.scrollLeft = target;
-  }
-  scrollPos.value = target;
-}
-
 function onTrackPointerDown(e) {
   if (!props.container || e.button > 0) return;
 
+  // Map pointer position against the track element itself (not the scroll
+  // container's rect). The vertical bar is a sibling of the grid scroll area,
+  // so container.left/top can be offset from where the track actually sits —
+  // using the wrong origin makes horizontal drags feel reversed on touch.
+  const trackRect = e.currentTarget.getBoundingClientRect();
+  const trackStart = isVertical.value ? trackRect.top : trackRect.left;
+
   const coord = clientCoordOf(e);
-  const trackStart = viewportTrackStart();
   const offsetInTrack = coord - trackStart;
   const currentOffset = thumbOffset.value;
   const size = thumbSize.value;
@@ -181,6 +168,20 @@ function onTrackPointerDown(e) {
   // clicking empty track (touch-friendly jump-to-position).
   const onThumb = offsetInTrack >= currentOffset && offsetInTrack <= currentOffset + size;
   const grabOffset = onThumb ? offsetInTrack - currentOffset : size / 2;
+
+  function scrollToClientCoord(clientCoord, grab) {
+    if (!props.container) return;
+    const travel = thumbTravel.value;
+    const ratio = travel > 0 ? (clientCoord - trackStart - grab) / travel : 0;
+    const target = Math.min(1, Math.max(0, ratio)) * maxScroll.value;
+
+    if (isVertical.value) {
+      props.container.scrollTop = target;
+    } else {
+      props.container.scrollLeft = target;
+    }
+    scrollPos.value = target;
+  }
 
   dragging.value = true;
   scrollToClientCoord(coord, grabOffset);

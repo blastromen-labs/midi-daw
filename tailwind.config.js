@@ -31,12 +31,6 @@ export default {
           dot: '#ceffd5',
         },
         playhead: '#ffb454',
-        drum: {
-          kick: '#ff4444',
-          snare: '#ffaa00',
-          hat: '#44dd88',
-          clap: '#aa66ff',
-        },
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'SF Mono', 'monospace'],

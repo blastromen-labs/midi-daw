@@ -3,45 +3,57 @@ export function uid() {
   return `id-${nextId++}`;
 }
 
-export const DRUM_TYPES = [
-  { type: 'kick', name: 'Kick', color: '#ff4444', midiNote: 36 },
-  { type: 'snare', name: 'Snare', color: '#ffaa00', midiNote: 38 },
-  { type: 'hihat', name: 'Hi-Hat', color: '#44dd88', midiNote: 42 },
-  { type: 'clap', name: 'Clap', color: '#aa66ff', midiNote: 39 },
-];
-
-export function createStep(active = false, velocity = 100) {
-  return { active, velocity };
-}
-
-export function createDrumTrack(typeDef, steps = 16) {
-  return {
-    id: uid(),
-    type: typeDef.type,
-    name: typeDef.name,
-    color: typeDef.color,
-    midiNote: typeDef.midiNote,
-    midiOutputId: '',
-    midiChannel: 9,
-    steps: Array.from({ length: steps }, () => createStep()),
-  };
-}
-
 export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity = 100) {
   return { id: uid(), pitch, startBeat, duration, velocity };
 }
 
-// Cycled through as new MIDI tracks are added, so multiple tracks stay
-// visually distinguishable in the piano roll instead of all sharing one color.
+// Cycled through as new tracks (drum or MIDI) are added, so multiple tracks
+// stay visually distinguishable in the piano roll instead of all sharing one color.
 export const MIDI_TRACK_COLORS = ['#a7d7af', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
 
 export function createMidiTrack(name = 'MIDI 1', colorIndex = 0) {
   return {
     id: uid(),
+    kind: 'midi',
     name,
     color: MIDI_TRACK_COLORS[colorIndex % MIDI_TRACK_COLORS.length],
     midiOutputId: '',
     midiChannel: 0,
+    // Note.pitch here is a real MIDI pitch number (0-127).
+    notes: [],
+  };
+}
+
+// A pad is one row of a drum track's piano roll — not a MIDI note, a local
+// audio sample. `fileName` is display-only; the decoded AudioBuffer itself
+// lives in engine/sampler.js (keyed by pad.id), never in this reactive
+// project state, for the same reason midi.js keeps its output cache outside
+// of any reactive object — decoded audio buffers are large and not something
+// Vue's reactivity should be wrapping/tracking.
+export function createDrumPad(name, color) {
+  return { id: uid(), name, color, fileName: '' };
+}
+
+export const DEFAULT_DRUM_PADS = [
+  ['Kick', '#ff4444'],
+  ['Snare', '#ffaa00'],
+  ['Clap', '#aa66ff'],
+  ['Closed Hat', '#44dd88'],
+  ['Open Hat', '#2fd1c5'],
+  ['Low Tom', '#c97b3d'],
+  ['Hi Tom', '#e69a3d'],
+  ['Rim', '#d16fae'],
+];
+
+export function createDrumTrack(name = 'Drums 1', colorIndex = 0) {
+  return {
+    id: uid(),
+    kind: 'drum',
+    name,
+    color: MIDI_TRACK_COLORS[colorIndex % MIDI_TRACK_COLORS.length],
+    pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
+    // Note.pitch here is a pad id (string), not a MIDI pitch — it identifies
+    // which pad's sample this note triggers. See createDrumPad above.
     notes: [],
   };
 }
@@ -58,8 +70,7 @@ export function createProject() {
     // 'external': follow incoming MIDI clock from another app (e.g. FL Studio).
     syncMode: 'internal',
     clockInputId: '',
-    drumTracks: DRUM_TYPES.map((d) => createDrumTrack(d)),
-    midiTracks: [createMidiTrack('Synth 1', 0), createMidiTrack('Synth 2', 1)],
+    tracks: [createDrumTrack('Drums 1', 0), createMidiTrack('Synth 1', 1), createMidiTrack('Synth 2', 2)],
   };
 }
 

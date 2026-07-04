@@ -21,26 +21,22 @@
     />
 
     <div class="flex-1 flex flex-col min-h-0 p-3 gap-3">
-      <DrumSequencer
-        :tracks="project.drumTracks"
-        :playing="playing"
-        :midi-outputs="midiOutputs"
-        @toggle-step="toggleDrumStep"
-        @route-change="updateDrumRoute"
-      />
-
       <div class="flex-1 min-h-0">
         <PianoRoll
-          :tracks="project.midiTracks"
-          :active-track-id="activeMidiTrackId"
+          :tracks="project.tracks"
+          :active-track-id="activeTrackId"
           :loop-end-beat="project.loopEndBeat"
           :playing="playing"
           :midi-outputs="midiOutputs"
-          @update-notes="updateMidiNotes"
-          @select-track="activeMidiTrackId = $event"
+          @update-notes="updateNotes"
+          @select-track="activeTrackId = $event"
           @route-change="updateMidiRoute"
-          @add-track="addMidiTrack"
-          @rename-track="renameMidiTrack"
+          @add-track="addTrack"
+          @rename-track="renameTrack"
+          @update-pad="updatePad"
+          @add-pad="addPad"
+          @remove-pad="removePad"
+          @rename-pad="renamePad"
         />
       </div>
     </div>
@@ -54,9 +50,8 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
 import TransportBar from './components/TransportBar.vue';
-import DrumSequencer from './components/DrumSequencer.vue';
 import PianoRoll from './components/PianoRoll.vue';
-import { createProject, createMidiTrack } from './models/project.js';
+import { createProject, createMidiTrack, createDrumTrack, createDrumPad } from './models/project.js';
 import {
   initMidi,
   listOutputs,
@@ -72,7 +67,7 @@ import { playback } from './engine/scheduler.js';
 
 const project = reactive(createProject());
 const playing = ref(false);
-const activeMidiTrackId = ref(project.midiTracks[0].id);
+const activeTrackId = ref(project.tracks[0].id);
 const midiOutputs = ref([]);
 const midiInputs = ref([]);
 const midiError = ref('');
@@ -211,54 +206,64 @@ function setPatternSteps(steps) {
   project.loopEndBeat = steps / 4;
   applyPatternSettings(transport);
   applyPatternSettings(externalClock);
-
-  for (const track of project.drumTracks) {
-    if (track.steps.length < steps) {
-      const extra = Array.from({ length: steps - track.steps.length }, () => ({ active: false, velocity: 100 }));
-      track.steps.push(...extra);
-    } else if (track.steps.length > steps) {
-      track.steps.length = steps;
-    }
-  }
 }
 
-function toggleDrumStep(trackId, stepIndex, forceOff) {
-  const track = project.drumTracks.find((t) => t.id === trackId);
-  if (!track) return;
-  const step = track.steps[stepIndex];
-  if (forceOff === false) {
-    step.active = false;
-  } else {
-    step.active = !step.active;
-    if (step.active) step.velocity = 100;
-  }
+function findTrack(trackId) {
+  return project.tracks.find((t) => t.id === trackId);
 }
 
-function updateDrumRoute(trackId, changes) {
-  const track = project.drumTracks.find((t) => t.id === trackId);
-  if (track) Object.assign(track, changes);
-}
-
-function updateMidiNotes(trackId, notes) {
-  const track = project.midiTracks.find((t) => t.id === trackId);
+function updateNotes(trackId, notes) {
+  const track = findTrack(trackId);
   if (track) track.notes = notes;
 }
 
 function updateMidiRoute(trackId, changes) {
-  const track = project.midiTracks.find((t) => t.id === trackId);
-  if (track) Object.assign(track, changes);
+  const track = findTrack(trackId);
+  if (track && track.kind === 'midi') Object.assign(track, changes);
 }
 
-function addMidiTrack() {
-  const n = project.midiTracks.length + 1;
-  const track = createMidiTrack(`Synth ${n}`, project.midiTracks.length);
-  project.midiTracks.push(track);
-  activeMidiTrackId.value = track.id;
+function addTrack(kind) {
+  const n = project.tracks.length + 1;
+  const track =
+    kind === 'drum'
+      ? createDrumTrack(`Drums ${project.tracks.filter((t) => t.kind === 'drum').length + 1}`, n)
+      : createMidiTrack(`MIDI ${project.tracks.filter((t) => t.kind === 'midi').length + 1}`, n);
+  project.tracks.push(track);
+  activeTrackId.value = track.id;
 }
 
-function renameMidiTrack(trackId, name) {
-  const track = project.midiTracks.find((t) => t.id === trackId);
+function renameTrack(trackId, name) {
+  const track = findTrack(trackId);
   if (track) track.name = name;
+}
+
+function updatePad(trackId, padId, changes) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'drum') return;
+  const pad = track.pads.find((p) => p.id === padId);
+  if (pad) Object.assign(pad, changes);
+}
+
+function addPad(trackId) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'drum') return;
+  track.pads.push(createDrumPad(`Pad ${track.pads.length + 1}`, '#8899aa'));
+}
+
+function removePad(trackId, padId) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'drum') return;
+  track.pads = track.pads.filter((p) => p.id !== padId);
+  // Notes that triggered the removed pad become orphaned (harmlessly
+  // skipped by the scheduler — see _triggerDrumNote in scheduler.js) rather
+  // than deleted outright, so undo-by-re-adding-the-pad "just works".
+}
+
+function renamePad(trackId, padId, name) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'drum') return;
+  const pad = track.pads.find((p) => p.id === padId);
+  if (pad) pad.name = name;
 }
 
 function onKeyDown(e) {

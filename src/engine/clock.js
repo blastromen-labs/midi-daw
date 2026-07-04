@@ -52,10 +52,6 @@ export class TransportClock {
     return (sec * this.bpm) / 60;
   }
 
-  stepToBeat(step) {
-    return step / this.stepsPerBeat;
-  }
-
   getAbsoluteBeat() {
     if (!this.playing || !this._ctx) return this.currentBeat;
     const elapsed = this._ctx.currentTime - this._startAudioTime;
@@ -137,7 +133,6 @@ export class TransportClock {
     const scheduleUntil = now + SCHEDULE_AHEAD_SEC;
 
     this._scheduleClockTicks(now, scheduleUntil);
-    this._scheduleSteps(now, scheduleUntil);
     this._scheduleNotes(now, scheduleUntil);
   }
 
@@ -161,27 +156,6 @@ export class TransportClock {
         }
       }
       this._nextClockTick++;
-    }
-  }
-
-  _scheduleSteps(now, scheduleUntil) {
-    const loopSteps = Math.round(this.loopLengthBeats * this.stepsPerBeat);
-    if (loopSteps <= 0) return;
-
-    const absBeat = this.getAbsoluteBeat();
-    const endAbsBeat = absBeat + this.secToBeat(scheduleUntil - now) + 0.05;
-    const startStep = Math.floor(absBeat * this.stepsPerBeat);
-    const endStep = Math.ceil(endAbsBeat * this.stepsPerBeat);
-
-    for (let s = startStep; s <= endStep; s++) {
-      const stepTime = this._startAudioTime + this.beatToSec(s / this.stepsPerBeat - this._startBeat);
-      const key = this._key('step', s);
-      if (this._scheduled.has(key)) continue;
-      if (stepTime < now - 0.002 || stepTime > scheduleUntil) continue;
-
-      this._scheduled.add(key);
-      const stepIndex = ((s % loopSteps) + loopSteps) % loopSteps;
-      this._emit('step', { step: stepIndex, beat: this.stepToBeat(stepIndex), time: stepTime });
     }
   }
 

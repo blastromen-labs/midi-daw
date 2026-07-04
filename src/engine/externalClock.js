@@ -121,13 +121,6 @@ export class ExternalClock {
 
     this._emit('clock', { time, tick: this._tickCount, beat });
 
-    const ticksPerStep = PPQN / this.stepsPerBeat;
-    if (this._tickCount % ticksPerStep === 0) {
-      const loopSteps = Math.round(this.loopLengthBeats * this.stepsPerBeat);
-      const stepIndex = loopSteps > 0 ? Math.round(beat * this.stepsPerBeat) % loopSteps : 0;
-      this._emit('step', { step: stepIndex, beat, time });
-    }
-
     // Zero-width window: we only ever know "now", so this fires notes whose
     // scheduled beat lines up with the current tick (~1/24 beat resolution).
     this._emit('scheduleNotes', { now: time, scheduleUntil: time });

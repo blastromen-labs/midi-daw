@@ -6,7 +6,7 @@ import {
   broadcastStop,
   PPQN,
 } from './midi.js';
-import { playDrum, resumeAudio } from './drumSynth.js';
+import { playSample, resumeSamplerAudio } from './sampler.js';
 import { transport } from './clock.js';
 import { getActiveClock } from './activeClock.js';
 
@@ -50,8 +50,9 @@ export class PlaybackEngine {
       this._clockOutputs.add(this.project.clockOutputId);
     }
 
-    for (const track of [...this.project.drumTracks, ...this.project.midiTracks]) {
-      if (track.midiOutputId) this._clockOutputs.add(track.midiOutputId);
+    // Drum tracks never have a MIDI output — they trigger local samples only.
+    for (const track of this.project.tracks) {
+      if (track.kind === 'midi' && track.midiOutputId) this._clockOutputs.add(track.midiOutputId);
     }
   }
 
@@ -75,16 +76,13 @@ export class PlaybackEngine {
         case 'clock':
           this._onClock(data);
           break;
-        case 'step':
-          this._onStep(data);
-          break;
         case 'scheduleNotes':
           this._onScheduleNotes(data);
           break;
       }
     });
 
-    resumeAudio();
+    resumeSamplerAudio();
     // Only the internal master clock needs an explicit play() — an external
     // clock is already listening for incoming MIDI Start/Stop and emits
     // 'start'/'stop' entirely on its own.
@@ -137,23 +135,20 @@ export class PlaybackEngine {
     broadcastClock([...this._clockOutputs], this._delayMs(data.time));
   }
 
-  _onStep(data) {
-    if (!this.project) return;
-    const { step, time } = data;
+  _triggerMidiNote(track, note, onDelay, occurrence, clock) {
+    sendNoteOn(track.midiOutputId, track.midiChannel, note.pitch, note.velocity, onDelay);
+    const rawOffTime = clock.beatToAudioTime(occurrence + note.duration);
+    sendNoteOff(track.midiOutputId, track.midiChannel, note.pitch, this._noteOffDelayMs(onDelay, rawOffTime));
+  }
 
-    for (const track of this.project.drumTracks) {
-      const s = track.steps[step % track.steps.length];
-      if (!s?.active) continue;
-
-      playDrum(track.type, time, s.velocity);
-
-      if (track.midiOutputId) {
-        const onDelay = this._delayMs(time);
-        sendNoteOn(track.midiOutputId, track.midiChannel, track.midiNote, s.velocity, onDelay);
-        const rawOffTime = time + this._clock.beatToSec(0.2);
-        sendNoteOff(track.midiOutputId, track.midiChannel, track.midiNote, this._noteOffDelayMs(onDelay, rawOffTime));
-      }
-    }
+  // Drum notes fire a one-shot sample and are done — no note-off/gate to
+  // compute. `note.pitch` holds the triggering pad's id (see createDrumPad
+  // in models/project.js); if that pad was since removed, the note is
+  // silently skipped rather than throwing.
+  _triggerDrumNote(track, note, onDelay) {
+    const pad = track.pads.find((p) => p.id === note.pitch);
+    if (!pad) return;
+    playSample(pad.id, note.velocity, onDelay);
   }
 
   _onScheduleNotes({ now, scheduleUntil }) {
@@ -166,8 +161,8 @@ export class PlaybackEngine {
     const absBeat = clock.getAbsoluteBeat();
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
 
-    for (const track of this.project.midiTracks) {
-      if (!track.midiOutputId) continue;
+    for (const track of this.project.tracks) {
+      if (track.kind === 'midi' && !track.midiOutputId) continue;
 
       for (const note of track.notes) {
         if (note.startBeat < clock.loopStartBeat || note.startBeat >= clock.loopEndBeat) continue;
@@ -191,9 +186,11 @@ export class PlaybackEngine {
           ) {
             this._scheduledNotes.add(noteKey);
             const onDelay = this._delayMs(startTime);
-            sendNoteOn(track.midiOutputId, track.midiChannel, note.pitch, note.velocity, onDelay);
-            const rawOffTime = clock.beatToAudioTime(occurrence + note.duration);
-            sendNoteOff(track.midiOutputId, track.midiChannel, note.pitch, this._noteOffDelayMs(onDelay, rawOffTime));
+            if (track.kind === 'drum') {
+              this._triggerDrumNote(track, note, onDelay);
+            } else {
+              this._triggerMidiNote(track, note, onDelay, occurrence, clock);
+            }
           }
           occurrence += loopLen;
         }

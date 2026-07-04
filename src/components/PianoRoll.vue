@@ -18,13 +18,14 @@
       <div class="h-4 w-px bg-line-light"></div>
 
       <MidiRouteSelect
-        v-if="activeTrack"
+        v-if="activeTrack && activeTrack.kind !== 'drum'"
         :output-id="activeTrack.midiOutputId"
         :channel="activeTrack.midiChannel"
         :outputs="midiOutputs"
         @output-change="(id) => updateRoute({ midiOutputId: id })"
         @channel-change="(ch) => updateRoute({ midiChannel: ch })"
       />
+      <span v-else-if="activeTrack" class="text-xs text-muted-dim">Sample-based &middot; no MIDI routing</span>
 
       <div class="h-4 w-px bg-line-light"></div>
 
@@ -42,10 +43,10 @@
 
       <button
         class="text-xs text-muted hover:text-white tabular-nums"
-        title="Cmd/Ctrl + scroll to zoom — click to reset"
+        title="Cmd/Ctrl + scroll to zoom horizontally, + Shift to zoom row height — click to reset both"
         @click="resetZoom"
       >
-        Zoom {{ zoomPercent }}%
+        Zoom {{ zoomPercent }}% / {{ rowZoomPercent }}%
       </button>
 
       <label class="text-xs text-muted ml-2">Draw</label>
@@ -71,26 +72,51 @@
         ✕
       </button>
 
-      <button
-        class="ml-auto px-2 py-0.5 rounded text-xs bg-surface-hover hover:bg-surface-active"
-        @click="$emit('add-track')"
-      >
-        + Track
-      </button>
+      <div class="ml-auto flex gap-1">
+        <button
+          class="px-2 py-0.5 rounded text-xs bg-surface-hover hover:bg-surface-active"
+          title="Add a MIDI channel"
+          @click="$emit('add-track', 'midi')"
+        >
+          + MIDI
+        </button>
+        <button
+          class="px-2 py-0.5 rounded text-xs bg-surface-hover hover:bg-surface-active"
+          title="Add a sample-based drum channel"
+          @click="$emit('add-track', 'drum')"
+        >
+          + Drum
+        </button>
+      </div>
     </div>
 
     <!-- Canvas area -->
     <div class="flex flex-1 min-h-0 overflow-hidden" ref="containerRef">
-      <!-- Piano keys -->
-      <div class="flex-shrink-0 w-12 overflow-hidden bg-panel border-r border-line" ref="keysRef">
+      <!-- Piano keys (MIDI tracks) / pad list (drum tracks) -->
+      <div
+        class="flex-shrink-0 overflow-hidden bg-panel border-r border-line"
+        :style="{ width: keysWidth + 'px' }"
+        ref="keysRef"
+      >
         <canvas
+          v-if="activeTrack && activeTrack.kind !== 'drum'"
           ref="keysCanvas"
-          :width="48"
+          :width="KEY_WIDTH"
           :height="canvasHeight"
           class="block cursor-pointer"
           @mousedown="onKeyMouseDown"
           @mousemove="onKeyMouseMove"
         ></canvas>
+        <DrumPadList
+          v-else-if="activeTrack"
+          :pads="activeTrack.pads"
+          :row-height="rowHeight"
+          @load-sample="onLoadSample"
+          @clear-sample="onClearSample"
+          @add-pad="onAddPad"
+          @remove-pad="onRemovePad"
+          @rename-pad="onRenamePad"
+        />
       </div>
 
       <!-- Grid -->
@@ -140,7 +166,8 @@
     <!-- Velocity panel -->
     <div v-show="!velocityCollapsed" class="flex-shrink-0 flex bg-panel" :style="{ height: velocityHeight + 'px' }">
       <div
-        class="flex-shrink-0 w-12 bg-panel border-r border-t border-line flex items-center justify-center select-none"
+        class="flex-shrink-0 bg-panel border-r border-t border-line flex items-center justify-center select-none"
+        :style="{ width: keysWidth + 'px' }"
         @mousedown="clearSelection"
       >
         <span class="text-[10px] font-semibold text-accent tracking-widest vertical-label">VEL</span>
@@ -166,10 +193,12 @@ import { noteName, SNAP_VALUES, snapBeat, createNote, uid } from '../models/proj
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { getActiveClock } from '../engine/activeClock.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
+import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import MidiRouteSelect from './MidiRouteSelect.vue';
 import VelocityLane from './VelocityLane.vue';
+import DrumPadList from './DrumPadList.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
@@ -191,16 +220,35 @@ const props = defineProps({
 
 const liveBeat = usePlayheadBeat();
 
-const emit = defineEmits(['update-notes', 'select-track', 'route-change', 'add-track', 'rename-track']);
+const emit = defineEmits([
+  'update-notes',
+  'select-track',
+  'route-change',
+  'add-track',
+  'rename-track',
+  'update-pad',
+  'add-pad',
+  'remove-pad',
+  'rename-pad',
+]);
 
 const ROW_HEIGHT = 14;
+// Drum pad rows carry a name + sample controls, so they need more vertical
+// room than a plain chromatic piano-roll row.
+const DRUM_ROW_HEIGHT = 28;
+const KEY_WIDTH = 48;
+const DRUM_KEYS_WIDTH = 140;
 const DEFAULT_BEAT_WIDTH = 80;
 const MIN_BEAT_WIDTH = 20;
 const MAX_BEAT_WIDTH = 320;
 const ZOOM_STEP = 1.12;
+// Vertical zoom is a multiplier on top of the base row height (14px MIDI /
+// 28px drum) rather than its own pixel range, so it scales sensibly for
+// either track kind without a second set of min/max pixel constants.
+const MIN_ROW_ZOOM = 0.6;
+const MAX_ROW_ZOOM = 3;
 const LOW_PITCH = 36;
 const HIGH_PITCH = 84;
-const TOTAL_ROWS = HIGH_PITCH - LOW_PITCH + 1;
 
 const snapValues = SNAP_VALUES;
 const snap = ref(0.25);
@@ -209,7 +257,9 @@ const snap = ref(0.25);
 const noteLength = ref(0.25);
 const tool = ref('draw');
 const beatWidth = ref(DEFAULT_BEAT_WIDTH);
+const rowZoom = ref(1);
 const zoomPercent = computed(() => Math.round((beatWidth.value / DEFAULT_BEAT_WIDTH) * 100));
+const rowZoomPercent = computed(() => Math.round(rowZoom.value * 100));
 
 const rootRef = ref(null);
 const containerRef = ref(null);
@@ -223,10 +273,34 @@ const mainScrollLeft = ref(0);
 const velocityHeight = ref(DEFAULT_VELOCITY_HEIGHT);
 const velocityCollapsed = ref(false);
 
-const canvasHeight = TOTAL_ROWS * ROW_HEIGHT;
 const gridWidth = computed(() => props.loopEndBeat * beatWidth.value);
 
 const activeTrack = computed(() => props.tracks.find((t) => t.id === props.activeTrackId));
+const isDrumTrack = computed(() => activeTrack.value?.kind === 'drum');
+const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
+const keysWidth = computed(() => (isDrumTrack.value ? DRUM_KEYS_WIDTH : KEY_WIDTH));
+
+// Generic "rows" abstraction: each row has an opaque `key` that Note.pitch
+// stores — a MIDI pitch number for MIDI tracks, a pad id for drum tracks
+// (see the comment on createDrumPad in models/project.js). Everything below
+// that positions/moves notes vertically works purely in terms of row index,
+// so it doesn't need to know or care which kind of key it's dealing with.
+const rows = computed(() => {
+  if (isDrumTrack.value) {
+    return (activeTrack.value?.pads ?? []).map((pad) => ({ key: pad.id }));
+  }
+  const list = [];
+  for (let p = HIGH_PITCH; p >= LOW_PITCH; p--) list.push({ key: p });
+  return list;
+});
+
+const keyToIndex = computed(() => {
+  const map = new Map();
+  rows.value.forEach((row, i) => map.set(row.key, i));
+  return map;
+});
+
+const canvasHeight = computed(() => rows.value.length * rowHeight.value);
 
 const drag = ref(null);
 const selectedNoteIds = ref(new Set());
@@ -271,12 +345,16 @@ function traceRoundedRect(ctx, x, y, w, h, radius) {
   ctx.closePath();
 }
 
-function pitchToY(pitch) {
-  return (HIGH_PITCH - pitch) * ROW_HEIGHT;
+// Both operate on row *keys* (see the `rows` comment above), not literal
+// pitches — the names are kept because for MIDI tracks a key IS a pitch, and
+// most call sites only ever deal with MIDI tracks.
+function pitchToY(key) {
+  return (keyToIndex.value.get(key) ?? 0) * rowHeight.value;
 }
 
 function yToPitch(y) {
-  return HIGH_PITCH - Math.floor(y / ROW_HEIGHT);
+  const idx = Math.max(0, Math.min(rows.value.length - 1, Math.floor(y / rowHeight.value)));
+  return rows.value[idx]?.key;
 }
 
 function beatToX(beat) {
@@ -370,12 +448,15 @@ function updateMarqueeSelection() {
 
   const beatMin = xMin / beatWidth.value;
   const beatMax = xMax / beatWidth.value;
-  const pitchTop = yToPitch(yMin);
-  const pitchBottom = yToPitch(yMax);
+  // Compared by row index rather than the pitch/key value directly — a drum
+  // pad id isn't numerically orderable the way a MIDI pitch is.
+  const indexMin = Math.floor(yMin / rowHeight.value);
+  const indexMax = Math.floor(yMax / rowHeight.value);
 
   const selected = getNotes().filter((n) => {
     const overlapsX = n.startBeat + n.duration > beatMin && n.startBeat < beatMax;
-    const overlapsY = n.pitch <= pitchTop && n.pitch >= pitchBottom;
+    const rowIndex = keyToIndex.value.get(n.pitch) ?? -1;
+    const overlapsY = rowIndex >= indexMin && rowIndex <= indexMax;
     return overlapsX && overlapsY;
   });
 
@@ -512,17 +593,58 @@ function onMouseDown(e) {
   }
 }
 
-// Briefly sounds a note when it's drawn, so you can hear the pitch you just
-// placed without having to press play. Output/channel are captured up front
-// so a later routing change can't cause the note-off to go to the wrong place.
+// Briefly sounds a note when it's drawn, so you can hear it without having to
+// press play. For drum tracks that's a one-shot sample trigger (`pitch` is a
+// pad id there); for MIDI tracks it's the existing Note On/Off pulse, with
+// output/channel captured up front so a later routing change can't cause the
+// note-off to go to the wrong place.
 function previewNotePulse(pitch, velocity, durationBeats) {
   const track = activeTrack.value;
-  if (!track?.midiOutputId) return;
+  if (!track) return;
+
+  if (track.kind === 'drum') {
+    resumeSamplerAudio();
+    playSample(pitch, velocity);
+    return;
+  }
+
+  if (!track.midiOutputId) return;
   const { midiOutputId, midiChannel } = track;
 
   sendNoteOn(midiOutputId, midiChannel, pitch, velocity);
   const ms = Math.max(MIN_PREVIEW_MS, getActiveClock().beatToSec(durationBeats) * 1000);
   setTimeout(() => sendNoteOff(midiOutputId, midiChannel, pitch), ms);
+}
+
+// Pad-management: PianoRoll owns the sampler engine calls (decode/cache),
+// same as it already owns MIDI preview calls directly, and just bubbles the
+// resulting project-state change up — App.vue stays the only place that
+// mutates project.tracks, matching route-change/rename-track above.
+async function onLoadSample(padId, file) {
+  try {
+    await loadSampleFile(padId, file);
+    emit('update-pad', props.activeTrackId, padId, { fileName: file.name });
+  } catch (err) {
+    console.error('Failed to load sample:', err);
+  }
+}
+
+function onClearSample(padId) {
+  clearSample(padId);
+  emit('update-pad', props.activeTrackId, padId, { fileName: '' });
+}
+
+function onAddPad() {
+  emit('add-pad', props.activeTrackId);
+}
+
+function onRemovePad(padId) {
+  clearSample(padId);
+  emit('remove-pad', props.activeTrackId, padId);
+}
+
+function onRenamePad(padId, name) {
+  emit('rename-pad', props.activeTrackId, padId, name);
 }
 
 // Actual deletion happens on mousedown/mousemove (see eraseNoteAt) so right-drag
@@ -574,18 +696,28 @@ function onMouseMove(e) {
     const dx = x - drag.value.startX;
     const dy = y - drag.value.startY;
     const newAnchorBeat = snapBeat(drag.value.anchorOrigBeat + dx / beatWidth.value, snap.value);
-    const newAnchorPitch = yToPitch(pitchToY(drag.value.anchorOrigPitch) + dy);
     const deltaBeat = newAnchorBeat - drag.value.anchorOrigBeat;
-    const deltaPitch = newAnchorPitch - drag.value.anchorOrigPitch;
+
+    // Moved by row *index* delta rather than adding to the row key directly —
+    // a drum pad id isn't a number you can add an offset to, and this also
+    // reads more clearly for the MIDI case (drag N rows, not "+N pitch").
+    const anchorOrigIndex = keyToIndex.value.get(drag.value.anchorOrigPitch) ?? 0;
+    const newAnchorIndex = Math.max(
+      0,
+      Math.min(rows.value.length - 1, Math.floor((pitchToY(drag.value.anchorOrigPitch) + dy) / rowHeight.value))
+    );
+    const deltaIndex = newAnchorIndex - anchorOrigIndex;
 
     emitNotes(
       getNotes().map((n) => {
         const orig = drag.value.origPositions.get(n.id);
         if (!orig) return n;
+        const origIndex = keyToIndex.value.get(orig.pitch) ?? 0;
+        const newIndex = Math.max(0, Math.min(rows.value.length - 1, origIndex + deltaIndex));
         return {
           ...n,
           startBeat: Math.max(0, orig.beat + deltaBeat),
-          pitch: Math.max(LOW_PITCH, Math.min(HIGH_PITCH, orig.pitch + deltaPitch)),
+          pitch: rows.value[newIndex]?.key ?? orig.pitch,
         };
       })
     );
@@ -713,20 +845,39 @@ function onToolbarMouseDown(e) {
   if (e.target === e.currentTarget) clearSelection();
 }
 
-// Cmd/Ctrl + wheel zooms the horizontal (time) axis, keeping the beat under the
-// cursor fixed in place — matches FL Studio's piano roll zoom behavior.
+// Cmd/Ctrl + wheel zooms the horizontal (time) axis, keeping the beat under
+// the cursor fixed in place — matches FL Studio's piano roll zoom behavior.
+// Adding Shift zooms vertically instead (taller/shorter rows), keeping
+// whichever row is under the cursor fixed in place the same way.
 function onWheel(e) {
   if (!e.metaKey && !e.ctrlKey) return;
   e.preventDefault();
 
   const container = scrollRef.value;
   if (!container) return;
-
   const rect = container.getBoundingClientRect();
+  const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+
+  if (e.shiftKey) {
+    const cursorY = e.clientY - rect.top;
+    const rowUnderCursor = (container.scrollTop + cursorY) / rowHeight.value;
+
+    // Inverted relative to `factor` above: scrolling up should make rows
+    // taller and scrolling down shorter.
+    const verticalFactor = 1 / factor;
+    const newZoom = Math.min(MAX_ROW_ZOOM, Math.max(MIN_ROW_ZOOM, rowZoom.value * verticalFactor));
+    if (newZoom === rowZoom.value) return;
+    rowZoom.value = newZoom;
+
+    nextTick(() => {
+      container.scrollTop = rowUnderCursor * rowHeight.value - cursorY;
+    });
+    return;
+  }
+
   const cursorX = e.clientX - rect.left;
   const beatUnderCursor = (container.scrollLeft + cursorX) / beatWidth.value;
 
-  const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
   const newWidth = Math.min(MAX_BEAT_WIDTH, Math.max(MIN_BEAT_WIDTH, beatWidth.value * factor));
   if (newWidth === beatWidth.value) return;
 
@@ -739,18 +890,19 @@ function onWheel(e) {
 
 function resetZoom() {
   beatWidth.value = DEFAULT_BEAT_WIDTH;
+  rowZoom.value = 1;
 }
 
 // True piano coloring: white keys light, black keys dark, like a real
 // keyboard, each with a subtle glossy gradient for a nicer keyboard look.
-const KEY_WIDTH = 48;
-
+// Only used for MIDI tracks — drum tracks render <DrumPadList> instead.
 function drawKeys() {
   const canvas = keysCanvas.value;
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const { keys } = THEME;
-  ctx.clearRect(0, 0, KEY_WIDTH, canvasHeight);
+  const rh = rowHeight.value;
+  ctx.clearRect(0, 0, KEY_WIDTH, canvasHeight.value);
 
   for (let p = HIGH_PITCH; p >= LOW_PITCH; p--) {
     const y = pitchToY(p);
@@ -769,23 +921,31 @@ function drawKeys() {
     } else {
       // Vertical gradient gives white keys a rounded, glossy edge; the C-row
       // gets a slightly darker tint so octave boundaries read at a glance.
-      const grad = ctx.createLinearGradient(0, y, 0, y + ROW_HEIGHT);
+      const grad = ctx.createLinearGradient(0, y, 0, y + rh);
       const top = isOctave ? shade(keys.whiteOctave, 0.08) : keys.whiteTop;
       const bottom = isOctave ? keys.whiteOctave : keys.whiteBottom;
       grad.addColorStop(0, top);
       grad.addColorStop(1, bottom);
       ctx.fillStyle = grad;
     }
-    ctx.fillRect(0, y, KEY_WIDTH, ROW_HEIGHT);
+    ctx.fillRect(0, y, KEY_WIDTH, rh);
     ctx.strokeStyle = isBlack ? keys.borderBlack : keys.borderWhite;
-    ctx.strokeRect(0, y, KEY_WIDTH, ROW_HEIGHT);
+    ctx.strokeRect(0, y, KEY_WIDTH, rh);
 
     if (isOctave) {
       ctx.fillStyle = isPressed ? keys.labelOnPressed : isBlack ? keys.labelOnBlack : keys.labelOnWhite;
       ctx.font = '9px JetBrains Mono';
-      ctx.fillText(noteName(p), 2, y + ROW_HEIGHT - 3);
+      ctx.fillText(noteName(p), 2, y + rh - 3);
     }
   }
+}
+
+// Returns the label drawn inside a note: a MIDI note name for MIDI tracks,
+// the assigned pad's name for drum tracks (falling back to blank if the pad
+// was since removed).
+function noteLabel(note) {
+  if (!isDrumTrack.value) return noteName(note.pitch);
+  return activeTrack.value?.pads?.find((p) => p.id === note.pitch)?.name ?? '';
 }
 
 function drawGrid() {
@@ -793,16 +953,18 @@ function drawGrid() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = gridWidth.value;
+  const h = canvasHeight.value;
+  const rh = rowHeight.value;
   const { grid } = THEME;
-  ctx.clearRect(0, 0, w, canvasHeight);
+  ctx.clearRect(0, 0, w, h);
 
   // Background rows
-  for (let p = HIGH_PITCH; p >= LOW_PITCH; p--) {
-    const y = pitchToY(p);
-    const isBlack = [1, 3, 6, 8, 10].includes(p % 12);
+  rows.value.forEach((row, i) => {
+    const y = i * rh;
+    const isBlack = !isDrumTrack.value && [1, 3, 6, 8, 10].includes(row.key % 12);
     ctx.fillStyle = isBlack ? grid.rowDark : grid.rowLight;
-    ctx.fillRect(0, y, w, ROW_HEIGHT);
-  }
+    ctx.fillRect(0, y, w, rh);
+  });
 
   // Grid lines
   const snapW = snap.value * beatWidth.value;
@@ -812,7 +974,7 @@ function drawGrid() {
     ctx.lineWidth = isBeat ? 1 : 0.5;
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvasHeight);
+    ctx.lineTo(x, h);
     ctx.stroke();
   }
 
@@ -829,7 +991,7 @@ function drawGrid() {
     const y = pitchToY(note.pitch);
     const nw = note.duration * beatWidth.value;
     const isSelected = selectedNoteIds.value.has(note.id);
-    const noteRect = [x + 1, y + 1, nw - 2, ROW_HEIGHT - 2];
+    const noteRect = [x + 1, y + 1, nw - 2, rh - 2];
 
     const grad = ctx.createLinearGradient(0, noteRect[1], 0, noteRect[1] + noteRect[3]);
     grad.addColorStop(0, topColor);
@@ -849,7 +1011,7 @@ function drawGrid() {
       ctx.fillStyle = 'rgba(10, 10, 15, 0.75)';
       ctx.font = '9px JetBrains Mono';
       ctx.textBaseline = 'middle';
-      ctx.fillText(noteName(note.pitch), x + 3, y + ROW_HEIGHT / 2 + 1, nw - 6);
+      ctx.fillText(noteLabel(note), x + 3, y + rh / 2 + 1, nw - 6);
     }
   }
 }
@@ -858,7 +1020,7 @@ function drawPlayhead() {
   const canvas = playheadCanvas.value;
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, gridWidth.value, canvasHeight);
+  ctx.clearRect(0, 0, gridWidth.value, canvasHeight.value);
   if (!props.playing) return;
 
   const px = beatToX(liveBeat.value);
@@ -868,18 +1030,26 @@ function drawPlayhead() {
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(px, 0);
-  ctx.lineTo(px, canvasHeight);
+  ctx.lineTo(px, canvasHeight.value);
   ctx.stroke();
 }
 
 function render() {
-  drawKeys();
+  if (!isDrumTrack.value) drawKeys();
   drawGrid();
 }
 
 // Structural redraws only — note/track/snap/zoom/selection edits, not the fast-moving playhead.
 watch(
-  () => [props.tracks, props.activeTrackId, props.loopEndBeat, snap.value, beatWidth.value, selectedNoteIds.value],
+  () => [
+    props.tracks,
+    props.activeTrackId,
+    props.loopEndBeat,
+    snap.value,
+    beatWidth.value,
+    rowZoom.value,
+    selectedNoteIds.value,
+  ],
   () => nextTick(() => {
     render();
     drawPlayhead();
@@ -932,7 +1102,9 @@ window.addEventListener('mousedown', onDocumentMouseDown);
 onMounted(() => {
   render();
   drawPlayhead();
-  if (scrollRef.value) {
+  // Drum tracks have few, short rows — no need to center-scroll those; MIDI
+  // tracks default to scrolling roughly around middle C.
+  if (scrollRef.value && !isDrumTrack.value) {
     scrollRef.value.scrollTop = pitchToY(60) - 100;
   }
 });

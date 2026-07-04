@@ -232,20 +232,20 @@ const emit = defineEmits([
   'rename-pad',
 ]);
 
-const ROW_HEIGHT = 14;
+const ROW_HEIGHT = 20;
 // Drum pad rows carry a name + sample controls, so they need more vertical
 // room than a plain chromatic piano-roll row.
-const DRUM_ROW_HEIGHT = 28;
+const DRUM_ROW_HEIGHT = 36;
 const KEY_WIDTH = 48;
 const DRUM_KEYS_WIDTH = 140;
-const DEFAULT_BEAT_WIDTH = 80;
+const DEFAULT_BEAT_WIDTH = 140;
 const MIN_BEAT_WIDTH = 20;
-const MAX_BEAT_WIDTH = 320;
+const MAX_BEAT_WIDTH = 400;
 const ZOOM_STEP = 1.12;
-// Vertical zoom is a multiplier on top of the base row height (14px MIDI /
-// 28px drum) rather than its own pixel range, so it scales sensibly for
+// Vertical zoom is a multiplier on top of the base row height (20px MIDI /
+// 36px drum) rather than its own pixel range, so it scales sensibly for
 // either track kind without a second set of min/max pixel constants.
-const MIN_ROW_ZOOM = 0.6;
+const MIN_ROW_ZOOM = 0.25;
 const MAX_ROW_ZOOM = 3;
 const LOW_PITCH = 36;
 const HIGH_PITCH = 84;
@@ -858,15 +858,21 @@ function onWheel(e) {
   const container = scrollRef.value;
   if (!container) return;
   const rect = container.getBoundingClientRect();
-  const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
 
   if (e.shiftKey) {
+    // Holding Shift makes some browsers/mice report the wheel's motion via
+    // deltaX instead of deltaY (Shift+wheel is the browser-native "scroll
+    // sideways" convention) — deltaY alone would then read as a constant 0,
+    // making every scroll direction resolve to the same branch below. Fall
+    // back to deltaX whenever deltaY is 0 so direction is read correctly.
+    const rawDelta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+    // Inverted relative to the horizontal zoom's convention below: scrolling
+    // up should make rows taller, scrolling down shorter.
+    const verticalFactor = rawDelta < 0 ? 1 / ZOOM_STEP : ZOOM_STEP;
+
     const cursorY = e.clientY - rect.top;
     const rowUnderCursor = (container.scrollTop + cursorY) / rowHeight.value;
 
-    // Inverted relative to `factor` above: scrolling up should make rows
-    // taller and scrolling down shorter.
-    const verticalFactor = 1 / factor;
     const newZoom = Math.min(MAX_ROW_ZOOM, Math.max(MIN_ROW_ZOOM, rowZoom.value * verticalFactor));
     if (newZoom === rowZoom.value) return;
     rowZoom.value = newZoom;
@@ -877,6 +883,7 @@ function onWheel(e) {
     return;
   }
 
+  const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
   const cursorX = e.clientX - rect.left;
   const beatUnderCursor = (container.scrollLeft + cursorX) / beatWidth.value;
 

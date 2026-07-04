@@ -25,6 +25,7 @@
           @add-pad="addPad"
           @remove-pad="removePad"
           @rename-pad="renamePad"
+          @delete-track="removeTrack"
           @toggle-play="togglePlay"
           @bpm-change="setBpm"
           @steps-change="setPatternSteps"
@@ -45,7 +46,13 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
 import PianoRoll from './components/PianoRoll.vue';
-import { createProject, createMidiTrack, createDrumTrack, createDrumPad } from './models/project.js';
+import {
+  createProject,
+  createMidiTrack,
+  createDrumTrack,
+  createDrumPad,
+  randomTrackColor,
+} from './models/project.js';
 import {
   initMidi,
   listOutputs,
@@ -58,6 +65,7 @@ import { transport } from './engine/clock.js';
 import { externalClock } from './engine/externalClock.js';
 import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
+import { clearSample } from './engine/sampler.js';
 
 const project = reactive(createProject());
 const playing = ref(false);
@@ -219,11 +227,11 @@ function updateMidiRoute(trackId, changes) {
 }
 
 function addTrack(kind) {
-  const n = project.tracks.length + 1;
+  const color = randomTrackColor(project.tracks.map((t) => t.color));
   const track =
     kind === 'drum'
-      ? createDrumTrack(`Drums ${project.tracks.filter((t) => t.kind === 'drum').length + 1}`, n)
-      : createMidiTrack(`MIDI ${project.tracks.filter((t) => t.kind === 'midi').length + 1}`, n);
+      ? createDrumTrack(`Drums ${project.tracks.filter((t) => t.kind === 'drum').length + 1}`, color)
+      : createMidiTrack(`MIDI ${project.tracks.filter((t) => t.kind === 'midi').length + 1}`, color);
   project.tracks.push(track);
   activeTrackId.value = track.id;
 }
@@ -231,6 +239,23 @@ function addTrack(kind) {
 function renameTrack(trackId, name) {
   const track = findTrack(trackId);
   if (track) track.name = name;
+}
+
+function removeTrack(trackId) {
+  const idx = project.tracks.findIndex((t) => t.id === trackId);
+  if (idx === -1) return;
+
+  const track = project.tracks[idx];
+  if (track.kind === 'drum') {
+    for (const pad of track.pads) clearSample(pad.id);
+  }
+
+  project.tracks.splice(idx, 1);
+
+  if (activeTrackId.value === trackId) {
+    const fallback = project.tracks[idx] ?? project.tracks[idx - 1];
+    activeTrackId.value = fallback?.id;
+  }
 }
 
 function updatePad(trackId, padId, changes) {

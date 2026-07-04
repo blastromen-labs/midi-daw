@@ -66,3 +66,21 @@ select:focus {
   outline: none;
   border-color: #6fae78;
 }
+
+/* Compact toolbar inputs — tighter padding so numeric values aren't clipped. */
+.toolbar-compact {
+  padding: 2px 4px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+input[type='number'].toolbar-compact {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type='number'].toolbar-compact::-webkit-inner-spin-button,
+input[type='number'].toolbar-compact::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

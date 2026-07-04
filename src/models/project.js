@@ -7,16 +7,24 @@ export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity 
   return { id: uid(), pitch, startBeat, duration, velocity };
 }
 
-// Cycled through as new tracks (drum or MIDI) are added, so multiple tracks
-// stay visually distinguishable in the piano roll instead of all sharing one color.
-export const MIDI_TRACK_COLORS = ['#a7d7af', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
+// Accent swatches for the track menu — independent of piano-roll note color.
+export const TRACK_ACCENT_COLORS = ['#a7d7af', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
+// MIDI/synth notes in the piano roll always use this green, regardless of accent.
+export const MIDI_NOTE_COLOR = '#a7d7af';
 
-export function createMidiTrack(name = 'MIDI 1', colorIndex = 0) {
+/** @param {string[]} [exclude] colors already used by other tracks */
+export function randomTrackColor(exclude = []) {
+  const pool = TRACK_ACCENT_COLORS.filter((c) => !exclude.includes(c));
+  const choices = pool.length ? pool : TRACK_ACCENT_COLORS;
+  return choices[Math.floor(Math.random() * choices.length)];
+}
+
+export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor()) {
   return {
     id: uid(),
     kind: 'midi',
     name,
-    color: MIDI_TRACK_COLORS[colorIndex % MIDI_TRACK_COLORS.length],
+    color,
     midiOutputId: '',
     midiChannel: 0,
     // Note.pitch here is a real MIDI pitch number (0-127).
@@ -45,12 +53,12 @@ export const DEFAULT_DRUM_PADS = [
   ['Rim', '#d16fae'],
 ];
 
-export function createDrumTrack(name = 'Drums 1', colorIndex = 0) {
+export function createDrumTrack(name = 'Drums 1', color = randomTrackColor()) {
   return {
     id: uid(),
     kind: 'drum',
     name,
-    color: MIDI_TRACK_COLORS[colorIndex % MIDI_TRACK_COLORS.length],
+    color,
     volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
     // Note.pitch here is a pad id (string), not a MIDI pitch — it identifies
@@ -71,9 +79,11 @@ export function createProject() {
     // 'external': follow incoming MIDI clock from another app (e.g. FL Studio).
     syncMode: 'internal',
     clockInputId: '',
-    // Synth 1/2 keep their original color-cycle positions (green/blue) —
-    // Drums gets a distinct slot later in the cycle instead of displacing them.
-    tracks: [createDrumTrack('Drums 1', 3), createMidiTrack('Synth 1', 0), createMidiTrack('Synth 2', 1)],
+    tracks: [
+      createDrumTrack('Drums 1', TRACK_ACCENT_COLORS[3]),
+      createMidiTrack('Synth 1', TRACK_ACCENT_COLORS[1]),
+      createMidiTrack('Synth 2', TRACK_ACCENT_COLORS[2]),
+    ],
   };
 }
 

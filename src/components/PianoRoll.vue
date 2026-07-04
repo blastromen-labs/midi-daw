@@ -5,102 +5,113 @@
          and note-placement settings. overflow-x-auto is a safety net so this
          still fits (scrollable, not broken) on a narrow/portrait tablet. -->
     <div
-      class="flex items-center gap-2 px-2 py-1.5 bg-surface border-b border-line flex-shrink-0 overflow-x-auto"
+      class="flex items-end gap-2 px-2 py-1 bg-surface border-b border-line flex-shrink-0 overflow-x-auto"
       @mousedown="onToolbarMouseDown"
       @touchstart="onToolbarMouseDown"
     >
       <!-- Transport -->
-      <button
-        v-if="syncMode !== 'external'"
-        class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
-        :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
-        :title="playing ? 'Stop' : 'Play'"
-        @click="$emit('toggle-play')"
-      >
-        {{ playing ? '■' : '▶' }}
-      </button>
-      <input
-        v-if="syncMode !== 'external'"
-        type="number"
-        :value="bpm"
-        min="40"
-        max="300"
-        class="w-12 bg-surface border border-line-light rounded px-1 py-1 text-xs text-center flex-shrink-0"
-        title="BPM"
-        @change="(e) => $emit('bpm-change', Number(e.target.value))"
-      />
-      <template v-else>
-        <select
-          :value="clockInputId"
-          @change="(e) => $emit('clock-input-change', e.target.value)"
-          class="text-xs max-w-28 flex-shrink-0"
-          title="MIDI clock input to follow"
+      <ToolbarField v-if="syncMode !== 'external'">
+        <button
+          class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+          :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
+          :title="playing ? 'Stop' : 'Play'"
+          @click="$emit('toggle-play')"
         >
-          <option value="">Input…</option>
-          <option v-for="d in midiInputs" :key="d.id" :value="d.id">{{ d.name }}</option>
-        </select>
+          {{ playing ? '■' : '▶' }}
+        </button>
+      </ToolbarField>
+      <ToolbarField v-if="syncMode !== 'external'" label="BPM">
+        <input
+          type="number"
+          :value="bpm"
+          min="40"
+          max="300"
+          class="toolbar-compact w-[2.75rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
+          title="BPM"
+          @change="(e) => $emit('bpm-change', Number(e.target.value))"
+        />
+      </ToolbarField>
+      <template v-else>
+        <ToolbarField label="In">
+          <select
+            :value="clockInputId"
+            @change="(e) => $emit('clock-input-change', e.target.value)"
+            class="text-xs max-w-28 flex-shrink-0 py-0.5"
+            title="MIDI clock input to follow"
+          >
+            <option value="">—</option>
+            <option v-for="d in midiInputs" :key="d.id" :value="d.id">{{ d.name }}</option>
+          </select>
+        </ToolbarField>
         <span
-          class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+          class="w-1.5 h-1.5 rounded-full flex-shrink-0 mb-2"
           :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"
           :title="!clockInputId ? 'No input selected' : playing ? 'Synced — playing' : 'Waiting for clock…'"
         ></span>
       </template>
 
-      <select
-        :value="patternSteps"
-        @change="(e) => $emit('steps-change', Number(e.target.value))"
-        class="text-xs flex-shrink-0"
-        title="Bar length"
-      >
-        <option :value="16">16 (1 bar)</option>
-        <option :value="32">32 (2 bars)</option>
-        <option :value="64">64 (4 bars)</option>
-      </select>
-
-      <div
-        class="flex items-center gap-0.5 flex-shrink-0"
-        title="Sync: Internal (this app is the master clock) or External (follow an incoming MIDI clock, e.g. FL Studio)"
-      >
-        <button
-          class="px-1.5 py-0.5 rounded text-[10px] leading-none"
-          :class="syncMode === 'internal' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
-          @click="$emit('sync-mode-change', 'internal')"
+      <ToolbarField label="Bar">
+        <select
+          :value="patternSteps"
+          @change="(e) => $emit('steps-change', Number(e.target.value))"
+          class="text-xs w-9 text-center flex-shrink-0 py-0.5 px-1"
+          title="Bar length"
         >
-          Int
-        </button>
+          <option :value="16">1</option>
+          <option :value="32">2</option>
+          <option :value="64">4</option>
+        </select>
+      </ToolbarField>
+
+      <ToolbarField
+        label="Sync"
+        title="Internal (this app is the master clock) or External (follow an incoming MIDI clock, e.g. FL Studio)"
+      >
+        <div class="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            class="px-1.5 py-0.5 rounded text-[10px] leading-none"
+            :class="syncMode === 'internal' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
+            @click="$emit('sync-mode-change', 'internal')"
+          >
+            Int
+          </button>
+          <button
+            class="px-1.5 py-0.5 rounded text-[10px] leading-none"
+            :class="syncMode === 'external' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
+            @click="$emit('sync-mode-change', 'external')"
+          >
+            Ext
+          </button>
+        </div>
+      </ToolbarField>
+
+      <ToolbarField label="Clk">
         <button
-          class="px-1.5 py-0.5 rounded text-[10px] leading-none"
-          :class="syncMode === 'external' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
-          @click="$emit('sync-mode-change', 'external')"
+          class="w-6 h-3.5 rounded-full transition-colors relative flex-shrink-0"
+          :class="sendMidiClock ? 'bg-accent' : 'bg-surface-hover'"
+          title="Send MIDI clock to connected outputs"
+          @click="$emit('toggle-clock')"
         >
-          Ext
+          <span
+            class="absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all"
+            :class="sendMidiClock ? 'left-3' : 'left-0.5'"
+          ></span>
         </button>
-      </div>
+      </ToolbarField>
 
-      <button
-        class="w-6 h-3.5 rounded-full transition-colors relative flex-shrink-0"
-        :class="sendMidiClock ? 'bg-accent' : 'bg-surface-hover'"
-        title="Send MIDI clock to connected outputs"
-        @click="$emit('toggle-clock')"
-      >
-        <span
-          class="absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all"
-          :class="sendMidiClock ? 'left-3' : 'left-0.5'"
-        ></span>
-      </button>
+      <ToolbarField v-if="sendMidiClock" label="Out">
+        <select
+          :value="clockOutputId"
+          @change="(e) => $emit('clock-output-change', e.target.value)"
+          class="text-xs max-w-24 flex-shrink-0 py-0.5"
+          title="MIDI clock output"
+        >
+          <option value="">All</option>
+          <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
+        </select>
+      </ToolbarField>
 
-      <select
-        v-if="sendMidiClock"
-        :value="clockOutputId"
-        @change="(e) => $emit('clock-output-change', e.target.value)"
-        class="text-xs max-w-24 flex-shrink-0"
-        title="MIDI clock output"
-      >
-        <option value="">All outputs</option>
-        <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
-      </select>
-
-      <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
+      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
       <!-- Track: select/rename/add-new all live in this one menu instead of
            separate always-visible controls (see TrackMenu.vue). -->
@@ -110,9 +121,11 @@
         @select="(id) => $emit('select-track', id)"
         @rename="(id, name) => $emit('rename-track', id, name)"
         @add-track="(kind) => $emit('add-track', kind)"
+        @update-track="(id, changes) => $emit('update-track', id, changes)"
+        @delete-track="(id) => $emit('delete-track', id)"
       />
 
-      <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
+      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
       <MidiRouteSelect
         v-if="activeTrack && activeTrack.kind !== 'drum'"
@@ -122,29 +135,64 @@
         @output-change="(id) => updateRoute({ midiOutputId: id })"
         @channel-change="(ch) => updateRoute({ midiChannel: ch })"
       />
-      <div
+      <ToolbarField
         v-else-if="activeTrack"
-        class="flex items-center gap-1.5 flex-shrink-0"
+        label="Vol"
         :title="`Track volume — ${Math.round((activeTrack.volume ?? 1) * 100)}%`"
       >
-        <span class="text-[10px] text-muted-dim">Vol</span>
         <VolumeSlider
           wide
           class="w-20"
           :model-value="activeTrack.volume ?? 1"
           @update:model-value="(v) => emit('update-track', activeTrackId, { volume: v })"
         />
-      </div>
+      </ToolbarField>
 
-      <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
+      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
       <!-- Note placement -->
-      <select v-model="snap" class="text-xs flex-shrink-0" title="Snap">
-        <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
-      </select>
-      <select v-model="noteLength" class="text-xs flex-shrink-0" title="Note length — independent of Snap">
-        <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
-      </select>
+      <ToolbarField label="Snap">
+        <select v-model="snap" class="text-xs flex-shrink-0 py-0.5" title="Snap">
+          <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
+        </select>
+      </ToolbarField>
+      <ToolbarField label="Len">
+        <select v-model="noteLength" class="text-xs flex-shrink-0 py-0.5" title="Note length — independent of Snap">
+          <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
+        </select>
+      </ToolbarField>
+    </div>
+
+    <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
+    <div class="flex flex-shrink-0 border-b border-line bg-surface/90">
+      <div
+        class="flex-shrink-0 border-r border-line/60"
+        :style="{ width: keysWidth + 'px' }"
+      ></div>
+      <div
+        ref="markerScrollRef"
+        class="flex-1 overflow-x-auto overflow-y-hidden"
+        @scroll="onMarkerScroll"
+      >
+        <div
+          class="relative h-3 cursor-crosshair select-none"
+          :style="{ width: gridWidth + 'px' }"
+          title="Click to set paste position (⌘V)"
+          @mousedown="onPasteBarMouseDown"
+        >
+          <div class="absolute inset-x-0 top-1/2 h-px bg-line-light pointer-events-none"></div>
+          <div
+            v-if="showPasteMarker"
+            class="absolute top-0 bottom-0 pointer-events-none"
+            :style="{ left: beatToX(pasteMarkerBeat) + 'px' }"
+          >
+            <div class="absolute top-0 bottom-0 left-0 w-px bg-violet-400"></div>
+            <div
+              class="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-violet-400"
+            ></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Canvas area -->
@@ -255,7 +303,7 @@
         :beat-width="beatWidth"
         :grid-width="gridWidth"
         :height="velocityHeight"
-        :color="activeTrack.color"
+        :color="noteDrawColor"
         :scroll-left="mainScrollLeft"
         @update-notes="emitNotes"
       />
@@ -265,7 +313,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapBeat, createNote, uid } from '../models/project.js';
+import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { getActiveClock } from '../engine/activeClock.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
@@ -276,6 +324,7 @@ import MidiRouteSelect from './MidiRouteSelect.vue';
 import VelocityLane from './VelocityLane.vue';
 import DrumPadList from './DrumPadList.vue';
 import TrackMenu from './TrackMenu.vue';
+import ToolbarField from './ToolbarField.vue';
 import VolumeSlider from './VolumeSlider.vue';
 
 const PREVIEW_VELOCITY = 100;
@@ -285,8 +334,9 @@ const DEFAULT_VELOCITY_HEIGHT = 110;
 const MIN_VELOCITY_HEIGHT = 40;
 const MAX_VELOCITY_HEIGHT = 280;
 const VELOCITY_COLLAPSE_THRESHOLD = 20;
-const DEFAULT_NOTE_COLOR = '#a7d7af';
+const DEFAULT_NOTE_COLOR = MIDI_NOTE_COLOR;
 const NOTE_CORNER_RADIUS = THEME.note.cornerRadius;
+const PASTE_MARKER_COLOR = '#b794f6';
 
 const props = defineProps({
   tracks: { type: Array, required: true },
@@ -317,6 +367,7 @@ const emit = defineEmits([
   'remove-pad',
   'rename-pad',
   'update-track',
+  'delete-track',
   'toggle-play',
   'bpm-change',
   'steps-change',
@@ -355,6 +406,7 @@ const rowZoom = ref(1);
 const rootRef = ref(null);
 const containerRef = ref(null);
 const scrollRef = ref(null);
+const markerScrollRef = ref(null);
 const keysRef = ref(null);
 const gridCanvas = ref(null);
 const keysCanvas = ref(null);
@@ -370,6 +422,10 @@ const gridWidth = computed(() => props.loopEndBeat * beatWidth.value);
 
 const activeTrack = computed(() => props.tracks.find((t) => t.id === props.activeTrackId));
 const isDrumTrack = computed(() => activeTrack.value?.kind === 'drum');
+// Track accent colors are menu-only; MIDI notes always use the green palette.
+const noteDrawColor = computed(() =>
+  isDrumTrack.value ? (activeTrack.value?.color ?? DEFAULT_NOTE_COLOR) : MIDI_NOTE_COLOR,
+);
 const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
 const keysWidth = computed(() => (isDrumTrack.value ? DRUM_KEYS_WIDTH : KEY_WIDTH));
 
@@ -401,6 +457,12 @@ const marqueeRect = ref(null);
 const previewingPitch = ref(null);
 const hoverResize = ref(false);
 const hoverMove = ref(false);
+// Clipboard stores note offsets so paste works within a track or across tracks.
+const noteClipboard = ref(null);
+// Horizontal paste anchor — click the ruler above the grid, or Alt+click the grid.
+const pasteMarkerBeat = ref(0);
+const pasteMarkerRowIndex = ref(0);
+const showPasteMarker = computed(() => (pasteMarkerBeat.value ?? 0) > 0);
 
 const gridCursorClass = computed(() => {
   if (drag.value?.type === 'move') return 'cursor-grabbing';
@@ -488,6 +550,72 @@ function emitNotes(notes) {
   emit('update-notes', props.activeTrackId, notes);
 }
 
+function rowIndexOf(key) {
+  return keyToIndex.value.get(key) ?? 0;
+}
+
+function copySelection() {
+  const selected = getNotes().filter((n) => selectedNoteIds.value.has(n.id));
+  if (!selected.length) return;
+
+  const minBeat = Math.min(...selected.map((n) => n.startBeat));
+  const minRow = Math.min(...selected.map((n) => rowIndexOf(n.pitch)));
+
+  noteClipboard.value = {
+    sourceKind: activeTrack.value?.kind ?? 'midi',
+    items: selected.map((n) => ({
+      beatOffset: n.startBeat - minBeat,
+      rowOffset: rowIndexOf(n.pitch) - minRow,
+      duration: n.duration,
+      velocity: n.velocity,
+      pitch: n.pitch,
+    })),
+  };
+}
+
+function resolvePastePitch(item, sourceKind) {
+  const targetKind = activeTrack.value?.kind;
+  const targetRows = rows.value;
+
+  // MIDI → MIDI keeps absolute pitch numbers across synth tracks.
+  if (sourceKind === 'midi' && targetKind === 'midi') {
+    return item.pitch;
+  }
+
+  const baseRow = pasteMarkerRowIndex.value ?? 0;
+  const rowIndex = Math.max(0, Math.min(targetRows.length - 1, baseRow + item.rowOffset));
+  return targetRows[rowIndex]?.key;
+}
+
+function pasteClipboard() {
+  if (!noteClipboard.value || !activeTrack.value) return;
+
+  const clip = noteClipboard.value;
+  const pasteBeat = snapBeat(pasteMarkerBeat.value ?? 0, snap.value);
+  const newNotes = [];
+
+  for (const item of clip.items) {
+    const pitch = resolvePastePitch(item, clip.sourceKind);
+    if (pitch === undefined) continue;
+    newNotes.push(
+      createNote(pitch, Math.max(0, pasteBeat + item.beatOffset), item.duration, item.velocity)
+    );
+  }
+
+  if (!newNotes.length) return;
+
+  emitNotes([...getNotes(), ...newNotes]);
+  selectedNoteIds.value = new Set(newNotes.map((n) => n.id));
+}
+
+function onPasteBarMouseDown(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  pasteMarkerBeat.value = snapBeat(x / beatWidth.value, snap.value);
+}
+
 function findNoteAt(beat, pitch) {
   return getNotes().find(
     (n) => n.pitch === pitch && beat >= n.startBeat && beat < n.startBeat + n.duration
@@ -570,6 +698,13 @@ function eraseNoteAt(beat, pitch) {
 
 function onMouseDown(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
+
+  // Alt+click sets both the paste beat and the base row (for cross-track row mapping).
+  if (e.altKey) {
+    pasteMarkerBeat.value = cellBeat;
+    pasteMarkerRowIndex.value = rowIndexOf(pitch);
+    return;
+  }
 
   // Right mouse button always paint-deletes — hold and drag to erase multiple
   // notes in one stroke.
@@ -673,6 +808,10 @@ function onMouseDown(e) {
 // output/channel captured up front so a later routing change can't cause the
 // note-off to go to the wrong place.
 function previewNotePulse(pitch, velocity, durationBeats) {
+  // Audition-on-draw is for editing while stopped — during playback the
+  // scheduler already owns MIDI/sample output for the same notes.
+  if (props.playing) return;
+
   const track = activeTrack.value;
   if (!track) return;
 
@@ -917,11 +1056,27 @@ function onKeyTouchMove(e) {
   onKeyMouseMove(toSyntheticMouseEvent(e, point));
 }
 
+let syncingHorizontalScroll = false;
+
 function onScroll() {
   if (keysRef.value && scrollRef.value) {
     keysRef.value.scrollTop = scrollRef.value.scrollTop;
   }
   mainScrollLeft.value = scrollRef.value?.scrollLeft ?? 0;
+
+  if (!syncingHorizontalScroll && markerScrollRef.value && scrollRef.value) {
+    syncingHorizontalScroll = true;
+    markerScrollRef.value.scrollLeft = scrollRef.value.scrollLeft;
+    syncingHorizontalScroll = false;
+  }
+}
+
+function onMarkerScroll() {
+  if (syncingHorizontalScroll || !markerScrollRef.value || !scrollRef.value) return;
+  syncingHorizontalScroll = true;
+  scrollRef.value.scrollLeft = markerScrollRef.value.scrollLeft;
+  mainScrollLeft.value = markerScrollRef.value.scrollLeft;
+  syncingHorizontalScroll = false;
 }
 
 function toggleVelocityCollapse() {
@@ -1133,11 +1288,10 @@ function drawGrid() {
     ctx.stroke();
   }
 
-  // Notes — rounded, with a soft top-lit gradient and a darker border, both
-  // derived from the track's own color so multi-track color-coding survives
-  // alongside the greenish, glossy note look.
+  // Notes — rounded, with a soft top-lit gradient and a darker border.
+  // MIDI tracks always use the green note palette; drum tracks use their accent.
   const notes = getNotes();
-  const color = activeTrack.value?.color ?? DEFAULT_NOTE_COLOR;
+  const color = noteDrawColor.value;
   const topColor = shade(color, 0.3);
   const bottomColor = shade(color, -0.08);
   const borderColor = shade(color, -0.32);
@@ -1171,11 +1325,26 @@ function drawGrid() {
   }
 }
 
-function drawPlayhead() {
+function drawOverlays() {
   const canvas = playheadCanvas.value;
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, gridWidth.value, canvasHeight.value);
+  const w = gridWidth.value;
+  const h = canvasHeight.value;
+  ctx.clearRect(0, 0, w, h);
+
+  if (showPasteMarker.value) {
+    const markerX = beatToX(pasteMarkerBeat.value);
+    ctx.strokeStyle = PASTE_MARKER_COLOR;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(markerX, 0);
+    ctx.lineTo(markerX, h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   if (!props.playing) return;
 
   const px = beatToX(liveBeat.value);
@@ -1185,7 +1354,7 @@ function drawPlayhead() {
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(px, 0);
-  ctx.lineTo(px, canvasHeight.value);
+  ctx.lineTo(px, h);
   ctx.stroke();
 }
 
@@ -1204,18 +1373,26 @@ watch(
     beatWidth.value,
     rowZoom.value,
     selectedNoteIds.value,
+    pasteMarkerBeat.value,
   ],
   () => nextTick(() => {
     render();
-    drawPlayhead();
+    drawOverlays();
   }),
   { deep: true }
 );
 
 // The playhead redraws every animation frame on its own lightweight overlay
 // canvas, so it never triggers the expensive grid/notes redraw above.
-watch(liveBeat, drawPlayhead);
-watch(() => props.playing, drawPlayhead);
+watch(liveBeat, drawOverlays);
+watch(() => props.playing, drawOverlays);
+
+watch(
+  () => props.activeTrackId,
+  () => {
+    clearSelection();
+  }
+);
 
 // Release the previewed key on mouseup/touchend/blur anywhere, not just
 // inside the keys canvas, so a stray note never gets stuck on if the
@@ -1240,6 +1417,18 @@ function onKeyDown(e) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault();
     selectedNoteIds.value = new Set(getNotes().map((n) => n.id));
+    return;
+  }
+
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+    e.preventDefault();
+    copySelection();
+    return;
+  }
+
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
+    e.preventDefault();
+    pasteClipboard();
   }
 }
 window.addEventListener('keydown', onKeyDown);
@@ -1259,7 +1448,7 @@ window.addEventListener('touchstart', onDocumentMouseDown);
 
 onMounted(() => {
   render();
-  drawPlayhead();
+  drawOverlays();
   // Drum tracks have few, short rows — no need to center-scroll those; MIDI
   // tracks default to scrolling roughly around middle C.
   if (scrollRef.value && !isDrumTrack.value) {

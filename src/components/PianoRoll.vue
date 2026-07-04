@@ -274,11 +274,12 @@
       <!-- Grid -->
       <div
         class="flex-1 overflow-auto overflow-y-hidden-native relative"
+        :class="scrollTouchActionClass"
         ref="scrollRef"
         @scroll="onScroll"
         @wheel="onWheel"
-        @mousedown="onScrollAreaMouseDown"
-        @touchstart="onScrollAreaMouseDown"
+        @mousedown="onScrollAreaPointerDown"
+        @touchstart="onScrollAreaPointerDown"
       >
         <div ref="gridContentRef" class="relative" :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }">
           <canvas
@@ -292,7 +293,6 @@
             @mouseup="onMouseUp"
             @contextmenu="onGridContextMenu"
             @touchstart="onGridTouchStart"
-            @touchmove="onGridTouchMove"
             @touchend="onGridTouchEnd"
             @touchcancel="onGridTouchEnd"
           ></canvas>
@@ -591,6 +591,15 @@ const gridCursorClass = computed(() => {
 const gridTouchActionClass = computed(() =>
   editTool.value === 'zoom' ? 'touch-pan' : ''
 );
+
+// Block native panning on the scroll container while editing — the grid canvas
+// already uses touch-action: none, but some browsers still scroll the parent
+// unless the container opts out too (Select/Move on tablet was scrolling away).
+const scrollTouchActionClass = computed(() =>
+  editTool.value === 'zoom' ? '' : 'touch-none'
+);
+
+let activeGridTouchId = null;
 
 const marqueeStyle = computed(() => {
   const r = marqueeRect.value;
@@ -1212,11 +1221,33 @@ function onWindowDragEnd() {
 }
 
 function onWindowDragTouchMove(e) {
+  if (pinchState.value && e.touches.length >= 2) {
+    e.preventDefault();
+    const scale = pinchDistance(e.touches) / pinchState.value.startDist;
+    applyPinchScale(scale);
+    return;
+  }
+
+  if (isZoomToolActive()) return;
+  if (!isActiveGridTouch(e)) return;
+
+  // Must run in a non-passive listener before the browser commits to scrolling
+  // the overflow container — pendingSelect/pendingMarquee set drag on touchstart,
+  // but a passive canvas touchmove cannot preventDefault in time.
+  e.preventDefault();
+
   if (!drag.value) return;
   const point = touchPoint(e);
   if (!point) return;
-  e.preventDefault();
   onMouseMove(toSyntheticMouseEvent(e, point));
+}
+
+function isActiveGridTouch(e) {
+  if (activeGridTouchId === null) return false;
+  for (const touch of e.touches) {
+    if (touch.identifier === activeGridTouchId) return true;
+  }
+  return false;
 }
 
 function onWindowDragTouchEnd() {
@@ -1488,43 +1519,22 @@ function onGridTouchStart(e) {
 
   const point = touchPoint(e);
   if (!point) return;
-  // Suppresses the browser's default touch handling (callouts, the
-  // mouse-event emulation that would otherwise double-fire this) up front —
-  // scrolling is separately allowed to proceed via the touchmove check below
-  // whenever no note-editing drag actually started.
   e.preventDefault();
+  e.stopPropagation();
+  activeGridTouchId = e.touches[0]?.identifier ?? null;
   bindPreviewTouch(e);
   onMouseDown(toSyntheticMouseEvent(e, point));
-}
-
-function onGridTouchMove(e) {
-  if (pinchState.value && e.touches.length >= 2) {
-    e.preventDefault();
-    const scale = pinchDistance(e.touches) / pinchState.value.startDist;
-    applyPinchScale(scale);
-    return;
-  }
-
-  if (isZoomToolActive()) return;
-
-  const point = touchPoint(e);
-  if (!point) return;
-  // Only block native scrolling once we're actually mid-edit (painting,
-  // moving, resizing, or marquee-selecting) — a touch-drag with nothing
-  // grabbed (e.g. starting a marquee via a two-finger/modifier gesture, on
-  // devices that support one) is left alone so the grid can still be panned.
-  if (drag.value) e.preventDefault();
-  onMouseMove(toSyntheticMouseEvent(e, point));
 }
 
 function onGridTouchEnd(e) {
   if (pinchState.value && (!e || e.touches.length < 2)) {
     pinchState.value = null;
-    return;
   }
-  if (isZoomToolActive()) return;
-  onWindowDragEnd();
-  onPreviewTouchEnd(e);
+  if (!isZoomToolActive()) {
+    onWindowDragEnd();
+    onPreviewTouchEnd(e);
+  }
+  activeGridTouchId = null;
 }
 
 function bindPreviewTouch(e) {
@@ -1708,8 +1718,11 @@ function onVelocityResizeStart(e) {
 // container can be larger — leaving empty background beyond the canvas that
 // the canvas's own mousedown handler never sees. Clicking there should still
 // deselect, same as clicking anywhere else outside the actual note grid.
-function onScrollAreaMouseDown(e) {
+function onScrollAreaPointerDown(e) {
   if (e.target === scrollRef.value) clearSelection();
+  if (e.type === 'touchstart' && !isZoomToolActive() && gridContentRef.value?.contains(e.target)) {
+    e.preventDefault();
+  }
 }
 
 // Clicking a bar's own background (the gaps around its controls, not the
@@ -1975,7 +1988,7 @@ window.addEventListener('touchcancel', onPreviewTouchEnd);
 window.addEventListener('blur', stopPreview);
 window.addEventListener('mousemove', onWindowDragMove);
 window.addEventListener('mouseup', onWindowDragEnd);
-window.addEventListener('touchmove', onWindowDragTouchMove, { passive: false });
+window.addEventListener('touchmove', onWindowDragTouchMove, { passive: false, capture: true });
 window.addEventListener('touchend', onWindowDragTouchEnd);
 window.addEventListener('touchcancel', onWindowDragTouchEnd);
 
@@ -2051,7 +2064,7 @@ onUnmounted(() => {
   window.removeEventListener('blur', stopPreview);
   window.removeEventListener('mousemove', onWindowDragMove);
   window.removeEventListener('mouseup', onWindowDragEnd);
-  window.removeEventListener('touchmove', onWindowDragTouchMove);
+  window.removeEventListener('touchmove', onWindowDragTouchMove, { capture: true });
   window.removeEventListener('touchend', onWindowDragTouchEnd);
   window.removeEventListener('touchcancel', onWindowDragTouchEnd);
 });

@@ -140,7 +140,7 @@
       >
         <VolumeSlider
           wide
-          class="w-20"
+          class="w-24"
           :model-value="activeTrack.volume ?? 1"
           @update:model-value="(v) => emit('update-track', activeTrackId, { volume: v })"
         />

@@ -3,7 +3,7 @@
     class="toolbar-field inline-flex flex-col items-center gap-px flex-shrink-0"
     :title="title"
   >
-    <div class="toolbar-field__control flex items-center justify-center min-h-[22px]">
+    <div class="toolbar-field__control flex items-center justify-center min-h-[28px]">
       <slot />
     </div>
     <span

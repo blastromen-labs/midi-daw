@@ -3,7 +3,7 @@
     <div
       v-for="pad in pads"
       :key="pad.id"
-      class="pad-row flex items-center gap-1 px-1 border-b border-line/60 group"
+      class="pad-row flex items-center gap-0.5 px-1 border-b border-line/60 group"
       :style="{ height: rowHeight + 'px' }"
     >
       <button

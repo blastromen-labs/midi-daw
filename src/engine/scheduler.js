@@ -28,6 +28,10 @@ const MIN_GATE_MS = 10;
 // internal clock's much larger lookahead window.
 const SCHEDULE_WINDOW_SLACK_SEC = 0.05;
 
+function trackLoopLengthBeats(track) {
+  return (track.patternSteps ?? 16) / 4;
+}
+
 export class PlaybackEngine {
   constructor() {
     this.project = null;
@@ -156,28 +160,28 @@ export class PlaybackEngine {
     if (!this.project) return;
 
     const clock = this._clock;
-    const loopLen = clock.loopLengthBeats;
-    if (loopLen <= 0) return;
-
     const absBeat = clock.getAbsoluteBeat();
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
 
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
 
+      const trackLoopLen = trackLoopLengthBeats(track);
+      if (trackLoopLen <= 0) continue;
+
       for (const note of track.notes) {
-        if (note.startBeat < clock.loopStartBeat || note.startBeat >= clock.loopEndBeat) continue;
+        if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
 
         let occurrence = note.startBeat;
         if (occurrence < absBeat - 0.01) {
-          const loopsElapsed = Math.floor((absBeat - note.startBeat) / loopLen);
-          occurrence = note.startBeat + loopsElapsed * loopLen;
-          if (occurrence < absBeat - 0.01) occurrence += loopLen;
+          const loopsElapsed = Math.floor((absBeat - note.startBeat) / trackLoopLen);
+          occurrence = note.startBeat + loopsElapsed * trackLoopLen;
+          if (occurrence < absBeat - 0.01) occurrence += trackLoopLen;
         }
 
         while (occurrence <= endAbsBeat) {
           const startTime = clock.beatToAudioTime(occurrence);
-          const iteration = Math.round((occurrence - note.startBeat) / loopLen);
+          const iteration = Math.round((occurrence - note.startBeat) / trackLoopLen);
           const noteKey = `n-${track.id}-${note.id}-${iteration}`;
 
           if (
@@ -193,7 +197,7 @@ export class PlaybackEngine {
               this._triggerMidiNote(track, note, onDelay, occurrence, clock);
             }
           }
-          occurrence += loopLen;
+          occurrence += trackLoopLen;
         }
       }
     }

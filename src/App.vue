@@ -5,11 +5,9 @@
         <PianoRoll
           :tracks="project.tracks"
           :active-track-id="activeTrackId"
-          :loop-end-beat="project.loopEndBeat"
           :playing="playing"
           :midi-outputs="midiOutputs"
           :bpm="project.bpm"
-          :pattern-steps="project.patternSteps"
           :send-midi-clock="project.sendMidiClock"
           :clock-output-id="project.clockOutputId"
           :sync-mode="project.syncMode"
@@ -28,7 +26,6 @@
           @delete-track="removeTrack"
           @toggle-play="togglePlay"
           @bpm-change="setBpm"
-          @steps-change="setPatternSteps"
           @toggle-clock="project.sendMidiClock = !project.sendMidiClock"
           @clock-output-change="project.clockOutputId = $event"
           @sync-mode-change="project.syncMode = $event"
@@ -52,6 +49,7 @@ import {
   createDrumTrack,
   createDrumPad,
   randomTrackColor,
+  projectLoopEndBeat,
 } from './models/project.js';
 import {
   initMidi,
@@ -81,12 +79,15 @@ let outputsUnsub = null;
 let inputsUnsub = null;
 let clockInputUnsub = null; // subscription to the selected external MIDI clock input
 
-// Song-structure settings (not tempo) apply to both clocks so switching sync
-// mode mid-project doesn't lose pattern length/loop range.
-function applyPatternSettings(clock) {
-  clock.patternSteps = project.patternSteps;
-  clock.loopStartBeat = project.loopStartBeat;
-  clock.loopEndBeat = project.loopEndBeat;
+// Transport loop spans the longest track pattern so shorter patterns can
+// repeat independently inside the scheduler while the master clock keeps running.
+function syncClockLoopFromTracks() {
+  const loopEndBeat = projectLoopEndBeat(project.tracks);
+  for (const clock of [transport, externalClock]) {
+    clock.loopStartBeat = 0;
+    clock.loopEndBeat = loopEndBeat;
+    clock.patternSteps = loopEndBeat * 4;
+  }
 }
 
 function bindPlayingListener(clock) {
@@ -108,7 +109,7 @@ function engageSyncMode() {
   playback.stop();
 
   if (project.syncMode === 'external') {
-    applyPatternSettings(externalClock);
+    syncClockLoopFromTracks();
     setActiveClock(externalClock);
     bindPlayingListener(externalClock);
 
@@ -120,7 +121,7 @@ function engageSyncMode() {
     playback.start();
   } else {
     setActiveClock(transport);
-    applyPatternSettings(transport);
+    syncClockLoopFromTracks();
     transport.bpm = project.bpm;
     bindPlayingListener(transport);
     playing.value = false;
@@ -168,11 +169,8 @@ watch(
 );
 
 watch(
-  () => [project.patternSteps, project.loopEndBeat],
-  () => {
-    applyPatternSettings(transport);
-    applyPatternSettings(externalClock);
-  },
+  () => projectLoopEndBeat(project.tracks),
+  () => syncClockLoopFromTracks(),
   { immediate: true }
 );
 
@@ -189,7 +187,7 @@ function startPlayback() {
   if (project.syncMode === 'external') return;
   playback.setProject(project);
   transport.bpm = project.bpm;
-  applyPatternSettings(transport);
+  syncClockLoopFromTracks();
   playback.start();
   playing.value = true;
 }
@@ -203,13 +201,6 @@ function stopPlayback() {
 function setBpm(bpm) {
   project.bpm = Math.max(40, Math.min(300, bpm));
   if (project.syncMode === 'internal') transport.bpm = project.bpm;
-}
-
-function setPatternSteps(steps) {
-  project.patternSteps = steps;
-  project.loopEndBeat = steps / 4;
-  applyPatternSettings(transport);
-  applyPatternSettings(externalClock);
 }
 
 function findTrack(trackId) {

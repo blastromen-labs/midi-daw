@@ -19,12 +19,13 @@ export function randomTrackColor(exclude = []) {
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
-export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor()) {
+export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), patternSteps = 16) {
   return {
     id: uid(),
     kind: 'midi',
     name,
     color,
+    patternSteps,
     midiOutputId: '',
     midiChannel: 0,
     // Note.pitch here is a real MIDI pitch number (0-127).
@@ -53,12 +54,13 @@ export const DEFAULT_DRUM_PADS = [
   ['Rim', '#d16fae'],
 ];
 
-export function createDrumTrack(name = 'Drums 1', color = randomTrackColor()) {
+export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), patternSteps = 16) {
   return {
     id: uid(),
     kind: 'drum',
     name,
     color,
+    patternSteps,
     volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
     // Note.pitch here is a pad id (string), not a MIDI pitch — it identifies
@@ -67,12 +69,26 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor()) {
   };
 }
 
+// Step counts for 1/2/4/8 bars at 16 steps per bar (4 steps per beat).
+export const BAR_LENGTH_OPTIONS = [
+  { bars: 1, steps: 16 },
+  { bars: 2, steps: 32 },
+  { bars: 4, steps: 64 },
+  { bars: 8, steps: 128 },
+];
+
+export function trackLoopEndBeat(track) {
+  return (track?.patternSteps ?? 16) / 4;
+}
+
+export function projectLoopEndBeat(tracks) {
+  if (!tracks?.length) return 4;
+  return Math.max(...tracks.map(trackLoopEndBeat));
+}
+
 export function createProject() {
   return {
     bpm: 120,
-    patternSteps: 16,
-    loopStartBeat: 0,
-    loopEndBeat: 4,
     sendMidiClock: false,
     clockOutputId: '',
     // 'internal': this app is the master clock (default).
@@ -80,9 +96,9 @@ export function createProject() {
     syncMode: 'internal',
     clockInputId: '',
     tracks: [
-      createDrumTrack('Drums 1', TRACK_ACCENT_COLORS[3]),
-      createMidiTrack('Synth 1', TRACK_ACCENT_COLORS[1]),
-      createMidiTrack('Synth 2', TRACK_ACCENT_COLORS[2]),
+      createDrumTrack('Drums 1', TRACK_ACCENT_COLORS[3], 16),
+      createMidiTrack('Synth 1', TRACK_ACCENT_COLORS[1], 32),
+      createMidiTrack('Synth 2', TRACK_ACCENT_COLORS[2], 64),
     ],
   };
 }

@@ -50,16 +50,14 @@
         ></span>
       </template>
 
-      <ToolbarField label="Bar">
+      <ToolbarField v-if="activeTrack" label="Bar">
         <select
-          :value="patternSteps"
-          @change="(e) => $emit('steps-change', Number(e.target.value))"
-          class="text-xs w-9 text-center flex-shrink-0 py-0.5 px-1"
-          title="Bar length"
+          :value="activePatternSteps"
+          @change="(e) => emit('update-track', activeTrackId, { patternSteps: Number(e.target.value) })"
+          class="toolbar-compact text-xs w-9 text-center"
+          title="Bar length for this track"
         >
-          <option :value="16">1</option>
-          <option :value="32">2</option>
-          <option :value="64">4</option>
+          <option v-for="opt in barLengthOptions" :key="opt.steps" :value="opt.steps">{{ opt.bars }}</option>
         </select>
       </ToolbarField>
 
@@ -313,7 +311,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR } from '../models/project.js';
+import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, trackLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { getActiveClock } from '../engine/activeClock.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
@@ -341,12 +339,10 @@ const PASTE_MARKER_COLOR = '#b794f6';
 const props = defineProps({
   tracks: { type: Array, required: true },
   activeTrackId: String,
-  loopEndBeat: { type: Number, default: 4 },
   playing: Boolean,
   midiOutputs: { type: Array, default: () => [] },
   // Transport — merged in here so this toolbar is the app's only nav bar.
   bpm: Number,
-  patternSteps: Number,
   sendMidiClock: Boolean,
   clockOutputId: String,
   syncMode: { type: String, default: 'internal' },
@@ -355,6 +351,7 @@ const props = defineProps({
 });
 
 const liveBeat = usePlayheadBeat();
+const barLengthOptions = BAR_LENGTH_OPTIONS;
 
 const emit = defineEmits([
   'update-notes',
@@ -370,7 +367,6 @@ const emit = defineEmits([
   'delete-track',
   'toggle-play',
   'bpm-change',
-  'steps-change',
   'toggle-clock',
   'clock-output-change',
   'sync-mode-change',
@@ -418,10 +414,18 @@ const velocityHeight = ref(DEFAULT_VELOCITY_HEIGHT);
 // still just a click (or drag) away on the resize handle above it.
 const velocityCollapsed = ref(true);
 
-const gridWidth = computed(() => props.loopEndBeat * beatWidth.value);
+const gridWidth = computed(() => activeLoopEndBeat.value * beatWidth.value);
 
 const activeTrack = computed(() => props.tracks.find((t) => t.id === props.activeTrackId));
 const isDrumTrack = computed(() => activeTrack.value?.kind === 'drum');
+const activePatternSteps = computed(() => activeTrack.value?.patternSteps ?? 16);
+const activeLoopEndBeat = computed(() => trackLoopEndBeat(activeTrack.value));
+// Playhead wraps to the active track's pattern length in the piano roll view.
+const displayPlayheadBeat = computed(() => {
+  const len = activeLoopEndBeat.value;
+  if (len <= 0) return liveBeat.value;
+  return ((liveBeat.value % len) + len) % len;
+});
 // Track accent colors are menu-only; MIDI notes always use the green palette.
 const noteDrawColor = computed(() =>
   isDrumTrack.value ? (activeTrack.value?.color ?? DEFAULT_NOTE_COLOR) : MIDI_NOTE_COLOR,
@@ -1347,7 +1351,7 @@ function drawOverlays() {
 
   if (!props.playing) return;
 
-  const px = beatToX(liveBeat.value);
+  const px = beatToX(displayPlayheadBeat.value);
   // Kept a distinct warm color (not part of the greenish note palette) so the
   // playhead never blends visually into the notes it's scrubbing across.
   ctx.strokeStyle = '#ffb454';
@@ -1368,7 +1372,7 @@ watch(
   () => [
     props.tracks,
     props.activeTrackId,
-    props.loopEndBeat,
+    activeLoopEndBeat.value,
     snap.value,
     beatWidth.value,
     rowZoom.value,
@@ -1385,6 +1389,7 @@ watch(
 // The playhead redraws every animation frame on its own lightweight overlay
 // canvas, so it never triggers the expensive grid/notes redraw above.
 watch(liveBeat, drawOverlays);
+watch(displayPlayheadBeat, drawOverlays);
 watch(() => props.playing, drawOverlays);
 
 watch(

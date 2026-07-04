@@ -4,6 +4,7 @@
     <div
       class="flex items-center gap-3 px-3 py-2 bg-surface border-b border-line flex-shrink-0"
       @mousedown="onToolbarMouseDown"
+      @touchstart="onToolbarMouseDown"
     >
       <select :value="activeTrackId" @change="onTrackSelect" class="text-sm font-semibold">
         <option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</option>
@@ -106,6 +107,10 @@
           class="block cursor-pointer"
           @mousedown="onKeyMouseDown"
           @mousemove="onKeyMouseMove"
+          @touchstart="onKeyTouchStart"
+          @touchmove="onKeyTouchMove"
+          @touchend="stopPreview"
+          @touchcancel="stopPreview"
         ></canvas>
         <DrumPadList
           v-else-if="activeTrack"
@@ -120,7 +125,14 @@
       </div>
 
       <!-- Grid -->
-      <div class="flex-1 overflow-auto" ref="scrollRef" @scroll="onScroll" @wheel="onWheel" @mousedown="onScrollAreaMouseDown">
+      <div
+        class="flex-1 overflow-auto"
+        ref="scrollRef"
+        @scroll="onScroll"
+        @wheel="onWheel"
+        @mousedown="onScrollAreaMouseDown"
+        @touchstart="onScrollAreaMouseDown"
+      >
         <div class="relative" :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }">
           <canvas
             ref="gridCanvas"
@@ -133,6 +145,10 @@
             @mouseup="onMouseUp"
             @mouseleave="onMouseUp"
             @contextmenu="onGridContextMenu"
+            @touchstart="onGridTouchStart"
+            @touchmove="onGridTouchMove"
+            @touchend="onGridTouchEnd"
+            @touchcancel="onGridTouchEnd"
           ></canvas>
           <!-- Cheap overlay redrawn every animation frame; keeps the expensive
                grid/notes canvas untouched so it never competes with the audio scheduler. -->
@@ -157,6 +173,7 @@
       class="flex-shrink-0 h-2 bg-line hover:bg-line-light cursor-row-resize flex items-center justify-center transition-colors"
       title="Drag to resize — click to collapse/expand"
       @mousedown="onVelocityResizeStart"
+      @touchstart="onVelocityResizeStart"
     >
       <div class="flex gap-0.5 pointer-events-none">
         <span v-for="i in 5" :key="i" class="w-0.5 h-0.5 rounded-full bg-muted-dim"></span>
@@ -169,6 +186,7 @@
         class="flex-shrink-0 bg-panel border-r border-t border-line flex items-center justify-center select-none"
         :style="{ width: keysWidth + 'px' }"
         @mousedown="clearSelection"
+        @touchstart="clearSelection"
       >
         <span class="text-[10px] font-semibold text-accent tracking-widest vertical-label">VEL</span>
       </div>
@@ -744,6 +762,57 @@ function onMouseUp() {
   drag.value = null;
 }
 
+// Touch support: forwards to the same mouse handlers above with a
+// synthetic event carrying just the fields they read (clientX/clientY,
+// button, modifier keys). This reuses all existing draw/move/resize/erase
+// logic as-is rather than duplicating it for touch — modifier-only gestures
+// (Cmd/Ctrl-drag marquee, Shift-drag clone) simply aren't reachable via a
+// single touch, which is an acceptable limitation, not a bug.
+function touchPoint(e) {
+  const t = e.touches[0] ?? e.changedTouches[0];
+  return t ? { clientX: t.clientX, clientY: t.clientY } : null;
+}
+
+function toSyntheticMouseEvent(e, point) {
+  return {
+    clientX: point.clientX,
+    clientY: point.clientY,
+    button: 0,
+    shiftKey: false,
+    metaKey: false,
+    ctrlKey: false,
+    target: e.target,
+    currentTarget: e.currentTarget,
+    preventDefault: () => e.preventDefault(),
+  };
+}
+
+function onGridTouchStart(e) {
+  const point = touchPoint(e);
+  if (!point) return;
+  // Suppresses the browser's default touch handling (callouts, the
+  // mouse-event emulation that would otherwise double-fire this) up front —
+  // scrolling is separately allowed to proceed via the touchmove check below
+  // whenever no note-editing drag actually started.
+  e.preventDefault();
+  onMouseDown(toSyntheticMouseEvent(e, point));
+}
+
+function onGridTouchMove(e) {
+  const point = touchPoint(e);
+  if (!point) return;
+  // Only block native scrolling once we're actually mid-edit (painting,
+  // moving, resizing, or marquee-selecting) — an idle touch-drag over empty
+  // space with nothing grabbed is left alone so the grid can still be
+  // panned by touch (e.g. in the Select tool).
+  if (drag.value) e.preventDefault();
+  onMouseMove(toSyntheticMouseEvent(e, point));
+}
+
+function onGridTouchEnd() {
+  onMouseUp();
+}
+
 function playPreview(pitch) {
   const track = activeTrack.value;
   if (track?.midiOutputId) {
@@ -779,6 +848,20 @@ function onKeyMouseMove(e) {
   playPreview(pitch);
 }
 
+function onKeyTouchStart(e) {
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  onKeyMouseDown(toSyntheticMouseEvent(e, point));
+}
+
+function onKeyTouchMove(e) {
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  onKeyMouseMove(toSyntheticMouseEvent(e, point));
+}
+
 function onScroll() {
   if (keysRef.value && scrollRef.value) {
     keysRef.value.scrollTop = scrollRef.value.scrollTop;
@@ -797,17 +880,26 @@ function toggleVelocityCollapse() {
 // dedicated header label to click instead.
 const CLICK_DRAG_THRESHOLD_PX = 3;
 
+// Reads clientY off either a MouseEvent or a TouchEvent so the drag logic
+// below doesn't need two copies — touchend has no `.touches` left, hence
+// the `changedTouches` fallback.
+function clientYOf(e) {
+  const touch = e.touches?.[0] ?? e.changedTouches?.[0];
+  return touch ? touch.clientY : e.clientY;
+}
+
 function onVelocityResizeStart(e) {
   e.preventDefault();
-  const startY = e.clientY;
+  const startY = clientYOf(e);
   const startHeight = velocityCollapsed.value ? 0 : velocityHeight.value;
   const prevUserSelect = document.body.style.userSelect;
   document.body.style.userSelect = 'none';
   let dragged = false;
 
   function onMove(ev) {
-    if (Math.abs(ev.clientY - startY) > CLICK_DRAG_THRESHOLD_PX) dragged = true;
-    const proposedHeight = startHeight + (startY - ev.clientY);
+    const y = clientYOf(ev);
+    if (Math.abs(y - startY) > CLICK_DRAG_THRESHOLD_PX) dragged = true;
+    const proposedHeight = startHeight + (startY - y);
     if (proposedHeight <= VELOCITY_COLLAPSE_THRESHOLD) {
       velocityCollapsed.value = true;
     } else {
@@ -820,11 +912,15 @@ function onVelocityResizeStart(e) {
     document.body.style.userSelect = prevUserSelect;
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('touchmove', onMove);
+    window.removeEventListener('touchend', onUp);
     if (!dragged) toggleVelocityCollapse();
   }
 
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onUp);
+  window.addEventListener('touchmove', onMove);
+  window.addEventListener('touchend', onUp);
 }
 
 function clearSelection() {
@@ -1071,9 +1167,11 @@ watch(
 watch(liveBeat, drawPlayhead);
 watch(() => props.playing, drawPlayhead);
 
-// Release the previewed key on mouseup/blur anywhere, not just inside the
-// keys canvas, so a stray note never gets stuck on if the pointer drifts off.
+// Release the previewed key on mouseup/touchend/blur anywhere, not just
+// inside the keys canvas, so a stray note never gets stuck on if the
+// pointer/finger drifts off.
 window.addEventListener('mouseup', stopPreview);
+window.addEventListener('touchend', stopPreview);
 window.addEventListener('blur', stopPreview);
 
 // Cmd/Ctrl+A selects every note in the active track instead of the browser's
@@ -1107,6 +1205,7 @@ function onDocumentMouseDown(e) {
   }
 }
 window.addEventListener('mousedown', onDocumentMouseDown);
+window.addEventListener('touchstart', onDocumentMouseDown);
 
 onMounted(() => {
   render();
@@ -1121,8 +1220,10 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('mousedown', onDocumentMouseDown);
+  window.removeEventListener('touchstart', onDocumentMouseDown);
   stopPreview();
   window.removeEventListener('mouseup', stopPreview);
+  window.removeEventListener('touchend', stopPreview);
   window.removeEventListener('blur', stopPreview);
 });
 </script>
@@ -1135,5 +1236,12 @@ onUnmounted(() => {
 .vertical-label {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
+}
+
+/* Disables double-tap-to-zoom/pinch on the note-editing surfaces without
+   blocking single-finger panning — panning is still allowed so the Select
+   tool can be used to scroll the grid by touch (see onGridTouchMove). */
+.piano-roll canvas {
+  touch-action: manipulation;
 }
 </style>

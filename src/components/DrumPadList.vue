@@ -11,6 +11,7 @@
         :style="{ background: pad.color }"
         title="Click to preview sample"
         @mousedown.prevent="preview(pad)"
+        @touchstart.prevent="preview(pad)"
       ></button>
 
       <input

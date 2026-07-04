@@ -4,11 +4,15 @@
       ref="canvas"
       :width="gridWidth"
       :height="height"
-      class="block cursor-ns-resize"
+      class="block cursor-ns-resize touch-none"
       @mousedown="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
       @mouseleave="onMouseUp"
+      @touchstart="onTouchStart"
+      @touchmove="onTouchMove"
+      @touchend="onMouseUp"
+      @touchcancel="onMouseUp"
     ></canvas>
   </div>
 </template>
@@ -160,6 +164,29 @@ function onMouseUp() {
   drag.value = null;
 }
 
+// Touch support: a paint/nudge drag here always consumes the gesture (this
+// lane doesn't scroll on its own — its horizontal position is driven by the
+// `scrollLeft` prop from the piano roll above), so unlike the main grid,
+// touchmove can unconditionally preventDefault without any panning trade-off.
+function touchPoint(e) {
+  const t = e.touches[0] ?? e.changedTouches[0];
+  return t ? { clientX: t.clientX, clientY: t.clientY } : null;
+}
+
+function onTouchStart(e) {
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  onMouseDown({ clientX: point.clientX, clientY: point.clientY });
+}
+
+function onTouchMove(e) {
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  onMouseMove({ clientX: point.clientX, clientY: point.clientY });
+}
+
 function render() {
   const c = canvas.value;
   if (!c) return;
@@ -224,11 +251,13 @@ watch(
 
 onMounted(render);
 
-// A drag started here can outlive the mouse leaving the canvas — release it
-// on a stray mouseup anywhere, matching the pattern used elsewhere in the
-// piano roll so a drag can never get stuck active.
+// A drag started here can outlive the mouse/touch leaving the canvas —
+// release it on a stray mouseup/touchend anywhere, matching the pattern used
+// elsewhere in the piano roll so a drag can never get stuck active.
 window.addEventListener('mouseup', onMouseUp);
+window.addEventListener('touchend', onMouseUp);
 onUnmounted(() => {
   window.removeEventListener('mouseup', onMouseUp);
+  window.removeEventListener('touchend', onMouseUp);
 });
 </script>

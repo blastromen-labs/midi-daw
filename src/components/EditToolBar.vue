@@ -14,6 +14,52 @@
       >
         <component :is="tool.icon" class="w-3.5 h-3.5" />
       </button>
+      <div class="h-4 w-px bg-line-light flex-shrink-0 mx-0.5"></div>
+
+      <button
+        type="button"
+        class="w-7 h-7 rounded flex items-center justify-center bg-surface-hover hover:bg-surface-active text-muted transition-colors"
+        title="Select all notes (⌘A)"
+        @click="$emit('select-all')"
+      >
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="w-7 h-7 rounded flex items-center justify-center transition-colors"
+        :class="hasSelection
+          ? 'bg-surface-hover hover:bg-surface-active text-muted'
+          : 'bg-surface-hover/40 text-muted/30 cursor-not-allowed'"
+        title="Copy selection (⌘C)"
+        :disabled="!hasSelection"
+        @click="$emit('copy')"
+      >
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="w-7 h-7 rounded flex items-center justify-center transition-colors"
+        :class="hasClipboard
+          ? 'bg-surface-hover hover:bg-surface-active text-muted'
+          : 'bg-surface-hover/40 text-muted/30 cursor-not-allowed'"
+        title="Paste at marker (⌘V)"
+        :disabled="!hasClipboard"
+        @click="$emit('paste')"
+      >
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+          <rect x="8" y="2" width="8" height="4" rx="1" />
+        </svg>
+      </button>
+
       <button
         v-if="hasSelection"
         type="button"
@@ -37,9 +83,10 @@ import ToolbarField from './ToolbarField.vue';
 defineProps({
   modelValue: { type: String, default: 'multi' },
   hasSelection: { type: Boolean, default: false },
+  hasClipboard: { type: Boolean, default: false },
 });
 
-defineEmits(['update:modelValue', 'delete-selection']);
+defineEmits(['update:modelValue', 'delete-selection', 'select-all', 'copy', 'paste']);
 
 const IconMulti = {
   render() {

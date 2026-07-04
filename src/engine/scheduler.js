@@ -51,11 +51,16 @@ const SCHEDULE_WINDOW_SLACK_SEC = 0.05;
 // Splitting the window lets the incoming pattern be scheduled ahead of time,
 // exactly like the outgoing one, so both sides of the switch get the same
 // timing guarantees.
-function trackSchedulingSegments(track, rangeStart, rangeEnd) {
-  const currentPattern = getPlayingPattern(track);
+function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch) {
+  const currentPattern = getPlayingPattern(track, { useLiveLaunch });
   const launchBeat = track.pendingLaunchBeat;
 
-  if (track.pendingPatternId == null || launchBeat == null || launchBeat > rangeEnd) {
+  if (
+    !useLiveLaunch ||
+    track.pendingPatternId == null ||
+    launchBeat == null ||
+    launchBeat > rangeEnd
+  ) {
     return [{ pattern: currentPattern, rangeStart, rangeEnd }];
   }
 
@@ -230,13 +235,14 @@ export class PlaybackEngine {
 
     const clock = this._clock;
     const absBeat = clock.getAbsoluteBeat();
+    const useLiveLaunch = this.project.sessionView === 'live';
     // Promote any Live-mode launches whose bar has arrived before scheduling
     // this pass's notes, so playingPatternId/pendingPatternId (and the Live
     // view's queued/playing indicators) flip at the right time. The note
     // scheduling below doesn't depend on this having run yet — it reaches
     // across a pending boundary itself via trackSchedulingSegments — this is
     // purely about keeping the track's state/UI in sync with the transport.
-    commitDuePatternLaunches(this.project.tracks, absBeat);
+    if (useLiveLaunch) commitDuePatternLaunches(this.project.tracks, absBeat);
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
     const useTransportLoop = !!this.project.loopRegion;
     const loopStart = clock.loopStartBeat;
@@ -246,7 +252,12 @@ export class PlaybackEngine {
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
 
-      for (const { pattern, rangeStart, rangeEnd } of trackSchedulingSegments(track, absBeat, endAbsBeat)) {
+      for (const { pattern, rangeStart, rangeEnd } of trackSchedulingSegments(
+        track,
+        absBeat,
+        endAbsBeat,
+        useLiveLaunch
+      )) {
         if (!pattern || rangeEnd < rangeStart) continue;
 
         const trackLoopLen = patternLoopEndBeat(pattern);

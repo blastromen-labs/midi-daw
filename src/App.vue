@@ -117,7 +117,10 @@ let clockInputUnsub = null; // subscription to the selected external MIDI clock 
 // Transport loop spans the longest track pattern (or a user-drawn loop region)
 // so shorter patterns can repeat independently inside the scheduler.
 function syncClockLoopFromTracks() {
-  const patternEndBeat = projectLoopEndBeat(project.tracks, { forPlayback: playing.value });
+  const patternEndBeat = projectLoopEndBeat(project.tracks, {
+    forPlayback: playing.value,
+    useLiveLaunch: project.sessionView === 'live',
+  });
   const region = project.loopRegion;
   const loopStartBeat = region ? region.startBeat : 0;
   const loopEndBeat = region ? Math.min(region.endBeat, patternEndBeat) : patternEndBeat;
@@ -216,10 +219,23 @@ watch(
   // state, not just the edited pattern lengths — otherwise a Live-mode
   // launch that swaps in a differently-sized pattern (via playingPatternId)
   // wouldn't resize the transport's loop/wrap boundary while already playing.
-  () => [projectLoopEndBeat(project.tracks, { forPlayback: playing.value }), playing.value],
+  // In piano-roll mode, playback follows activePatternId instead, so loop
+  // length must follow that same source of truth.
+  () => [
+    projectLoopEndBeat(project.tracks, {
+      forPlayback: playing.value,
+      useLiveLaunch: project.sessionView === 'live',
+    }),
+    playing.value,
+    project.sessionView,
+  ],
   () => syncClockLoopFromTracks(),
   { immediate: true }
 );
+
+watch(viewMode, (mode) => {
+  project.sessionView = mode;
+}, { immediate: true });
 
 function togglePlay(fromBeat) {
   if (project.syncMode === 'external') return; // controlled by the incoming MIDI clock

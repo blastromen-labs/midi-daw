@@ -47,12 +47,14 @@ export function getActivePattern(track) {
 // mode arms this, toggling the track off once its pattern finishes looping.
 export const STOPPED_PATTERN = '__stopped__';
 
-// Which pattern a track plays during transport — null means "same as active".
-// Live mode sets playingPatternId independently of activePatternId so you
-// can edit one pattern while another one is looping/launched, and can also
-// set it to STOPPED_PATTERN to silence the track entirely.
-export function getPlayingPattern(track) {
+// Which pattern a track plays during transport.
+// Piano-roll mode always follows activePatternId (the tab selected in PatternBar).
+// Live mode uses playingPatternId independently so you can edit one pattern
+// while another loops; null there means "same as active", and STOPPED_PATTERN
+// silences the track entirely.
+export function getPlayingPattern(track, { useLiveLaunch = true } = {}) {
   if (!track?.patterns?.length) return null;
+  if (!useLiveLaunch) return getActivePattern(track);
   if (track.playingPatternId === STOPPED_PATTERN) return null;
   const id = track.playingPatternId ?? track.activePatternId;
   return track.patterns.find((p) => p.id === id) ?? track.patterns[0];
@@ -156,19 +158,23 @@ export function trackLoopEndBeat(track) {
   return patternLoopEndBeat(getActivePattern(track));
 }
 
-export function trackPlayingLoopEndBeat(track) {
-  return patternLoopEndBeat(getPlayingPattern(track));
+export function trackPlayingLoopEndBeat(track, { useLiveLaunch = true } = {}) {
+  return patternLoopEndBeat(getPlayingPattern(track, { useLiveLaunch }));
 }
 
-export function projectLoopEndBeat(tracks, { forPlayback = false } = {}) {
+export function projectLoopEndBeat(tracks, { forPlayback = false, useLiveLaunch = true } = {}) {
   if (!tracks?.length) return 4;
-  const endBeat = forPlayback ? trackPlayingLoopEndBeat : trackLoopEndBeat;
+  const endBeat =
+    forPlayback && useLiveLaunch ? (t) => trackPlayingLoopEndBeat(t, { useLiveLaunch }) : trackLoopEndBeat;
   return Math.max(...tracks.map(endBeat));
 }
 
 export function createProject() {
   return {
     bpm: 120,
+    // 'roll': piano-roll editing — playback follows each track's activePatternId.
+    // 'live': session grid — playback follows playingPatternId / queued launches.
+    sessionView: 'roll',
     sendMidiClock: false,
     clockOutputId: '',
     // 'internal': this app is the master clock (default).

@@ -165,7 +165,11 @@
       <EditToolBar
         v-model="editTool"
         :has-selection="hasSelection"
+        :has-clipboard="hasClipboard"
         @delete-selection="deleteSelectedNotes"
+        @select-all="selectAllNotes"
+        @copy="copySelection"
+        @paste="pasteClipboard"
       />
 
       <div class="flex-1"></div>
@@ -563,6 +567,7 @@ function onTogglePlay() {
 }
 
 const hasSelection = computed(() => selectedNoteIds.value.size > 0);
+const hasClipboard = computed(() => (noteClipboard.value?.items?.length ?? 0) > 0);
 
 const gridCursorClass = computed(() => {
   if (drag.value?.type === 'move') return 'cursor-grabbing';
@@ -667,6 +672,10 @@ function emitNotes(notes) {
 
 function rowIndexOf(key) {
   return keyToIndex.value.get(key) ?? 0;
+}
+
+function selectAllNotes() {
+  selectedNoteIds.value = new Set(getNotes().map((n) => n.id));
 }
 
 function copySelection() {
@@ -1917,7 +1926,7 @@ function onKeyDown(e) {
 
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault();
-    selectedNoteIds.value = new Set(getNotes().map((n) => n.id));
+    selectAllNotes();
     return;
   }
 

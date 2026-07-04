@@ -1921,6 +1921,12 @@ function onKeyDown(e) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
     e.preventDefault();
     pasteClipboard();
+    return;
+  }
+
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNoteIds.value.size > 0) {
+    e.preventDefault();
+    deleteSelectedNotes();
   }
 }
 window.addEventListener('keydown', onKeyDown);

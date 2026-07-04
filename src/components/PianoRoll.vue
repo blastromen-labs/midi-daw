@@ -1341,7 +1341,7 @@ function drawGrid() {
     const y = pitchToY(note.pitch);
     const nw = note.duration * beatWidth.value;
     const isSelected = selectedNoteIds.value.has(note.id);
-    const noteRect = [x + 1, y + 1, nw - 2, rh - 2];
+    const noteRect = [x + 1, y + 1, nw - 1, rh - 1];
 
     const grad = ctx.createLinearGradient(0, noteRect[1], 0, noteRect[1] + noteRect[3]);
     grad.addColorStop(0, topColor);

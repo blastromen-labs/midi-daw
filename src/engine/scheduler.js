@@ -9,7 +9,7 @@ import {
 import { playSample, resumeSamplerAudio } from './sampler.js';
 import { transport } from './clock.js';
 import { getActiveClock } from './activeClock.js';
-import { getPlayingPattern, patternLoopEndBeat } from '../models/project.js';
+import { getPlayingPattern, patternLoopEndBeat, STOPPED_PATTERN } from '../models/project.js';
 import { commitDuePatternLaunches, clearPendingLaunches } from './liveLauncher.js';
 
 // When notes are placed back-to-back (e.g. repeated 16th notes on the same
@@ -30,19 +30,46 @@ const MIN_GATE_MS = 10;
 // internal clock's much larger lookahead window.
 const SCHEDULE_WINDOW_SLACK_SEC = 0.05;
 
-function trackLoopLengthBeats(track) {
-  return patternLoopEndBeat(getPlayingPattern(track));
-}
+// Splits a track's [rangeStart, rangeEnd) schedule window around a pending
+// Live-mode launch boundary, so each pattern is only ever scheduled for the
+// span it's actually sounding during:
+//   - no queued launch, or its boundary is beyond this window  -> one segment
+//     for the currently-playing pattern across the whole window.
+//   - boundary falls inside this window                        -> two segments:
+//     the outgoing pattern up to the boundary, and the incoming (pending)
+//     pattern from the boundary onward.
+//
+// The second segment matters because commitDuePatternLaunches (which flips
+// playingPatternId) only runs once per scheduler tick, checked against the
+// *current* beat with no lookahead — unlike every other note, which gets
+// scheduled SCHEDULE_AHEAD_SEC (clock.js) ahead of when it actually sounds.
+// Without this, the incoming pattern's first note(s) only get scheduled once
+// promotion happens to run on a tick at or after the boundary, by which point
+// the audio timestamp for a beat-0 note can already be so close to (or
+// behind) "now" that it misses the scheduler's own "not too late" tolerance
+// and gets silently dropped — the queued pattern's opening note(s) go missing.
+// Splitting the window lets the incoming pattern be scheduled ahead of time,
+// exactly like the outgoing one, so both sides of the switch get the same
+// timing guarantees.
+function trackSchedulingSegments(track, rangeStart, rangeEnd) {
+  const currentPattern = getPlayingPattern(track);
+  const launchBeat = track.pendingLaunchBeat;
 
-// When a Live-mode clip is queued, the scheduler's lookahead (SCHEDULE_AHEAD_SEC
-// in clock.js) can extend past the pending launch boundary. Without capping the
-// horizon, beat-0 notes from the outgoing pattern get scheduled for the next
-// loop cycle right as the queued clip is supposed to take over — sounds like
-// the current pattern restarting from the top.
-function scheduleHorizonBeat(track, endAbsBeat) {
-  const pending = track.pendingLaunchBeat;
-  if (pending == null) return endAbsBeat;
-  return Math.min(endAbsBeat, pending - 1e-6);
+  if (track.pendingPatternId == null || launchBeat == null || launchBeat > rangeEnd) {
+    return [{ pattern: currentPattern, rangeStart, rangeEnd }];
+  }
+
+  const segments = [
+    { pattern: currentPattern, rangeStart, rangeEnd: Math.min(rangeEnd, launchBeat - 1e-6) },
+  ];
+
+  const nextPattern =
+    track.pendingPatternId === STOPPED_PATTERN ? null : track.patterns?.find((p) => p.id === track.pendingPatternId);
+  if (nextPattern) {
+    segments.push({ pattern: nextPattern, rangeStart: Math.max(rangeStart, launchBeat), rangeEnd });
+  }
+
+  return segments;
 }
 
 // Next absolute beat (>= absBeat) whose wrapped position equals noteBeat inside the loop.
@@ -180,14 +207,35 @@ export class PlaybackEngine {
     playSample(pad.id, note.velocity, onDelay, gainMul);
   }
 
+  // Shared by both scheduling branches below: dedups by noteKey and checks
+  // the note's audio timestamp actually falls inside this tick's schedulable
+  // window before triggering it.
+  _maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock) {
+    if (this._scheduledNotes.has(noteKey)) return;
+
+    const startTime = clock.beatToAudioTime(occurrence);
+    if (startTime < now - 0.002 || startTime > scheduleUntil + SCHEDULE_WINDOW_SLACK_SEC) return;
+
+    this._scheduledNotes.add(noteKey);
+    const onDelay = this._delayMs(startTime);
+    if (track.kind === 'drum') {
+      this._triggerDrumNote(track, note, onDelay);
+    } else {
+      this._triggerMidiNote(track, note, onDelay, occurrence, clock);
+    }
+  }
+
   _onScheduleNotes({ now, scheduleUntil }) {
     if (!this.project) return;
 
     const clock = this._clock;
     const absBeat = clock.getAbsoluteBeat();
     // Promote any Live-mode launches whose bar has arrived before scheduling
-    // this pass's notes, so newly-playing patterns take effect immediately
-    // rather than a scheduler tick late.
+    // this pass's notes, so playingPatternId/pendingPatternId (and the Live
+    // view's queued/playing indicators) flip at the right time. The note
+    // scheduling below doesn't depend on this having run yet — it reaches
+    // across a pending boundary itself via trackSchedulingSegments — this is
+    // purely about keeping the track's state/UI in sync with the transport.
     commitDuePatternLaunches(this.project.tracks, absBeat);
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
     const useTransportLoop = !!this.project.loopRegion;
@@ -198,75 +246,46 @@ export class PlaybackEngine {
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
 
-      const pattern = getPlayingPattern(track);
-      if (!pattern) continue;
+      for (const { pattern, rangeStart, rangeEnd } of trackSchedulingSegments(track, absBeat, endAbsBeat)) {
+        if (!pattern || rangeEnd < rangeStart) continue;
 
-      const trackLoopLen = trackLoopLengthBeats(track);
-      if (trackLoopLen <= 0) continue;
+        const trackLoopLen = patternLoopEndBeat(pattern);
+        if (trackLoopLen <= 0) continue;
 
-      const horizonBeat = scheduleHorizonBeat(track, endAbsBeat);
+        for (const note of pattern.notes) {
+          if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
 
-      for (const note of pattern.notes) {
-        if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
+          if (useTransportLoop) {
+            // User loop region: only notes inside [loopStart, loopEnd), repeating every
+            // transport loop cycle — not by full track length, so playback wraps at the
+            // loop end instead of running past it toward the pattern tail.
+            if (note.startBeat < loopStart || note.startBeat >= loopEnd) continue;
 
-        if (useTransportLoop) {
-          // User loop region: only notes inside [loopStart, loopEnd), repeating every
-          // transport loop cycle — not by full track length, so playback wraps at the
-          // loop end instead of running past it toward the pattern tail.
-          if (note.startBeat < loopStart || note.startBeat >= loopEnd) continue;
+            let occurrence = nextTransportLoopOccurrence(rangeStart, note.startBeat, loopStart, transportLoopLen);
+            let cycle = Math.floor((occurrence - loopStart) / transportLoopLen);
 
-          let occurrence = nextTransportLoopOccurrence(absBeat, note.startBeat, loopStart, transportLoopLen);
-          let cycle = Math.floor((occurrence - loopStart) / transportLoopLen);
-
-          while (occurrence <= horizonBeat) {
-            const startTime = clock.beatToAudioTime(occurrence);
-            const noteKey = `n-${track.id}-${note.id}-t${cycle}`;
-
-            if (
-              !this._scheduledNotes.has(noteKey) &&
-              startTime >= now - 0.002 &&
-              startTime <= scheduleUntil + SCHEDULE_WINDOW_SLACK_SEC
-            ) {
-              this._scheduledNotes.add(noteKey);
-              const onDelay = this._delayMs(startTime);
-              if (track.kind === 'drum') {
-                this._triggerDrumNote(track, note, onDelay);
-              } else {
-                this._triggerMidiNote(track, note, onDelay, occurrence, clock);
-              }
+            while (occurrence <= rangeEnd) {
+              const noteKey = `n-${track.id}-${note.id}-t${cycle}`;
+              this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
+              occurrence += transportLoopLen;
+              cycle++;
             }
-            occurrence += transportLoopLen;
-            cycle++;
+            continue;
           }
-          continue;
-        }
 
-        let occurrence = note.startBeat;
-        if (occurrence < absBeat - 0.01) {
-          const loopsElapsed = Math.floor((absBeat - note.startBeat) / trackLoopLen);
-          occurrence = note.startBeat + loopsElapsed * trackLoopLen;
-          if (occurrence < absBeat - 0.01) occurrence += trackLoopLen;
-        }
-
-        while (occurrence <= horizonBeat) {
-          const startTime = clock.beatToAudioTime(occurrence);
-          const iteration = Math.round((occurrence - note.startBeat) / trackLoopLen);
-          const noteKey = `n-${track.id}-${note.id}-${iteration}`;
-
-          if (
-            !this._scheduledNotes.has(noteKey) &&
-            startTime >= now - 0.002 &&
-            startTime <= scheduleUntil + SCHEDULE_WINDOW_SLACK_SEC
-          ) {
-            this._scheduledNotes.add(noteKey);
-            const onDelay = this._delayMs(startTime);
-            if (track.kind === 'drum') {
-              this._triggerDrumNote(track, note, onDelay);
-            } else {
-              this._triggerMidiNote(track, note, onDelay, occurrence, clock);
-            }
+          let occurrence = note.startBeat;
+          if (occurrence < rangeStart - 0.01) {
+            const loopsElapsed = Math.floor((rangeStart - note.startBeat) / trackLoopLen);
+            occurrence = note.startBeat + loopsElapsed * trackLoopLen;
+            if (occurrence < rangeStart - 0.01) occurrence += trackLoopLen;
           }
-          occurrence += trackLoopLen;
+
+          while (occurrence <= rangeEnd) {
+            const iteration = Math.round((occurrence - note.startBeat) / trackLoopLen);
+            const noteKey = `n-${track.id}-${note.id}-${iteration}`;
+            this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
+            occurrence += trackLoopLen;
+          }
         }
       }
     }

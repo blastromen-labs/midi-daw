@@ -7,7 +7,7 @@
 // Design note: a newly-launched pattern is NOT restarted from its own beat 0.
 // Instead it phase-locks to the master grid — the same absolute-beat
 // arithmetic the scheduler already uses for ordinary playback (see
-// trackLoopLengthBeats in scheduler.js). That means the *quantize length*
+// trackSchedulingSegments in scheduler.js). That means the *quantize length*
 // for a launch has to be a common multiple of both the currently-playing
 // pattern's length and the newly-queued one's, not a fixed 1-bar grid —
 // otherwise the switch can land in the middle of the new pattern's own loop

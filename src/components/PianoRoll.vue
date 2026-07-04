@@ -608,10 +608,85 @@ const gridTouchActionClass = computed(() =>
 // already uses touch-action: none, but some browsers still scroll the parent
 // unless the container opts out too (Select/Move on tablet was scrolling away).
 const scrollTouchActionClass = computed(() =>
-  editTool.value === 'zoom' ? '' : 'touch-none'
+  editTool.value === 'zoom' ? '' : 'touch-none overscroll-none'
 );
 
 let activeGridTouchId = null;
+// Snapshot scrollTop/scrollLeft when a grid edit touch starts — some mobile
+// browsers still pan overflow containers despite touch-action/preventDefault;
+// onScroll reverts any drift while the finger is down.
+let gridScrollLock = null;
+
+function blocksGridNativeScroll() {
+  return editTool.value !== 'zoom';
+}
+
+function isGridContentTouchTarget(target) {
+  return !!target && !!gridContentRef.value?.contains(target);
+}
+
+function isGridEditDrag() {
+  const type = drag.value?.type;
+  return (
+    type === 'pendingSelect' ||
+    type === 'pendingMarquee' ||
+    type === 'marquee' ||
+    type === 'move' ||
+    type === 'resize' ||
+    type === 'erasePaint' ||
+    type === 'paintAdd'
+  );
+}
+
+function onScrollRefTouchStartCapture(e) {
+  if (!blocksGridNativeScroll()) return;
+  if (e.touches.length !== 1) return;
+  if (!isGridContentTouchTarget(e.target)) return;
+
+  activeGridTouchId = e.touches[0].identifier;
+  const container = scrollRef.value;
+  if (container) {
+    gridScrollLock = { left: container.scrollLeft, top: container.scrollTop };
+  }
+  e.preventDefault();
+}
+
+function onScrollRefTouchMoveCapture(e) {
+  if (!blocksGridNativeScroll()) return;
+  if (!isActiveGridTouch(e) && !isGridEditDrag()) return;
+  e.preventDefault();
+}
+
+function onScrollRefTouchEndCapture(e) {
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === activeGridTouchId) {
+      activeGridTouchId = null;
+      gridScrollLock = null;
+    }
+  }
+}
+
+let scrollRefTouchGuardsBound = false;
+
+function bindScrollRefTouchGuards() {
+  const el = scrollRef.value;
+  if (!el || scrollRefTouchGuardsBound) return;
+  scrollRefTouchGuardsBound = true;
+  el.addEventListener('touchstart', onScrollRefTouchStartCapture, { capture: true, passive: false });
+  el.addEventListener('touchmove', onScrollRefTouchMoveCapture, { capture: true, passive: false });
+  el.addEventListener('touchend', onScrollRefTouchEndCapture, { capture: true });
+  el.addEventListener('touchcancel', onScrollRefTouchEndCapture, { capture: true });
+}
+
+function unbindScrollRefTouchGuards() {
+  const el = scrollRef.value;
+  if (!el || !scrollRefTouchGuardsBound) return;
+  scrollRefTouchGuardsBound = false;
+  el.removeEventListener('touchstart', onScrollRefTouchStartCapture, { capture: true });
+  el.removeEventListener('touchmove', onScrollRefTouchMoveCapture, { capture: true });
+  el.removeEventListener('touchend', onScrollRefTouchEndCapture, { capture: true });
+  el.removeEventListener('touchcancel', onScrollRefTouchEndCapture, { capture: true });
+}
 
 const marqueeStyle = computed(() => {
   const r = marqueeRect.value;
@@ -1241,11 +1316,12 @@ function onWindowDragTouchMove(e) {
   }
 
   if (isZoomToolActive()) return;
-  if (!isActiveGridTouch(e)) return;
 
-  // Must run in a non-passive listener before the browser commits to scrolling
-  // the overflow container — pendingSelect/pendingMarquee set drag on touchstart,
-  // but a passive canvas touchmove cannot preventDefault in time.
+  const gridTouch =
+    isActiveGridTouch(e) || (isGridEditDrag() && e.touches.length === 1);
+  if (!gridTouch) return;
+
+  // Capture on scrollRef also blocks panning; this window listener forwards drags.
   e.preventDefault();
 
   if (!drag.value) return;
@@ -1550,7 +1626,6 @@ function onGridTouchEnd(e) {
     onWindowDragEnd();
     onPreviewTouchEnd(e);
   }
-  activeGridTouchId = null;
 }
 
 function bindPreviewTouch(e) {
@@ -1656,6 +1731,17 @@ function onKeyTouchMove(e) {
 let syncingHorizontalScroll = false;
 
 function onScroll() {
+  if (
+    gridScrollLock &&
+    activeGridTouchId !== null &&
+    blocksGridNativeScroll() &&
+    scrollRef.value
+  ) {
+    scrollRef.value.scrollTop = gridScrollLock.top;
+    scrollRef.value.scrollLeft = gridScrollLock.left;
+    return;
+  }
+
   if (keysRef.value && scrollRef.value) {
     keysRef.value.scrollTop = scrollRef.value.scrollTop;
   }
@@ -1736,9 +1822,6 @@ function onVelocityResizeStart(e) {
 // deselect, same as clicking anywhere else outside the actual note grid.
 function onScrollAreaPointerDown(e) {
   if (e.target === scrollRef.value) clearSelection();
-  if (e.type === 'touchstart' && !isZoomToolActive() && gridContentRef.value?.contains(e.target)) {
-    e.preventDefault();
-  }
 }
 
 // Clicking a bar's own background (the gaps around its controls, not the
@@ -2062,6 +2145,7 @@ window.addEventListener('touchstart', onDocumentMouseDown);
 onMounted(() => {
   render();
   drawOverlays();
+  bindScrollRefTouchGuards();
   // Drum tracks have few, short rows — no need to center-scroll those; MIDI
   // tracks default to scrolling roughly around middle C.
   if (scrollRef.value && !isDrumTrack.value) {
@@ -2070,6 +2154,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  unbindScrollRefTouchGuards();
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('mousedown', onDocumentMouseDown);
   window.removeEventListener('touchstart', onDocumentMouseDown);
@@ -2105,6 +2190,10 @@ onUnmounted(() => {
 
 .piano-roll canvas.touch-pan {
   touch-action: pan-x pan-y;
+}
+
+.overflow-y-hidden-native.touch-none {
+  overscroll-behavior: none;
 }
 
 /* The grid's own vertical scrolling is handled by <TouchScrollbar> instead

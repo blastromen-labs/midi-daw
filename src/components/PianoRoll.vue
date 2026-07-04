@@ -267,14 +267,14 @@
 
       <!-- Grid -->
       <div
-        class="flex-1 overflow-auto relative"
+        class="flex-1 overflow-auto overflow-y-hidden-native relative"
         ref="scrollRef"
         @scroll="onScroll"
         @wheel="onWheel"
         @mousedown="onScrollAreaMouseDown"
         @touchstart="onScrollAreaMouseDown"
       >
-        <div class="relative" :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }">
+        <div ref="gridContentRef" class="relative" :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }">
           <canvas
             ref="gridCanvas"
             :width="gridWidth"
@@ -305,6 +305,13 @@
           ></div>
         </div>
       </div>
+
+      <!-- Custom vertical scrollbar, replacing the native one for this
+           container — a touch-drag on the grid canvas above draws/edits
+           notes rather than panning, and re-styled (::-webkit-scrollbar)
+           native scrollbars generally can't be dragged with touch at all,
+           only with a mouse. See TouchScrollbar.vue. -->
+      <TouchScrollbar :container="scrollRef" :content="gridContentRef" orientation="vertical" />
     </div>
 
     <!-- Drag up/down to resize the velocity panel; a plain click (no drag)
@@ -362,6 +369,7 @@ import VolumeSlider from './VolumeSlider.vue';
 import EditToolBar from './EditToolBar.vue';
 import PatternBar from './PatternBar.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
+import TouchScrollbar from './TouchScrollbar.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
@@ -461,6 +469,7 @@ const scrollRef = ref(null);
 const markerScrollRef = ref(null);
 const markerBarRef = ref(null);
 const keysRef = ref(null);
+const gridContentRef = ref(null);
 const gridCanvas = ref(null);
 const keysCanvas = ref(null);
 const playheadCanvas = ref(null);
@@ -1989,5 +1998,17 @@ onUnmounted(() => {
 
 .piano-roll canvas.touch-pan {
   touch-action: pan-x pan-y;
+}
+
+/* The grid's own vertical scrolling is handled by <TouchScrollbar> instead
+   (see above) since it needs to be touch-draggable; hide the native
+   vertical thumb so the two don't visually double up. Horizontal keeps the
+   native (mouse-draggable) scrollbar since panning it via touch isn't the
+   reported issue and pinch-zoom already covers touch there. Per-axis hiding
+   is WebKit-only (Chrome/Safari/Edge) — Firefox/other engines will still
+   show both, which is a harmless fallback, not a functional regression. */
+.overflow-y-hidden-native::-webkit-scrollbar:vertical {
+  width: 0;
+  display: none;
 }
 </style>

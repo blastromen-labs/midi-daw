@@ -159,6 +159,20 @@
           <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
         </select>
       </ToolbarField>
+      <ToolbarField v-if="isCoarsePointer" label="Tools">
+        <button
+          type="button"
+          class="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-colors"
+          :class="showToolFab ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active text-muted'"
+          :title="showToolFab ? 'Hide touch tool menu' : 'Show touch tool menu'"
+          @click="showToolFab = !showToolFab"
+        >
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
+      </ToolbarField>
     </div>
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -178,6 +192,10 @@
           :style="{ width: gridWidth + 'px' }"
           title="Click: marker (play/paste) · Double-click drag: set loop · Double-click: clear loop"
           @mousedown="onPasteBarMouseDown"
+          @touchstart="onPasteBarTouchStart"
+          @touchmove="onPasteBarTouchMove"
+          @touchend="onPasteBarTouchEnd"
+          @touchcancel="onPasteBarTouchEnd"
           @contextmenu.prevent
         >
           <div
@@ -237,7 +255,7 @@
 
       <!-- Grid -->
       <div
-        class="flex-1 overflow-auto"
+        class="flex-1 overflow-auto relative"
         ref="scrollRef"
         @scroll="onScroll"
         @wheel="onWheel"
@@ -274,6 +292,28 @@
             :style="marqueeStyle"
           ></div>
         </div>
+        <EditToolFab
+          v-if="useToolModes"
+          v-model="editTool"
+          :has-selection="hasSelection"
+          @delete-selection="deleteSelectedNotes"
+          @hide="showToolFab = false"
+        />
+        <button
+          v-else-if="isCoarsePointer"
+          type="button"
+          class="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center border border-line bg-surface-hover text-muted shadow-lg touch-manipulation"
+          style="padding-bottom: env(safe-area-inset-bottom, 0); padding-right: env(safe-area-inset-right, 0)"
+          title="Show touch tool menu"
+          @touchstart.stop
+          @mousedown.stop
+          @click="showToolFab = true"
+        >
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -319,6 +359,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, trackLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
+import { useCoarsePointer } from '../composables/useCoarsePointer.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
 import { shade } from '../utils/color.js';
@@ -329,9 +370,12 @@ import DrumPadList from './DrumPadList.vue';
 import TrackMenu from './TrackMenu.vue';
 import ToolbarField from './ToolbarField.vue';
 import VolumeSlider from './VolumeSlider.vue';
+import EditToolFab from './EditToolFab.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
+const TOUCH_RESIZE_HANDLE_PX = 28;
+const SELECT_DRAG_THRESHOLD_PX = 8;
 const DEFAULT_VELOCITY_HEIGHT = 110;
 const MIN_VELOCITY_HEIGHT = 40;
 const MAX_VELOCITY_HEIGHT = 280;
@@ -357,6 +401,10 @@ const props = defineProps({
 });
 
 const liveBeat = usePlayheadBeat();
+const { isCoarsePointer } = useCoarsePointer();
+const editTool = ref('pen');
+const showToolFab = ref(true);
+const useToolModes = computed(() => isCoarsePointer.value && showToolFab.value);
 const barLengthOptions = BAR_LENGTH_OPTIONS;
 
 const emit = defineEmits([
@@ -503,8 +551,16 @@ function onTogglePlay() {
   emit('toggle-play', fromBeat);
 }
 
+const hasSelection = computed(() => selectedNoteIds.value.size > 0);
+
 const gridCursorClass = computed(() => {
   if (drag.value?.type === 'move') return 'cursor-grabbing';
+  if (isCoarsePointer.value) {
+    if (!showToolFab.value) return 'cursor-crosshair';
+    if (editTool.value === 'length') return 'cursor-ew-resize';
+    if (editTool.value === 'select') return 'cursor-grab';
+    return 'cursor-crosshair';
+  }
   if (hoverResize.value) return 'cursor-ew-resize';
   if (hoverMove.value) return 'cursor-grab';
   return 'cursor-crosshair';
@@ -705,12 +761,16 @@ function findNoteAt(beat, pitch) {
 
 // Finds a note whose right edge (in pixels) is close enough to x, on the same
 // pitch row as y, so the user can grab and drag it to change the note's length.
-function findResizeHandle(x, y) {
+// With generous=true (Length tool on tablet), any touch within the note body works.
+function findResizeHandle(x, y, { generous = false } = {}) {
   const pitch = yToPitch(y);
+  const handlePx = generous ? TOUCH_RESIZE_HANDLE_PX : RESIZE_HANDLE_PX;
   return getNotes().find((n) => {
     if (n.pitch !== pitch) return false;
+    const startX = beatToX(n.startBeat);
     const endX = beatToX(n.startBeat + n.duration);
-    return Math.abs(x - endX) <= RESIZE_HANDLE_PX;
+    if (generous) return x >= startX && x <= endX + handlePx;
+    return Math.abs(x - endX) <= handlePx;
   });
 }
 
@@ -777,8 +837,113 @@ function eraseNoteAt(beat, pitch) {
   emitNotes(getNotes().filter((n) => n.id !== existing.id));
 }
 
+function clearSelection() {
+  selectedNoteIds.value = new Set();
+}
+
+function deleteSelectedNotes() {
+  if (!selectedNoteIds.value.size) return;
+  const ids = selectedNoteIds.value;
+  emitNotes(getNotes().filter((n) => !ids.has(n.id)));
+  clearSelection();
+}
+
+function startResizeDrag(resizeTarget) {
+  const group =
+    selectedNoteIds.value.has(resizeTarget.id) && selectedNoteIds.value.size > 1
+      ? getNotes().filter((n) => selectedNoteIds.value.has(n.id))
+      : [resizeTarget];
+  selectedNoteIds.value = new Set(group.map((n) => n.id));
+  drag.value = {
+    type: 'resize',
+    anchorOrigStartBeat: resizeTarget.startBeat,
+    anchorOrigDuration: resizeTarget.duration,
+    origDurations: new Map(group.map((n) => [n.id, n.duration])),
+  };
+}
+
+function startMoveDrag(existing, x, y) {
+  const keepSelection = selectedNoteIds.value.has(existing.id) && selectedNoteIds.value.size > 1;
+  if (!keepSelection) selectedNoteIds.value = new Set([existing.id]);
+
+  const group = getNotes().filter((n) => selectedNoteIds.value.has(n.id));
+  drag.value = {
+    type: 'move',
+    startX: x,
+    startY: y,
+    anchorOrigBeat: existing.startBeat,
+    anchorOrigPitch: existing.pitch,
+    origPositions: new Map(group.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch }])),
+  };
+}
+
+function promotePendingSelectToMove(x, y) {
+  const pending = drag.value;
+  if (pending?.type !== 'pendingSelect') return;
+
+  const existing = getNotes().find((n) => n.id === pending.noteId);
+  if (!existing) {
+    drag.value = null;
+    return;
+  }
+  startMoveDrag(existing, pending.startX, pending.startY);
+}
+
+function promotePendingMarqueeToSelect(x, y) {
+  const pending = drag.value;
+  if (pending?.type !== 'pendingMarquee') return;
+
+  drag.value = {
+    type: 'marquee',
+    additive: false,
+    baseSelection: new Set(selectedNoteIds.value),
+  };
+  marqueeRect.value = { x1: pending.x1, y1: pending.y1, x2: x, y2: y };
+}
+
+// Tablet tool modes — maps FAB selections to the same drag types desktop uses.
+function onToolModeDown(e) {
+  const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
+
+  if (editTool.value === 'erase') {
+    if (!findNoteAt(rawBeat, pitch)) clearSelection();
+    eraseNoteAt(rawBeat, pitch);
+    drag.value = { type: 'erasePaint' };
+    return;
+  }
+
+  if (editTool.value === 'length') {
+    const resizeTarget = findResizeHandle(x, y, { generous: true });
+    if (resizeTarget) startResizeDrag(resizeTarget);
+    return;
+  }
+
+  if (editTool.value === 'select') {
+    const existing = findNoteAt(rawBeat, pitch);
+    if (existing) {
+      drag.value = { type: 'pendingSelect', noteId: existing.id, startX: x, startY: y };
+      return;
+    }
+    drag.value = { type: 'pendingMarquee', startX: x, startY: y, x1: x, y1: y };
+    return;
+  }
+
+  // Pen — draw on empty cells only; ignore taps on existing notes.
+  if (findNoteAt(rawBeat, pitch)) return;
+
+  const note = createNote(pitch, cellBeat, noteLength.value, 100);
+  emitNotes([...getNotes(), note]);
+  clearSelection();
+  startDrawPreview(note.pitch, note.velocity);
+  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
+}
+
 function onMouseDown(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
+
+  if (useToolModes.value && e.button === 0 && !e.metaKey && !e.ctrlKey) {
+    return onToolModeDown(e);
+  }
 
   // Alt+click sets both the paste beat and the base row (for cross-track row mapping).
   if (e.altKey) {
@@ -814,17 +979,7 @@ function onMouseDown(e) {
   // together by the same amount.
   const resizeTarget = findResizeHandle(x, y);
   if (resizeTarget) {
-    const group =
-      selectedNoteIds.value.has(resizeTarget.id) && selectedNoteIds.value.size > 1
-        ? getNotes().filter((n) => selectedNoteIds.value.has(n.id))
-        : [resizeTarget];
-    selectedNoteIds.value = new Set(group.map((n) => n.id));
-    drag.value = {
-      type: 'resize',
-      anchorOrigStartBeat: resizeTarget.startBeat,
-      anchorOrigDuration: resizeTarget.duration,
-      origDurations: new Map(group.map((n) => [n.id, n.duration])),
-    };
+    startResizeDrag(resizeTarget);
     return;
   }
 
@@ -859,18 +1014,7 @@ function onMouseDown(e) {
   // Grabbing any note's body moves it (and the rest of the selection, if
   // it's part of one).
   if (existing) {
-    const keepSelection = selectedNoteIds.value.has(existing.id) && selectedNoteIds.value.size > 1;
-    if (!keepSelection) selectedNoteIds.value = new Set([existing.id]);
-
-    const group = getNotes().filter((n) => selectedNoteIds.value.has(n.id));
-    drag.value = {
-      type: 'move',
-      startX: x,
-      startY: y,
-      anchorOrigBeat: existing.startBeat,
-      anchorOrigPitch: existing.pitch,
-      origPositions: new Map(group.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch }])),
-    };
+    startMoveDrag(existing, x, y);
     return;
   }
 
@@ -993,10 +1137,26 @@ function onWindowDragTouchEnd() {
 function onMouseMove(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
+  if (drag.value?.type === 'pendingSelect') {
+    const dx = x - drag.value.startX;
+    const dy = y - drag.value.startY;
+    if (Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX) promotePendingSelectToMove(x, y);
+    else return;
+  }
+
+  if (drag.value?.type === 'pendingMarquee') {
+    const dx = x - drag.value.startX;
+    const dy = y - drag.value.startY;
+    if (Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX) promotePendingMarqueeToSelect(x, y);
+    else return;
+  }
+
   if (!drag.value) {
-    const resizeNote = findResizeHandle(x, y);
-    hoverResize.value = !!resizeNote;
-    hoverMove.value = !resizeNote && !!findNoteAt(xToRawBeat(x), yToPitch(y));
+    if (!isCoarsePointer.value) {
+      const resizeNote = findResizeHandle(x, y);
+      hoverResize.value = !!resizeNote;
+      hoverMove.value = !resizeNote && !!findNoteAt(xToRawBeat(x), yToPitch(y));
+    }
     return;
   }
 
@@ -1079,16 +1239,43 @@ function onMouseMove(e) {
 
 function onMouseUp() {
   if (drag.value?.type === 'loopRegion') finalizeLoopRegion();
+  if (drag.value?.type === 'pendingSelect') {
+    selectedNoteIds.value = new Set([drag.value.noteId]);
+    drag.value = null;
+    return;
+  }
+  if (drag.value?.type === 'pendingMarquee') {
+    clearSelection();
+    drag.value = null;
+    return;
+  }
   if (drag.value?.type === 'marquee') marqueeRect.value = null;
   drag.value = null;
 }
 
+function onPasteBarTouchStart(e) {
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  onPasteBarMouseDown(toSyntheticMouseEvent(e, point));
+}
+
+function onPasteBarTouchMove(e) {
+  if (!drag.value || drag.value.type !== 'loopRegion') return;
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  onWindowDragMove(toSyntheticMouseEvent(e, point));
+}
+
+function onPasteBarTouchEnd() {
+  onWindowDragEnd();
+}
+
 // Touch support: forwards to the same mouse handlers above with a
 // synthetic event carrying just the fields they read (clientX/clientY,
-// button, modifier keys). This reuses all existing draw/move/resize/erase
-// logic as-is rather than duplicating it for touch — modifier-only gestures
-// (Cmd/Ctrl-drag marquee, Shift-drag clone) simply aren't reachable via a
-// single touch, which is an acceptable limitation, not a bug.
+// button, modifier keys). On coarse-pointer devices, onMouseDown routes
+// through the FAB tool modes (pen/erase/select/length) before desktop logic.
 function touchPoint(e) {
   const t = e.touches[0] ?? e.changedTouches[0];
   return t ? { clientX: t.clientX, clientY: t.clientY } : null;
@@ -1261,10 +1448,6 @@ function onVelocityResizeStart(e) {
   window.addEventListener('mouseup', onUp);
   window.addEventListener('touchmove', onMove);
   window.addEventListener('touchend', onUp);
-}
-
-function clearSelection() {
-  selectedNoteIds.value = new Set();
 }
 
 // The grid canvas is only as wide/tall as the loop length, but its scrollable

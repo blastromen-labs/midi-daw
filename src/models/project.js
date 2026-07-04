@@ -19,17 +19,87 @@ export function randomTrackColor(exclude = []) {
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
+/** @param {string[]} [exclude] colors already used by sibling patterns */
+export function randomPatternColor(exclude = []) {
+  return randomTrackColor(exclude);
+}
+
+export function createPattern(name = 'Pattern 1', color = randomPatternColor(), patternSteps = 16, notes = []) {
+  return {
+    id: uid(),
+    name,
+    color,
+    patternSteps,
+    notes,
+  };
+}
+
+export function getActivePattern(track) {
+  if (!track?.patterns?.length) return null;
+  return track.patterns.find((p) => p.id === track.activePatternId) ?? track.patterns[0];
+}
+
+// Sentinel for playingPatternId/pendingPatternId meaning "this track is
+// deliberately silent in Live mode" — distinct from `null`, which instead
+// means "no Live-mode override yet, just follow activePatternId" (the
+// default, so plain editing/playback behaves exactly as if Live mode didn't
+// exist until you actually touch it). Clicking a playing clip again in Live
+// mode arms this, toggling the track off once its pattern finishes looping.
+export const STOPPED_PATTERN = '__stopped__';
+
+// Which pattern a track plays during transport — null means "same as active".
+// Live mode sets playingPatternId independently of activePatternId so you
+// can edit one pattern while another one is looping/launched, and can also
+// set it to STOPPED_PATTERN to silence the track entirely.
+export function getPlayingPattern(track) {
+  if (!track?.patterns?.length) return null;
+  if (track.playingPatternId === STOPPED_PATTERN) return null;
+  const id = track.playingPatternId ?? track.activePatternId;
+  return track.patterns.find((p) => p.id === id) ?? track.patterns[0];
+}
+
+// A pattern is "playing" if it's the one currently sounding for its track —
+// each track only ever has one playing pattern at a time (playingPatternId
+// is a single field), which is what guarantees two clips on the same track
+// can never sound simultaneously in Live mode.
+export function isPatternPlaying(track, patternId) {
+  return getPlayingPattern(track)?.id === patternId;
+}
+
+// A pattern is "queued" once Live mode has armed it to replace the playing
+// pattern once its loop completes — see engine/liveLauncher.js.
+export function isPatternQueued(track, patternId) {
+  return track?.pendingPatternId === patternId;
+}
+
+// True once Live mode has armed the track to go silent (rather than switch
+// to another pattern) once the currently playing pattern's loop completes.
+export function isTrackStopQueued(track) {
+  return track?.pendingPatternId === STOPPED_PATTERN;
+}
+
+export function patternLoopEndBeat(pattern) {
+  return (pattern?.patternSteps ?? 16) / 4;
+}
+
 export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), patternSteps = 16) {
+  const pattern = createPattern('Pattern 1', randomPatternColor(), patternSteps);
   return {
     id: uid(),
     kind: 'midi',
     name,
     color,
-    patternSteps,
+    patterns: [pattern],
+    activePatternId: pattern.id,
+    // Live mode fields — see engine/liveLauncher.js. playingPatternId is the
+    // pattern actually sounding right now (null = follow activePatternId);
+    // pendingPatternId/pendingLaunchBeat describe a queued-but-not-yet-live
+    // launch waiting for the current pattern's loop to complete.
+    playingPatternId: null,
+    pendingPatternId: null,
+    pendingLaunchBeat: null,
     midiOutputId: '',
     midiChannel: 0,
-    // Note.pitch here is a real MIDI pitch number (0-127).
-    notes: [],
   };
 }
 
@@ -55,17 +125,19 @@ export const DEFAULT_DRUM_PADS = [
 ];
 
 export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), patternSteps = 16) {
+  const pattern = createPattern('Pattern 1', randomPatternColor(), patternSteps);
   return {
     id: uid(),
     kind: 'drum',
     name,
     color,
-    patternSteps,
+    patterns: [pattern],
+    activePatternId: pattern.id,
+    playingPatternId: null,
+    pendingPatternId: null,
+    pendingLaunchBeat: null,
     volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
-    // Note.pitch here is a pad id (string), not a MIDI pitch — it identifies
-    // which pad's sample this note triggers. See createDrumPad above.
-    notes: [],
   };
 }
 
@@ -81,12 +153,17 @@ export const BAR_LENGTH_OPTIONS = [
 ];
 
 export function trackLoopEndBeat(track) {
-  return (track?.patternSteps ?? 16) / 4;
+  return patternLoopEndBeat(getActivePattern(track));
 }
 
-export function projectLoopEndBeat(tracks) {
+export function trackPlayingLoopEndBeat(track) {
+  return patternLoopEndBeat(getPlayingPattern(track));
+}
+
+export function projectLoopEndBeat(tracks, { forPlayback = false } = {}) {
   if (!tracks?.length) return 4;
-  return Math.max(...tracks.map(trackLoopEndBeat));
+  const endBeat = forPlayback ? trackPlayingLoopEndBeat : trackLoopEndBeat;
+  return Math.max(...tracks.map(endBeat));
 }
 
 export function createProject() {

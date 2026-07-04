@@ -1,0 +1,217 @@
+<template>
+  <div class="live-view flex flex-col h-full bg-panel">
+    <!-- Minimal transport bar — mirrors the piano roll's toolbar just enough
+         to jam without switching views (see ToolbarField usage there). -->
+    <div class="flex items-end gap-2 px-2 py-1 bg-surface border-b border-line flex-shrink-0 overflow-x-auto">
+      <ToolbarField v-if="syncMode !== 'external'">
+        <button
+          class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+          :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
+          :title="playing ? 'Stop' : 'Play'"
+          @click="$emit('toggle-play')"
+        >
+          {{ playing ? '■' : '▶' }}
+        </button>
+      </ToolbarField>
+      <ToolbarField v-if="syncMode !== 'external'" label="BPM">
+        <input
+          type="number"
+          :value="bpm"
+          min="40"
+          max="300"
+          class="toolbar-compact w-[2.75rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
+          title="BPM"
+          @change="(e) => $emit('bpm-change', Number(e.target.value))"
+        />
+      </ToolbarField>
+      <template v-else>
+        <ToolbarField label="In">
+          <select
+            :value="clockInputId"
+            @change="(e) => $emit('clock-input-change', e.target.value)"
+            class="text-xs max-w-28 flex-shrink-0 py-0.5"
+            title="MIDI clock input to follow"
+          >
+            <option value="">—</option>
+            <option v-for="d in midiInputs" :key="d.id" :value="d.id">{{ d.name }}</option>
+          </select>
+        </ToolbarField>
+        <span
+          class="w-1.5 h-1.5 rounded-full flex-shrink-0 mb-2"
+          :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"
+          :title="!clockInputId ? 'No input selected' : playing ? 'Synced — playing' : 'Waiting for clock…'"
+        ></span>
+      </template>
+
+      <div class="flex-1"></div>
+
+      <ViewToggleButton
+        label="Roll"
+        title="Switch to the Piano Roll (Tab)"
+        @click="$emit('view-mode-change', 'roll')"
+      />
+    </div>
+
+    <!-- Launch grid — one row per track, one clip button per pattern. -->
+    <div class="flex-1 overflow-auto p-2">
+      <div
+        v-for="track in tracks"
+        :key="track.id"
+        class="flex items-stretch gap-2 mb-2 last:mb-0"
+      >
+        <div
+          class="flex flex-col justify-center gap-0.5 w-36 flex-shrink-0 px-2 py-1.5 rounded-md bg-surface/60"
+        >
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: track.color }"></span>
+            <span class="truncate text-xs font-semibold">{{ track.name }}</span>
+          </div>
+          <span class="text-[9px] text-muted-dim uppercase tracking-wide">{{ track.kind }}</span>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5 flex-1 content-start">
+          <button
+            v-for="pattern in track.patterns"
+            :key="pattern.id"
+            type="button"
+            class="clip relative w-24 h-14 flex-shrink-0 rounded-md overflow-hidden text-left px-2 py-1 transition-transform active:scale-[0.97]"
+            :class="clipStateClass(track, pattern)"
+            :style="clipStyle(track, pattern)"
+            :title="clipTitle(track, pattern)"
+            @click="$emit('trigger-pattern', track.id, pattern.id)"
+            @dblclick="$emit('edit-pattern', track.id, pattern.id)"
+          >
+            <span class="block text-[11px] font-medium truncate">{{ pattern.name }}</span>
+            <span class="block text-[9px] opacity-70">{{ barsLabel(pattern.patternSteps) }}</span>
+
+            <span
+              v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping'"
+              class="absolute left-0 bottom-0 h-0.5 bg-white/80"
+              :style="{ width: clipProgress(pattern) * 100 + '%' }"
+            ></span>
+            <span
+              v-if="clipStatus(track, pattern) === 'playing'"
+              class="absolute top-1 right-1 text-[10px] leading-none"
+            >▶</span>
+            <span
+              v-else-if="clipStatus(track, pattern) === 'stopping'"
+              class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
+            ></span>
+            <span
+              v-else-if="clipStatus(track, pattern) === 'queued'"
+              class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+            ></span>
+            <span
+              v-else-if="clipStatus(track, pattern) === 'armed'"
+              class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
+            >▶</span>
+          </button>
+
+          <div v-if="!track.patterns.length" class="text-xs text-muted-dim px-2 py-4">No patterns</div>
+        </div>
+      </div>
+
+      <div v-if="!tracks.length" class="text-sm text-muted-dim px-2 py-4">No tracks yet</div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import {
+  BAR_LENGTH_OPTIONS,
+  isPatternPlaying,
+  isPatternQueued,
+  isTrackStopQueued,
+  patternLoopEndBeat,
+} from '../models/project.js';
+import { shade } from '../utils/color.js';
+import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
+import ToolbarField from './ToolbarField.vue';
+import ViewToggleButton from './ViewToggleButton.vue';
+
+const props = defineProps({
+  tracks: { type: Array, required: true },
+  playing: Boolean,
+  bpm: Number,
+  syncMode: { type: String, default: 'internal' },
+  clockInputId: { type: String, default: '' },
+  midiInputs: { type: Array, default: () => [] },
+});
+
+defineEmits([
+  'toggle-play',
+  'bpm-change',
+  'clock-input-change',
+  'view-mode-change',
+  'trigger-pattern',
+  'edit-pattern',
+]);
+
+const absBeat = useAbsolutePlayheadBeat();
+
+function barsLabel(steps) {
+  const opt = BAR_LENGTH_OPTIONS.find((o) => o.steps === steps);
+  return opt ? `${opt.bars} bar${opt.bars > 1 ? 's' : ''}` : `${steps / 4}b`;
+}
+
+// Progress within the clip's own loop — the pattern's phase is locked to the
+// master bar grid rather than to when it was launched (see liveLauncher.js
+// for why), so this is simply "absolute beat modulo pattern length".
+function clipProgress(pattern) {
+  const len = patternLoopEndBeat(pattern);
+  if (len <= 0) return 0;
+  const wrapped = ((absBeat.value % len) + len) % len;
+  return wrapped / len;
+}
+
+// 'playing': actually sounding right now. 'stopping': playing, but a click
+// has armed the track to go silent once this loop ends (toggle-off).
+// 'armed': would start the instant Play is pressed (transport stopped, but
+// this is the track's playingPatternId/activePatternId). 'queued': set to
+// replace the playing pattern once both loops line up. Kept as one function
+// (rather than scattering these same checks across class/style/title) so a
+// clip's visual state can never drift out of sync with itself.
+function clipStatus(track, pattern) {
+  const isCurrent = isPatternPlaying(track, pattern.id);
+  if (isCurrent && props.playing) return isTrackStopQueued(track) ? 'stopping' : 'playing';
+  if (isPatternQueued(track, pattern.id)) return 'queued';
+  if (isCurrent) return 'armed';
+  return 'idle';
+}
+
+function clipStateClass(track, pattern) {
+  const status = clipStatus(track, pattern);
+  if (status === 'playing') return 'ring-2 ring-white/90 shadow-lg';
+  if (status === 'stopping') return 'ring-2 ring-red-300/80 animate-pulse';
+  if (status === 'queued') return 'ring-2 ring-white/60 animate-pulse';
+  if (status === 'armed') return 'ring-2 ring-white/40';
+  return 'ring-1 ring-black/20 hover:ring-white/40';
+}
+
+function clipStyle(track, pattern) {
+  const status = clipStatus(track, pattern);
+  const isLit = status === 'playing' || status === 'stopping' || status === 'armed';
+  const base = pattern.color;
+  return {
+    background: isLit
+      ? `linear-gradient(180deg, ${shade(base, 0.15)}, ${shade(base, -0.15)})`
+      : `linear-gradient(180deg, ${shade(base, -0.35)}, ${shade(base, -0.5)})`,
+    color: isLit ? shade(base, -0.65) : shade(base, 0.55),
+  };
+}
+
+function clipTitle(track, pattern) {
+  const status = clipStatus(track, pattern);
+  if (status === 'playing') return `${pattern.name} — playing (click to stop when it loops)`;
+  if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)`;
+  if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)`;
+  if (status === 'armed') return `${pattern.name} — will play when you press Play (click to un-arm)`;
+  return `${pattern.name} — click to launch, double-click to edit`;
+}
+</script>
+
+<style scoped>
+.clip {
+  cursor: pointer;
+}
+</style>

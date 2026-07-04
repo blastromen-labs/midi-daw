@@ -9,6 +9,8 @@ import {
 import { playSample, resumeSamplerAudio } from './sampler.js';
 import { transport } from './clock.js';
 import { getActiveClock } from './activeClock.js';
+import { getPlayingPattern, patternLoopEndBeat } from '../models/project.js';
+import { commitDuePatternLaunches, clearPendingLaunches } from './liveLauncher.js';
 
 // When notes are placed back-to-back (e.g. repeated 16th notes on the same
 // pitch), the previous note's Off and the next note's On land on almost the
@@ -29,7 +31,7 @@ const MIN_GATE_MS = 10;
 const SCHEDULE_WINDOW_SLACK_SEC = 0.05;
 
 function trackLoopLengthBeats(track) {
-  return (track.patternSteps ?? 16) / 4;
+  return patternLoopEndBeat(getPlayingPattern(track));
 }
 
 // Next absolute beat (>= absBeat) whose wrapped position equals noteBeat inside the loop.
@@ -139,6 +141,8 @@ export class PlaybackEngine {
   }
 
   _onStop() {
+    // Queued Live-mode launches only make sense against a running bar grid.
+    if (this.project) clearPendingLaunches(this.project.tracks);
     if (!this.project?.sendMidiClock) return;
     broadcastStop([...this._clockOutputs]);
   }
@@ -170,6 +174,10 @@ export class PlaybackEngine {
 
     const clock = this._clock;
     const absBeat = clock.getAbsoluteBeat();
+    // Promote any Live-mode launches whose bar has arrived before scheduling
+    // this pass's notes, so newly-playing patterns take effect immediately
+    // rather than a scheduler tick late.
+    commitDuePatternLaunches(this.project.tracks, absBeat);
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
     const useTransportLoop = !!this.project.loopRegion;
     const loopStart = clock.loopStartBeat;
@@ -179,10 +187,13 @@ export class PlaybackEngine {
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
 
+      const pattern = getPlayingPattern(track);
+      if (!pattern) continue;
+
       const trackLoopLen = trackLoopLengthBeats(track);
       if (trackLoopLen <= 0) continue;
 
-      for (const note of track.notes) {
+      for (const note of pattern.notes) {
         if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
 
         if (useTransportLoop) {

@@ -53,7 +53,7 @@
       <ToolbarField v-if="activeTrack" label="Bar">
         <select
           :value="activePatternSteps"
-          @change="(e) => emit('update-track', activeTrackId, { patternSteps: Number(e.target.value) })"
+          @change="(e) => emit('update-pattern', activeTrackId, activePattern?.id, { patternSteps: Number(e.target.value) })"
           class="toolbar-compact text-xs w-9 text-center"
           title="Bar length for this track"
         >
@@ -167,7 +167,25 @@
         :has-selection="hasSelection"
         @delete-selection="deleteSelectedNotes"
       />
+
+      <div class="flex-1"></div>
+
+      <ViewToggleButton
+        label="Live"
+        title="Switch to the Live launch grid (Tab)"
+        @click="$emit('view-mode-change', 'live')"
+      />
     </div>
+
+    <!-- Pattern selector — one row of patterns for the active track. -->
+    <PatternBar
+      :track="activeTrack"
+      @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
+      @add-pattern="emit('add-pattern', activeTrackId)"
+      @rename-pattern="(id, name) => emit('rename-pattern', activeTrackId, id, name)"
+      @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
+      @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
+    />
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
     <div class="flex flex-shrink-0 border-b border-line bg-surface/90">
@@ -314,7 +332,7 @@
       </div>
       <VelocityLane
         v-if="activeTrack"
-        :notes="activeTrack.notes"
+        :notes="activePattern?.notes ?? []"
         :selected-note-ids="selectedNoteIds"
         :beat-width="beatWidth"
         :grid-width="gridWidth"
@@ -329,7 +347,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, BEATS_PER_BAR, trackLoopEndBeat } from '../models/project.js';
+import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, BEATS_PER_BAR, getActivePattern, patternLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
@@ -342,6 +360,8 @@ import TrackMenu from './TrackMenu.vue';
 import ToolbarField from './ToolbarField.vue';
 import VolumeSlider from './VolumeSlider.vue';
 import EditToolBar from './EditToolBar.vue';
+import PatternBar from './PatternBar.vue';
+import ViewToggleButton from './ViewToggleButton.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
@@ -382,6 +402,11 @@ const barLengthOptions = BAR_LENGTH_OPTIONS;
 const emit = defineEmits([
   'update-notes',
   'select-track',
+  'select-pattern',
+  'add-pattern',
+  'rename-pattern',
+  'update-pattern',
+  'delete-pattern',
   'route-change',
   'add-track',
   'rename-track',
@@ -399,6 +424,7 @@ const emit = defineEmits([
   'clock-output-change',
   'sync-mode-change',
   'clock-input-change',
+  'view-mode-change',
 ]);
 
 const ROW_HEIGHT = 20;
@@ -448,9 +474,10 @@ const velocityCollapsed = ref(true);
 const gridWidth = computed(() => activeLoopEndBeat.value * beatWidth.value);
 
 const activeTrack = computed(() => props.tracks.find((t) => t.id === props.activeTrackId));
+const activePattern = computed(() => getActivePattern(activeTrack.value));
 const isDrumTrack = computed(() => activeTrack.value?.kind === 'drum');
-const activePatternSteps = computed(() => activeTrack.value?.patternSteps ?? 16);
-const activeLoopEndBeat = computed(() => trackLoopEndBeat(activeTrack.value));
+const activePatternSteps = computed(() => activePattern.value?.patternSteps ?? 16);
+const activeLoopEndBeat = computed(() => patternLoopEndBeat(activePattern.value));
 // Playhead wraps to the active track's pattern length in the piano roll view.
 const displayPlayheadBeat = computed(() => {
   const len = activeLoopEndBeat.value;
@@ -459,7 +486,7 @@ const displayPlayheadBeat = computed(() => {
 });
 // Track accent colors are menu-only; MIDI notes always use the green palette.
 const noteDrawColor = computed(() =>
-  isDrumTrack.value ? (activeTrack.value?.color ?? DEFAULT_NOTE_COLOR) : MIDI_NOTE_COLOR,
+  isDrumTrack.value ? (activePattern.value?.color ?? activeTrack.value?.color ?? DEFAULT_NOTE_COLOR) : MIDI_NOTE_COLOR,
 );
 const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
 const keysWidth = computed(() => (isDrumTrack.value ? DRUM_KEYS_WIDTH : KEY_WIDTH));
@@ -621,11 +648,12 @@ function updateRoute(changes) {
 }
 
 function getNotes() {
-  return activeTrack.value?.notes ?? [];
+  return activePattern.value?.notes ?? [];
 }
 
 function emitNotes(notes) {
-  emit('update-notes', props.activeTrackId, notes);
+  if (!activePattern.value) return;
+  emit('update-notes', props.activeTrackId, activePattern.value.id, notes);
 }
 
 function rowIndexOf(key) {
@@ -1841,6 +1869,13 @@ watch(() => props.playing, drawOverlays);
 
 watch(
   () => props.activeTrackId,
+  () => {
+    clearSelection();
+  }
+);
+
+watch(
+  () => activePattern.value?.id,
   () => {
     clearSelection();
   }

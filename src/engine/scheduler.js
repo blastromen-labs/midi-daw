@@ -34,6 +34,17 @@ function trackLoopLengthBeats(track) {
   return patternLoopEndBeat(getPlayingPattern(track));
 }
 
+// When a Live-mode clip is queued, the scheduler's lookahead (SCHEDULE_AHEAD_SEC
+// in clock.js) can extend past the pending launch boundary. Without capping the
+// horizon, beat-0 notes from the outgoing pattern get scheduled for the next
+// loop cycle right as the queued clip is supposed to take over — sounds like
+// the current pattern restarting from the top.
+function scheduleHorizonBeat(track, endAbsBeat) {
+  const pending = track.pendingLaunchBeat;
+  if (pending == null) return endAbsBeat;
+  return Math.min(endAbsBeat, pending - 1e-6);
+}
+
 // Next absolute beat (>= absBeat) whose wrapped position equals noteBeat inside the loop.
 function nextTransportLoopOccurrence(absBeat, noteBeat, loopStart, loopLen) {
   const rel = ((absBeat - loopStart) % loopLen + loopLen) % loopLen;
@@ -193,6 +204,8 @@ export class PlaybackEngine {
       const trackLoopLen = trackLoopLengthBeats(track);
       if (trackLoopLen <= 0) continue;
 
+      const horizonBeat = scheduleHorizonBeat(track, endAbsBeat);
+
       for (const note of pattern.notes) {
         if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
 
@@ -205,7 +218,7 @@ export class PlaybackEngine {
           let occurrence = nextTransportLoopOccurrence(absBeat, note.startBeat, loopStart, transportLoopLen);
           let cycle = Math.floor((occurrence - loopStart) / transportLoopLen);
 
-          while (occurrence <= endAbsBeat) {
+          while (occurrence <= horizonBeat) {
             const startTime = clock.beatToAudioTime(occurrence);
             const noteKey = `n-${track.id}-${note.id}-t${cycle}`;
 
@@ -235,7 +248,7 @@ export class PlaybackEngine {
           if (occurrence < absBeat - 0.01) occurrence += trackLoopLen;
         }
 
-        while (occurrence <= endAbsBeat) {
+        while (occurrence <= horizonBeat) {
           const startTime = clock.beatToAudioTime(occurrence);
           const iteration = Math.round((occurrence - note.startBeat) / trackLoopLen);
           const noteKey = `n-${track.id}-${note.id}-${iteration}`;

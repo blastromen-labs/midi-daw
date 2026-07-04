@@ -11,7 +11,6 @@
       :clock-input-id="project.clockInputId"
       :midi-inputs="midiInputs"
       @toggle-play="togglePlay"
-      @stop="stopPlayback"
       @bpm-change="setBpm"
       @steps-change="setPatternSteps"
       @toggle-clock="project.sendMidiClock = !project.sendMidiClock"

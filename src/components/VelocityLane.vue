@@ -15,6 +15,8 @@
 
 <script setup>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { shade } from '../utils/color.js';
+import { THEME } from '../theme.js';
 
 // Vertical padding at top/bottom of the lane so a velocity-127 handle isn't
 // clipped by the canvas edge and a velocity-1 bar is still visible off the floor.
@@ -28,7 +30,7 @@ const props = defineProps({
   beatWidth: { type: Number, required: true },
   gridWidth: { type: Number, required: true },
   height: { type: Number, required: true },
-  color: { type: String, default: '#8fd694' },
+  color: { type: String, default: '#a7d7af' },
   scrollLeft: { type: Number, default: 0 },
 });
 
@@ -83,32 +85,75 @@ function applyVelocityAtY(y) {
   );
 }
 
+// The velocity at `noteX` along the straight line from (x0, y0) to (x1, y1) —
+// lets a single mousemove segment paint a smooth ramp across every note it
+// crosses, not just the note nearest the cursor.
+function velocityOnSegment(x0, y0, x1, y1, noteX) {
+  const t = x1 === x0 ? 1 : (noteX - x0) / (x1 - x0);
+  return yToVelocity(y0 + (y1 - y0) * t);
+}
+
+// Paints every note whose handle falls within the segment just swept by the
+// cursor (plus a little hit-radius slack), setting its velocity directly to
+// the pen's height at that point — like drawing a shape across the lane.
+// Notes outside the segment are left untouched so earlier parts of the same
+// stroke aren't re-painted by a later, unrelated segment.
+function paintSegment(x0, y0, x1, y1) {
+  const xMin = Math.min(x0, x1) - HIT_RADIUS_PX;
+  const xMax = Math.max(x0, x1) + HIT_RADIUS_PX;
+
+  emit(
+    'update-notes',
+    props.notes.map((n) => {
+      const nx = beatToX(n.startBeat);
+      if (nx < xMin || nx > xMax) return n;
+      return { ...n, velocity: velocityOnSegment(x0, y0, x1, y1, nx) };
+    })
+  );
+}
+
 function onMouseDown(e) {
   const rect = canvas.value.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
 
   const note = findNoteNear(x);
-  if (!note) return;
 
-  // Dragging a note that's part of a multi-selection adjusts the whole group
-  // together, same convention as moving/resizing notes in the grid above.
-  const group =
-    props.selectedNoteIds.has(note.id) && props.selectedNoteIds.size > 1
-      ? props.notes.filter((n) => props.selectedNoteIds.has(n.id))
-      : [note];
+  // Grabbing a note that's already part of a multi-selection nudges the
+  // whole group together (preserving each note's relative velocity), same
+  // convention as moving/resizing notes in the grid above.
+  if (note && props.selectedNoteIds.has(note.id) && props.selectedNoteIds.size > 1) {
+    const group = props.notes.filter((n) => props.selectedNoteIds.has(n.id));
+    drag.value = {
+      type: 'group',
+      anchorOrigVelocity: note.velocity,
+      origVelocities: new Map(group.map((n) => [n.id, n.velocity])),
+    };
+    applyVelocityAtY(y);
+    return;
+  }
 
-  drag.value = {
-    anchorOrigVelocity: note.velocity,
-    origVelocities: new Map(group.map((n) => [n.id, n.velocity])),
-  };
-  applyVelocityAtY(y);
+  // Otherwise, click-and-drag anywhere in the lane paints velocities directly
+  // — like drawing with a pencil — so a single stroke can sweep across and
+  // reshape many notes at once, not just the one under the cursor.
+  drag.value = { type: 'paint', lastX: x, lastY: y };
+  paintSegment(x, y, x, y);
 }
 
 function onMouseMove(e) {
   if (!drag.value) return;
   const rect = canvas.value.getBoundingClientRect();
-  applyVelocityAtY(e.clientY - rect.top);
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  if (drag.value.type === 'group') {
+    applyVelocityAtY(y);
+    return;
+  }
+
+  paintSegment(drag.value.lastX, drag.value.lastY, x, y);
+  drag.value.lastX = x;
+  drag.value.lastY = y;
 }
 
 function onMouseUp() {
@@ -123,11 +168,11 @@ function render() {
   const h = props.height;
   ctx.clearRect(0, 0, w, h);
 
-  ctx.fillStyle = '#12161c';
+  ctx.fillStyle = THEME.velocity.background;
   ctx.fillRect(0, 0, w, h);
 
   // Light guide lines at 0/25/50/75/100% velocity.
-  ctx.strokeStyle = '#232a33';
+  ctx.strokeStyle = THEME.velocity.guide;
   ctx.lineWidth = 1;
   for (const frac of [0, 0.25, 0.5, 0.75, 1]) {
     const y = LANE_PADDING + frac * usableHeight();
@@ -142,19 +187,25 @@ function render() {
     const topY = velocityToY(note.velocity);
     const bottomY = h - LANE_PADDING;
     const isSelected = props.selectedNoteIds.has(note.id);
-    const strokeColor = isSelected ? '#ffffff' : props.color;
+    // Derived from the track's own color, same as the note gradient in the
+    // grid above, so the velocity lane visually matches its notes.
+    const lineColor = isSelected ? '#ffffff' : shade(props.color, -0.35);
+    const dotColor = isSelected ? '#ffffff' : shade(props.color, 0.6);
 
-    ctx.strokeStyle = strokeColor;
+    ctx.strokeStyle = lineColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(x, bottomY);
     ctx.lineTo(x, topY);
     ctx.stroke();
 
-    ctx.fillStyle = strokeColor;
+    ctx.fillStyle = dotColor;
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(x, topY, HANDLE_RADIUS, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
   }
 }
 

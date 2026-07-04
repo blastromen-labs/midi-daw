@@ -271,6 +271,6 @@ function onKeyDown(e) {
 
 <style scoped>
 .daw {
-  background: #0d0d10;
+  background: #1d262b;
 }
 </style>

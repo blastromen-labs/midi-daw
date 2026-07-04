@@ -1,8 +1,8 @@
 <template>
-  <div class="drum-sequencer bg-panel rounded-lg border border-zinc-800 overflow-hidden">
-    <div class="flex items-center justify-between px-4 py-2 bg-surface border-b border-zinc-800">
+  <div class="drum-sequencer bg-panel rounded-lg border border-line overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 bg-surface border-b border-line">
       <h2 class="text-sm font-semibold text-accent uppercase tracking-wider">Drum Machine</h2>
-      <span class="text-xs text-zinc-500">808-style · 4 tracks</span>
+      <span class="text-xs text-muted-dim">808-style · 4 tracks</span>
     </div>
 
     <div class="p-4 space-y-1">
@@ -52,7 +52,7 @@
           <div
             v-for="i in stepCount"
             :key="i"
-            class="flex-1 text-center text-[10px] text-zinc-600"
+            class="flex-1 text-center text-[10px] text-muted-dim"
           >
             {{ (i - 1) % 4 === 0 ? Math.floor((i - 1) / 4) + 1 : '' }}
           </div>
@@ -98,21 +98,21 @@ function clearStep(trackId, stepIndex) {
 
 <style scoped>
 .step-btn {
-  background: #1a1a22;
-  border: 1px solid #2a2a35;
+  background: #25333c;
+  border: 1px solid #324450;
 }
 
 .step-inactive:hover {
-  background: #222230;
-  border-color: #3a3a48;
+  background: #2c3d47;
+  border-color: #3f5561;
 }
 
 .step-active {
-  border-color: var(--track-color, #ff6b35);
+  border-color: var(--track-color, #6fae78);
 }
 
 .step-current {
-  box-shadow: 0 0 8px rgba(255, 107, 53, 0.6);
-  border-color: #ff6b35 !important;
+  box-shadow: 0 0 8px rgba(111, 174, 120, 0.6);
+  border-color: #6fae78 !important;
 }
 </style>

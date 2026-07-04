@@ -1,8 +1,8 @@
 <template>
-  <div ref="rootRef" class="piano-roll flex flex-col bg-panel rounded-lg border border-zinc-800 overflow-hidden h-full">
+  <div ref="rootRef" class="piano-roll flex flex-col bg-panel rounded-lg border border-line overflow-hidden h-full">
     <!-- Toolbar -->
     <div
-      class="flex items-center gap-3 px-3 py-2 bg-surface border-b border-zinc-800 flex-shrink-0"
+      class="flex items-center gap-3 px-3 py-2 bg-surface border-b border-line flex-shrink-0"
       @mousedown="onToolbarMouseDown"
     >
       <select :value="activeTrackId" @change="onTrackSelect" class="text-sm font-semibold">
@@ -12,10 +12,10 @@
       <input
         :value="activeTrack?.name"
         @change="onRename"
-        class="bg-transparent border-b border-zinc-700 text-sm px-1 w-24 focus:border-accent outline-none"
+        class="bg-transparent border-b border-line-light text-sm px-1 w-24 focus:border-accent outline-none"
       />
 
-      <div class="h-4 w-px bg-zinc-700"></div>
+      <div class="h-4 w-px bg-line-light"></div>
 
       <MidiRouteSelect
         v-if="activeTrack"
@@ -26,53 +26,53 @@
         @channel-change="(ch) => updateRoute({ midiChannel: ch })"
       />
 
-      <div class="h-4 w-px bg-zinc-700"></div>
+      <div class="h-4 w-px bg-line-light"></div>
 
-      <label class="text-xs text-zinc-400">Snap</label>
+      <label class="text-xs text-muted">Snap</label>
       <select v-model="snap" class="text-xs">
         <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
       </select>
 
-      <label class="text-xs text-zinc-400 ml-1" title="Length of newly drawn notes — independent of Snap">Length</label>
+      <label class="text-xs text-muted ml-1" title="Length of newly drawn notes — independent of Snap">Length</label>
       <select v-model="noteLength" class="text-xs">
         <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
       </select>
 
-      <div class="h-4 w-px bg-zinc-700"></div>
+      <div class="h-4 w-px bg-line-light"></div>
 
       <button
-        class="text-xs text-zinc-400 hover:text-white tabular-nums"
+        class="text-xs text-muted hover:text-white tabular-nums"
         title="Cmd/Ctrl + scroll to zoom — click to reset"
         @click="resetZoom"
       >
         Zoom {{ zoomPercent }}%
       </button>
 
-      <label class="text-xs text-zinc-400 ml-2">Draw</label>
+      <label class="text-xs text-muted ml-2">Draw</label>
       <button
         class="px-2 py-0.5 rounded text-xs"
-        :class="tool === 'draw' ? 'bg-accent text-white' : 'bg-zinc-700'"
+        :class="tool === 'draw' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
         @click="tool = 'draw'"
       >
         ✏
       </button>
       <button
         class="px-2 py-0.5 rounded text-xs"
-        :class="tool === 'select' ? 'bg-accent text-white' : 'bg-zinc-700'"
+        :class="tool === 'select' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
         @click="tool = 'select'"
       >
         ↖
       </button>
       <button
         class="px-2 py-0.5 rounded text-xs"
-        :class="tool === 'erase' ? 'bg-accent text-white' : 'bg-zinc-700'"
+        :class="tool === 'erase' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
         @click="tool = 'erase'"
       >
         ✕
       </button>
 
       <button
-        class="ml-auto px-2 py-0.5 rounded text-xs bg-zinc-700 hover:bg-zinc-600"
+        class="ml-auto px-2 py-0.5 rounded text-xs bg-surface-hover hover:bg-surface-active"
         @click="$emit('add-track')"
       >
         + Track
@@ -82,7 +82,7 @@
     <!-- Canvas area -->
     <div class="flex flex-1 min-h-0 overflow-hidden" ref="containerRef">
       <!-- Piano keys -->
-      <div class="flex-shrink-0 w-12 overflow-hidden bg-zinc-900 border-r border-zinc-800" ref="keysRef">
+      <div class="flex-shrink-0 w-12 overflow-hidden bg-panel border-r border-line" ref="keysRef">
         <canvas
           ref="keysCanvas"
           :width="48"
@@ -125,44 +125,37 @@
       </div>
     </div>
 
-    <!-- Drag up/down to resize the velocity panel; drag down past the
-         threshold (or click the header) to collapse it out of the way. -->
+    <!-- Drag up/down to resize the velocity panel; a plain click (no drag)
+         toggles it collapsed, freeing up room for the note grid above. -->
     <div
-      class="flex-shrink-0 h-2 bg-zinc-800 hover:bg-zinc-700 cursor-row-resize flex items-center justify-center transition-colors"
+      class="flex-shrink-0 h-2 bg-line hover:bg-line-light cursor-row-resize flex items-center justify-center transition-colors"
+      title="Drag to resize — click to collapse/expand"
       @mousedown="onVelocityResizeStart"
     >
       <div class="flex gap-0.5 pointer-events-none">
-        <span v-for="i in 5" :key="i" class="w-0.5 h-0.5 rounded-full bg-zinc-500"></span>
+        <span v-for="i in 5" :key="i" class="w-0.5 h-0.5 rounded-full bg-muted-dim"></span>
       </div>
     </div>
 
-    <!-- Velocity / control panel -->
-    <div class="flex-shrink-0 flex flex-col bg-surface">
+    <!-- Velocity panel -->
+    <div v-show="!velocityCollapsed" class="flex-shrink-0 flex bg-panel" :style="{ height: velocityHeight + 'px' }">
       <div
-        class="flex items-center h-6 px-3 gap-2 border-b border-zinc-800 flex-shrink-0"
-        @mousedown="onVelocityHeaderMouseDown"
+        class="flex-shrink-0 w-12 bg-panel border-r border-t border-line flex items-center justify-center select-none"
+        @mousedown="clearSelection"
       >
-        <span class="text-xs text-zinc-400 cursor-pointer select-none" @click="toggleVelocityCollapse">
-          {{ velocityCollapsed ? '▸' : '▾' }} Control
-        </span>
-        <div class="h-3 w-px bg-zinc-700"></div>
-        <span class="text-xs text-accent select-none">Velocity</span>
+        <span class="text-[10px] font-semibold text-accent tracking-widest vertical-label">VEL</span>
       </div>
-
-      <div v-show="!velocityCollapsed" class="flex" :style="{ height: velocityHeight + 'px' }">
-        <div class="flex-shrink-0 w-12 bg-zinc-900 border-r border-t border-zinc-800" @mousedown="clearSelection"></div>
-        <VelocityLane
-          v-if="activeTrack"
-          :notes="activeTrack.notes"
-          :selected-note-ids="selectedNoteIds"
-          :beat-width="beatWidth"
-          :grid-width="gridWidth"
-          :height="velocityHeight"
-          :color="activeTrack.color"
-          :scroll-left="mainScrollLeft"
-          @update-notes="emitNotes"
-        />
-      </div>
+      <VelocityLane
+        v-if="activeTrack"
+        :notes="activeTrack.notes"
+        :selected-note-ids="selectedNoteIds"
+        :beat-width="beatWidth"
+        :grid-width="gridWidth"
+        :height="velocityHeight"
+        :color="activeTrack.color"
+        :scroll-left="mainScrollLeft"
+        @update-notes="emitNotes"
+      />
     </div>
   </div>
 </template>
@@ -173,6 +166,8 @@ import { noteName, SNAP_VALUES, snapBeat, createNote, uid } from '../models/proj
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { getActiveClock } from '../engine/activeClock.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
+import { shade } from '../utils/color.js';
+import { THEME } from '../theme.js';
 import MidiRouteSelect from './MidiRouteSelect.vue';
 import VelocityLane from './VelocityLane.vue';
 
@@ -183,8 +178,8 @@ const DEFAULT_VELOCITY_HEIGHT = 110;
 const MIN_VELOCITY_HEIGHT = 40;
 const MAX_VELOCITY_HEIGHT = 280;
 const VELOCITY_COLLAPSE_THRESHOLD = 20;
-const DEFAULT_NOTE_COLOR = '#8fd694';
-const NOTE_CORNER_RADIUS = 3;
+const DEFAULT_NOTE_COLOR = '#a7d7af';
+const NOTE_CORNER_RADIUS = THEME.note.cornerRadius;
 
 const props = defineProps({
   tracks: { type: Array, required: true },
@@ -508,7 +503,9 @@ function onMouseDown(e) {
   if (tool.value === 'draw') {
     const note = createNote(pitch, cellBeat, noteLength.value, 100);
     emitNotes([...getNotes(), note]);
-    selectedNoteIds.value = new Set([note.id]);
+    // Newly drawn notes start unselected — a fresh click shouldn't leave the
+    // selection outline sitting on the note you just placed.
+    clearSelection();
     previewNotePulse(note.pitch, note.velocity, note.duration);
     // Hold and drag to paint more notes into new cells in one stroke.
     drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
@@ -660,16 +657,22 @@ function toggleVelocityCollapse() {
 }
 
 // Drag the handle above the velocity panel up/down to resize it; dragging
-// down past a small threshold (or clicking the header) collapses it out of
-// the way entirely, freeing up room for the note grid above.
+// down past a small threshold collapses it out of the way entirely, freeing
+// up room for the note grid above. A plain click (no meaningful drag) is
+// treated as a shorthand for toggling collapse, now that there's no
+// dedicated header label to click instead.
+const CLICK_DRAG_THRESHOLD_PX = 3;
+
 function onVelocityResizeStart(e) {
   e.preventDefault();
   const startY = e.clientY;
   const startHeight = velocityCollapsed.value ? 0 : velocityHeight.value;
   const prevUserSelect = document.body.style.userSelect;
   document.body.style.userSelect = 'none';
+  let dragged = false;
 
   function onMove(ev) {
+    if (Math.abs(ev.clientY - startY) > CLICK_DRAG_THRESHOLD_PX) dragged = true;
     const proposedHeight = startHeight + (startY - ev.clientY);
     if (proposedHeight <= VELOCITY_COLLAPSE_THRESHOLD) {
       velocityCollapsed.value = true;
@@ -683,6 +686,7 @@ function onVelocityResizeStart(e) {
     document.body.style.userSelect = prevUserSelect;
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
+    if (!dragged) toggleVelocityCollapse();
   }
 
   window.addEventListener('mousemove', onMove);
@@ -706,10 +710,6 @@ function onScrollAreaMouseDown(e) {
 // does whatever it normally does, since the target there is that control,
 // not the bar div. Shared by the toolbar and the velocity panel's header.
 function onToolbarMouseDown(e) {
-  if (e.target === e.currentTarget) clearSelection();
-}
-
-function onVelocityHeaderMouseDown(e) {
   if (e.target === e.currentTarget) clearSelection();
 }
 
@@ -741,29 +741,47 @@ function resetZoom() {
   beatWidth.value = DEFAULT_BEAT_WIDTH;
 }
 
-// True piano coloring: white keys light, black keys dark, like a real keyboard
-// — rather than the two dark greys used elsewhere in the app's theme.
-const WHITE_KEY_COLOR = '#eeeef2';
-const BLACK_KEY_COLOR = '#17171c';
-const PRESSED_KEY_COLOR = '#ff6b35';
+// True piano coloring: white keys light, black keys dark, like a real
+// keyboard, each with a subtle glossy gradient for a nicer keyboard look.
+const KEY_WIDTH = 48;
 
 function drawKeys() {
   const canvas = keysCanvas.value;
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 48, canvasHeight);
+  const { keys } = THEME;
+  ctx.clearRect(0, 0, KEY_WIDTH, canvasHeight);
 
   for (let p = HIGH_PITCH; p >= LOW_PITCH; p--) {
     const y = pitchToY(p);
     const isPressed = p === previewingPitch.value;
     const isBlack = [1, 3, 6, 8, 10].includes(p % 12);
-    ctx.fillStyle = isPressed ? PRESSED_KEY_COLOR : isBlack ? BLACK_KEY_COLOR : WHITE_KEY_COLOR;
-    ctx.fillRect(0, y, 48, ROW_HEIGHT);
-    ctx.strokeStyle = isBlack ? '#000' : '#c8c8ce';
-    ctx.strokeRect(0, y, 48, ROW_HEIGHT);
+    const isOctave = p % 12 === 0;
 
-    if (p % 12 === 0) {
-      ctx.fillStyle = isPressed ? '#fff' : isBlack ? '#aaa' : '#333';
+    if (isPressed) {
+      ctx.fillStyle = keys.pressed;
+    } else if (isBlack) {
+      // Horizontal bevel highlight, like a glossy black key catching light.
+      const grad = ctx.createLinearGradient(0, 0, KEY_WIDTH, 0);
+      grad.addColorStop(0, keys.blackStart);
+      grad.addColorStop(1, keys.blackEnd);
+      ctx.fillStyle = grad;
+    } else {
+      // Vertical gradient gives white keys a rounded, glossy edge; the C-row
+      // gets a slightly darker tint so octave boundaries read at a glance.
+      const grad = ctx.createLinearGradient(0, y, 0, y + ROW_HEIGHT);
+      const top = isOctave ? shade(keys.whiteOctave, 0.08) : keys.whiteTop;
+      const bottom = isOctave ? keys.whiteOctave : keys.whiteBottom;
+      grad.addColorStop(0, top);
+      grad.addColorStop(1, bottom);
+      ctx.fillStyle = grad;
+    }
+    ctx.fillRect(0, y, KEY_WIDTH, ROW_HEIGHT);
+    ctx.strokeStyle = isBlack ? keys.borderBlack : keys.borderWhite;
+    ctx.strokeRect(0, y, KEY_WIDTH, ROW_HEIGHT);
+
+    if (isOctave) {
+      ctx.fillStyle = isPressed ? keys.labelOnPressed : isBlack ? keys.labelOnBlack : keys.labelOnWhite;
       ctx.font = '9px JetBrains Mono';
       ctx.fillText(noteName(p), 2, y + ROW_HEIGHT - 3);
     }
@@ -775,13 +793,14 @@ function drawGrid() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = gridWidth.value;
+  const { grid } = THEME;
   ctx.clearRect(0, 0, w, canvasHeight);
 
   // Background rows
   for (let p = HIGH_PITCH; p >= LOW_PITCH; p--) {
     const y = pitchToY(p);
     const isBlack = [1, 3, 6, 8, 10].includes(p % 12);
-    ctx.fillStyle = isBlack ? '#12121a' : '#18181f';
+    ctx.fillStyle = isBlack ? grid.rowDark : grid.rowLight;
     ctx.fillRect(0, y, w, ROW_HEIGHT);
   }
 
@@ -789,7 +808,7 @@ function drawGrid() {
   const snapW = snap.value * beatWidth.value;
   for (let x = 0; x <= w; x += snapW) {
     const isBeat = Math.abs(x / beatWidth.value - Math.round(x / beatWidth.value)) < 0.001;
-    ctx.strokeStyle = isBeat ? '#3a3a48' : '#222230';
+    ctx.strokeStyle = isBeat ? grid.lineBeat : grid.lineSub;
     ctx.lineWidth = isBeat ? 1 : 0.5;
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -797,9 +816,14 @@ function drawGrid() {
     ctx.stroke();
   }
 
-  // Notes
+  // Notes — rounded, with a soft top-lit gradient and a darker border, both
+  // derived from the track's own color so multi-track color-coding survives
+  // alongside the greenish, glossy note look.
   const notes = getNotes();
   const color = activeTrack.value?.color ?? DEFAULT_NOTE_COLOR;
+  const topColor = shade(color, 0.3);
+  const bottomColor = shade(color, -0.08);
+  const borderColor = shade(color, -0.32);
   for (const note of notes) {
     const x = beatToX(note.startBeat);
     const y = pitchToY(note.pitch);
@@ -807,18 +831,19 @@ function drawGrid() {
     const isSelected = selectedNoteIds.value.has(note.id);
     const noteRect = [x + 1, y + 1, nw - 2, ROW_HEIGHT - 2];
 
-    ctx.fillStyle = color;
+    const grad = ctx.createLinearGradient(0, noteRect[1], 0, noteRect[1] + noteRect[3]);
+    grad.addColorStop(0, topColor);
+    grad.addColorStop(1, bottomColor);
+    ctx.fillStyle = grad;
     ctx.globalAlpha = (note.velocity / 127) * 0.6 + 0.4;
     traceRoundedRect(ctx, ...noteRect, NOTE_CORNER_RADIUS);
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    if (isSelected) {
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1;
-      traceRoundedRect(ctx, ...noteRect, NOTE_CORNER_RADIUS);
-      ctx.stroke();
-    }
+    ctx.strokeStyle = isSelected ? THEME.note.selectedOutline : borderColor;
+    ctx.lineWidth = isSelected ? 1.5 : 1;
+    traceRoundedRect(ctx, ...noteRect, NOTE_CORNER_RADIUS);
+    ctx.stroke();
 
     if (nw > 18) {
       ctx.fillStyle = 'rgba(10, 10, 15, 0.75)';
@@ -837,7 +862,9 @@ function drawPlayhead() {
   if (!props.playing) return;
 
   const px = beatToX(liveBeat.value);
-  ctx.strokeStyle = '#ff6b35';
+  // Kept a distinct warm color (not part of the greenish note palette) so the
+  // playhead never blends visually into the notes it's scrubbing across.
+  ctx.strokeStyle = '#ffb454';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(px, 0);
@@ -922,5 +949,10 @@ onUnmounted(() => {
 <style scoped>
 .piano-roll {
   min-height: 300px;
+}
+
+.vertical-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
 }
 </style>

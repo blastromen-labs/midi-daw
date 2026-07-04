@@ -33,7 +33,7 @@ export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity 
 
 // Cycled through as new MIDI tracks are added, so multiple tracks stay
 // visually distinguishable in the piano roll instead of all sharing one color.
-export const MIDI_TRACK_COLORS = ['#8fd694', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
+export const MIDI_TRACK_COLORS = ['#a7d7af', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
 
 export function createMidiTrack(name = 'MIDI 1', colorIndex = 0) {
   return {

@@ -10,8 +10,8 @@
 
 body {
   margin: 0;
-  background: #0d0d10;
-  color: #e0e0e8;
+  background: #1d262b;
+  color: #dfe6e9;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   overflow: hidden;
 }
@@ -22,23 +22,23 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1a1f;
+  background: #1d262b;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #444;
+  background: #4c565c;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #666;
+  background: #5a6570;
 }
 
 input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
-  background: #333;
+  background: #2a3a44;
   border-radius: 2px;
   outline: none;
 }
@@ -47,15 +47,15 @@ input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 14px;
   height: 14px;
-  background: #ff6b35;
+  background: #6fae78;
   border-radius: 50%;
   cursor: pointer;
 }
 
 select {
-  background: #252530;
-  color: #e0e0e8;
-  border: 1px solid #444;
+  background: #3f484d;
+  color: #dfe6e9;
+  border: 1px solid #2a3a44;
   border-radius: 4px;
   padding: 4px 8px;
   font-family: inherit;
@@ -64,5 +64,5 @@ select {
 
 select:focus {
   outline: none;
-  border-color: #ff6b35;
+  border-color: #6fae78;
 }

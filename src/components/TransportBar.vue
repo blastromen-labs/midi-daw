@@ -1,5 +1,5 @@
 <template>
-  <div class="transport-bar flex items-center gap-4 px-4 py-2 bg-panel border-b border-zinc-800">
+  <div class="transport-bar flex items-center gap-4 px-4 py-2 bg-panel border-b border-line">
     <button
       class="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold transition-all"
       :class="playButtonClass"
@@ -11,7 +11,7 @@
     </button>
 
     <button
-      class="w-8 h-8 rounded bg-zinc-700 hover:bg-zinc-600 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+      class="w-8 h-8 rounded bg-surface-hover hover:bg-surface-active text-sm disabled:opacity-40 disabled:cursor-not-allowed"
       :disabled="syncMode === 'external'"
       @click="$emit('stop')"
       title="Stop"
@@ -20,28 +20,28 @@
     </button>
 
     <div class="flex items-center gap-2">
-      <label class="text-xs text-zinc-400">BPM</label>
+      <label class="text-xs text-muted">BPM</label>
       <input
         type="number"
         :value="displayBpm"
         min="40"
         max="300"
         :disabled="syncMode === 'external'"
-        class="w-16 bg-surface border border-zinc-700 rounded px-2 py-1 text-sm text-center disabled:opacity-60"
+        class="w-16 bg-surface border border-line-light rounded px-2 py-1 text-sm text-center disabled:opacity-60"
         :title="syncMode === 'external' ? 'Detected from incoming MIDI clock' : ''"
         @change="onBpmChange"
       />
     </div>
 
     <div class="flex items-center gap-2">
-      <label class="text-xs text-zinc-400">Position</label>
+      <label class="text-xs text-muted">Position</label>
       <span class="text-sm font-mono text-accent">{{ positionDisplay }}</span>
     </div>
 
-    <div class="h-6 w-px bg-zinc-700"></div>
+    <div class="h-6 w-px bg-line-light"></div>
 
     <div class="flex items-center gap-2">
-      <label class="text-xs text-zinc-400">Steps</label>
+      <label class="text-xs text-muted">Steps</label>
       <select :value="patternSteps" @change="onStepsChange" class="text-sm">
         <option :value="16">16 (1 bar)</option>
         <option :value="32">32 (2 bars)</option>
@@ -50,10 +50,10 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <label class="text-xs text-zinc-400">MIDI Clock</label>
+      <label class="text-xs text-muted">MIDI Clock</label>
       <button
         class="w-10 h-5 rounded-full transition-colors relative"
-        :class="sendMidiClock ? 'bg-accent' : 'bg-zinc-600'"
+        :class="sendMidiClock ? 'bg-accent' : 'bg-surface-hover'"
         @click="$emit('toggle-clock')"
       >
         <span
@@ -63,20 +63,20 @@
       </button>
     </div>
 
-    <div class="h-6 w-px bg-zinc-700"></div>
+    <div class="h-6 w-px bg-line-light"></div>
 
     <div class="flex items-center gap-2">
-      <label class="text-xs text-zinc-400" title="Internal: this app is the master clock. External: follow incoming MIDI clock from another app (e.g. FL Studio).">Sync</label>
+      <label class="text-xs text-muted" title="Internal: this app is the master clock. External: follow incoming MIDI clock from another app (e.g. FL Studio).">Sync</label>
       <button
         class="px-2 py-0.5 rounded text-xs"
-        :class="syncMode === 'internal' ? 'bg-accent text-white' : 'bg-zinc-700'"
+        :class="syncMode === 'internal' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
         @click="$emit('sync-mode-change', 'internal')"
       >
         Internal
       </button>
       <button
         class="px-2 py-0.5 rounded text-xs"
-        :class="syncMode === 'external' ? 'bg-accent text-white' : 'bg-zinc-700'"
+        :class="syncMode === 'external' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
         @click="$emit('sync-mode-change', 'external')"
       >
         External
@@ -84,19 +84,19 @@
     </div>
 
     <div v-if="syncMode === 'external'" class="flex items-center gap-2">
-      <label class="text-xs text-zinc-400">Clock In</label>
+      <label class="text-xs text-muted">Clock In</label>
       <select :value="clockInputId" @change="onClockInChange" class="text-sm max-w-40">
         <option value="">Select input...</option>
         <option v-for="d in midiInputs" :key="d.id" :value="d.id">{{ d.name }}</option>
       </select>
-      <span class="w-2 h-2 rounded-full flex-shrink-0" :class="playing ? 'bg-green-500 animate-pulse' : 'bg-zinc-600'"></span>
-      <span class="text-xs text-zinc-400 whitespace-nowrap">
+      <span class="w-2 h-2 rounded-full flex-shrink-0" :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"></span>
+      <span class="text-xs text-muted whitespace-nowrap">
         {{ !clockInputId ? 'No input selected' : playing ? 'Synced — playing' : 'Waiting for clock…' }}
       </span>
     </div>
 
     <div class="flex items-center gap-2 ml-auto">
-      <label class="text-xs text-zinc-400">Clock Out</label>
+      <label class="text-xs text-muted">Clock Out</label>
       <select :value="clockOutputId" @change="onClockOutChange" class="text-sm max-w-48">
         <option value="">All outputs</option>
         <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
@@ -142,7 +142,7 @@ const displayBpm = computed(() => (props.syncMode === 'external' ? Math.round(li
 
 const playButtonClass = computed(() => {
   if (props.syncMode === 'external') {
-    return props.playing ? 'bg-green-600' : 'bg-zinc-700 opacity-50 cursor-not-allowed';
+    return props.playing ? 'bg-green-600' : 'bg-surface-hover opacity-50 cursor-not-allowed';
   }
   return props.playing ? 'bg-red-600 hover:bg-red-500' : 'bg-accent hover:bg-accent-dim';
 });

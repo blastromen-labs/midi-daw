@@ -313,7 +313,6 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, trackLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
-import { getActiveClock } from '../engine/activeClock.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
 import { shade } from '../utils/color.js';
@@ -327,7 +326,6 @@ import VolumeSlider from './VolumeSlider.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
-const MIN_PREVIEW_MS = 60;
 const DEFAULT_VELOCITY_HEIGHT = 110;
 const MIN_VELOCITY_HEIGHT = 40;
 const MAX_VELOCITY_HEIGHT = 280;
@@ -805,19 +803,15 @@ function onMouseDown(e) {
   // Newly drawn notes start unselected — a fresh click shouldn't leave the
   // selection outline sitting on the note you just placed.
   clearSelection();
-  previewNotePulse(note.pitch, note.velocity, note.duration);
+  startDrawPreview(note.pitch, note.velocity);
   // Hold and drag to paint more notes into new cells in one stroke.
   drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
 }
 
-// Briefly sounds a note when it's drawn, so you can hear it without having to
-// press play. For drum tracks that's a one-shot sample trigger (`pitch` is a
-// pad id there); for MIDI tracks it's the existing Note On/Off pulse, with
-// output/channel captured up front so a later routing change can't cause the
-// note-off to go to the wrong place.
-function previewNotePulse(pitch, velocity, durationBeats) {
-  // Audition-on-draw is for editing while stopped — during playback the
-  // scheduler already owns MIDI/sample output for the same notes.
+// Audition while drawing — same hold/release behavior as clicking the piano
+// keys: the key stays lit and the note sounds until pointer up. Drums fire a
+// one-shot sample per placed pad instead (no keyboard column to highlight).
+function startDrawPreview(pitch, velocity = PREVIEW_VELOCITY) {
   if (props.playing) return;
 
   const track = activeTrack.value;
@@ -831,12 +825,7 @@ function previewNotePulse(pitch, velocity, durationBeats) {
     return;
   }
 
-  if (!track.midiOutputId) return;
-  const { midiOutputId, midiChannel } = track;
-
-  sendNoteOn(midiOutputId, midiChannel, pitch, velocity);
-  const ms = Math.max(MIN_PREVIEW_MS, getActiveClock().beatToSec(durationBeats) * 1000);
-  setTimeout(() => sendNoteOff(midiOutputId, midiChannel, pitch), ms);
+  playPreview(pitch);
 }
 
 // Pad-management: PianoRoll owns the sampler engine calls (decode/cache),
@@ -896,6 +885,10 @@ function onMouseMove(e) {
   }
 
   if (drag.value.type === 'paintAdd') {
+    if (!props.playing && !isDrumTrack.value && pitch !== previewingPitch.value) {
+      slidePreview(pitch);
+    }
+
     const cellKey = `${cellBeat}:${pitch}`;
     if (cellKey === drag.value.lastCell) return;
     drag.value.lastCell = cellKey;
@@ -903,7 +896,9 @@ function onMouseMove(e) {
     if (!findNoteAt(rawBeat, pitch)) {
       const note = createNote(pitch, cellBeat, noteLength.value, 100);
       emitNotes([...getNotes(), note]);
-      previewNotePulse(note.pitch, note.velocity, note.duration);
+      if (!props.playing && isDrumTrack.value) {
+        startDrawPreview(note.pitch, note.velocity);
+      }
     }
     return;
   }
@@ -1017,6 +1012,12 @@ function onGridTouchEnd() {
   onMouseUp();
 }
 
+function slidePreview(pitch) {
+  if (pitch < LOW_PITCH || pitch > HIGH_PITCH || pitch === previewingPitch.value) return;
+  stopPreview();
+  playPreview(pitch);
+}
+
 function playPreview(pitch) {
   const track = activeTrack.value;
   if (track?.midiOutputId) {
@@ -1046,10 +1047,7 @@ function onKeyMouseMove(e) {
   if (previewingPitch.value === null) return;
   const rect = keysCanvas.value.getBoundingClientRect();
   const pitch = yToPitch(e.clientY - rect.top);
-  if (pitch < LOW_PITCH || pitch > HIGH_PITCH || pitch === previewingPitch.value) return;
-  // Slide across keys like a real piano roll: release the old note, trigger the new one.
-  stopPreview();
-  playPreview(pitch);
+  slidePreview(pitch);
 }
 
 function onKeyTouchStart(e) {

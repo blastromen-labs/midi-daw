@@ -70,7 +70,9 @@ export function createProject() {
     // 'external': follow incoming MIDI clock from another app (e.g. FL Studio).
     syncMode: 'internal',
     clockInputId: '',
-    tracks: [createDrumTrack('Drums 1', 0), createMidiTrack('Synth 1', 1), createMidiTrack('Synth 2', 2)],
+    // Synth 1/2 keep their original color-cycle positions (green/blue) —
+    // Drums gets a distinct slot later in the cycle instead of displacing them.
+    tracks: [createDrumTrack('Drums 1', 3), createMidiTrack('Synth 1', 0), createMidiTrack('Synth 2', 1)],
   };
 }
 

@@ -117,11 +117,22 @@ const IconLength = {
   },
 };
 
+const IconZoom = {
+  render() {
+    return h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
+      h('circle', { cx: '11', cy: '11', r: '8' }),
+      h('path', { d: 'm21 21-4.3-4.3' }),
+      h('path', { d: 'M11 8v6M8 11h6' }),
+    ]);
+  },
+};
+
 const tools = [
   { id: 'pen', label: 'Pen — draw notes', icon: IconPen },
   { id: 'erase', label: 'Erase — remove notes', icon: IconErase },
   { id: 'select', label: 'Select — move and marquee', icon: IconSelect },
   { id: 'length', label: 'Length — resize notes', icon: IconLength },
+  { id: 'zoom', label: 'Zoom — pinch or scroll wheel', icon: IconZoom },
 ];
 
 const visibleTools = computed(() => [...tools].reverse());

@@ -159,12 +159,12 @@
           <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
         </select>
       </ToolbarField>
-      <ToolbarField v-if="isCoarsePointer" label="Tools">
+      <ToolbarField label="Tools">
         <button
           type="button"
           class="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-colors"
           :class="showToolFab ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active text-muted'"
-          :title="showToolFab ? 'Hide touch tool menu' : 'Show touch tool menu'"
+          :title="showToolFab ? 'Hide tool menu' : 'Show tool menu'"
           @click="showToolFab = !showToolFab"
         >
           <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2">
@@ -268,7 +268,7 @@
             :width="gridWidth"
             :height="canvasHeight"
             class="absolute top-0 left-0"
-            :class="gridCursorClass"
+            :class="[gridCursorClass, gridTouchActionClass]"
             @mousedown="onMouseDown"
             @mousemove="onCanvasMouseMove"
             @mouseup="onMouseUp"
@@ -293,18 +293,18 @@
           ></div>
         </div>
         <EditToolFab
-          v-if="useToolModes"
+          v-if="showToolFab"
           v-model="editTool"
           :has-selection="hasSelection"
           @delete-selection="deleteSelectedNotes"
           @hide="showToolFab = false"
         />
         <button
-          v-else-if="isCoarsePointer"
+          v-else
           type="button"
           class="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center border border-line bg-surface-hover text-muted shadow-lg touch-manipulation"
           style="padding-bottom: env(safe-area-inset-bottom, 0); padding-right: env(safe-area-inset-right, 0)"
-          title="Show touch tool menu"
+          title="Show tool menu"
           @touchstart.stop
           @mousedown.stop
           @click="showToolFab = true"
@@ -403,8 +403,8 @@ const props = defineProps({
 const liveBeat = usePlayheadBeat();
 const { isCoarsePointer } = useCoarsePointer();
 const editTool = ref('pen');
-const showToolFab = ref(true);
-const useToolModes = computed(() => isCoarsePointer.value && showToolFab.value);
+// Open by default on touch devices; desktop users opt in via the toolbar toggle.
+const showToolFab = ref(isCoarsePointer.value);
 const barLengthOptions = BAR_LENGTH_OPTIONS;
 
 const emit = defineEmits([
@@ -513,6 +513,7 @@ const keyToIndex = computed(() => {
 const canvasHeight = computed(() => rows.value.length * rowHeight.value);
 
 const drag = ref(null);
+const pinchState = ref(null);
 const selectedNoteIds = ref(new Set());
 const marqueeRect = ref(null);
 const previewingPitch = ref(null);
@@ -555,8 +556,8 @@ const hasSelection = computed(() => selectedNoteIds.value.size > 0);
 
 const gridCursorClass = computed(() => {
   if (drag.value?.type === 'move') return 'cursor-grabbing';
-  if (isCoarsePointer.value) {
-    if (!showToolFab.value) return 'cursor-crosshair';
+  if (showToolFab.value) {
+    if (editTool.value === 'zoom') return 'cursor-zoom-in';
     if (editTool.value === 'length') return 'cursor-ew-resize';
     if (editTool.value === 'select') return 'cursor-grab';
     return 'cursor-crosshair';
@@ -565,6 +566,10 @@ const gridCursorClass = computed(() => {
   if (hoverMove.value) return 'cursor-grab';
   return 'cursor-crosshair';
 });
+
+const gridTouchActionClass = computed(() =>
+  showToolFab.value && editTool.value === 'zoom' ? 'touch-pan' : ''
+);
 
 const marqueeStyle = computed(() => {
   const r = marqueeRect.value;
@@ -903,6 +908,8 @@ function promotePendingMarqueeToSelect(x, y) {
 
 // Tablet tool modes — maps FAB selections to the same drag types desktop uses.
 function onToolModeDown(e) {
+  if (editTool.value === 'zoom') return;
+
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
   if (editTool.value === 'erase') {
@@ -941,7 +948,7 @@ function onToolModeDown(e) {
 function onMouseDown(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
-  if (useToolModes.value && e.button === 0 && !e.metaKey && !e.ctrlKey) {
+  if (showToolFab.value && e.button === 0 && !e.metaKey && !e.ctrlKey) {
     return onToolModeDown(e);
   }
 
@@ -1152,7 +1159,7 @@ function onMouseMove(e) {
   }
 
   if (!drag.value) {
-    if (!isCoarsePointer.value) {
+    if (!showToolFab.value) {
       const resizeNote = findResizeHandle(x, y);
       hoverResize.value = !!resizeNote;
       hoverMove.value = !resizeNote && !!findNoteAt(xToRawBeat(x), yToPitch(y));
@@ -1272,6 +1279,96 @@ function onPasteBarTouchEnd() {
   onWindowDragEnd();
 }
 
+function pinchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+
+function pinchMidpoint(touches) {
+  return {
+    clientX: (touches[0].clientX + touches[1].clientX) / 2,
+    clientY: (touches[0].clientY + touches[1].clientY) / 2,
+  };
+}
+
+function isZoomToolActive() {
+  return showToolFab.value && editTool.value === 'zoom';
+}
+
+function startPinch(touches) {
+  const container = scrollRef.value;
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const mid = pinchMidpoint(touches);
+  const cursorX = mid.clientX - rect.left;
+  const cursorY = mid.clientY - rect.top;
+
+  pinchState.value = {
+    startDist: pinchDistance(touches),
+    startBeatWidth: beatWidth.value,
+    startRowZoom: rowZoom.value,
+    beatUnder: (container.scrollLeft + cursorX) / beatWidth.value,
+    rowUnder: (container.scrollTop + cursorY) / rowHeight.value,
+    cursorX,
+    cursorY,
+  };
+}
+
+function applyPinchScale(scale) {
+  const state = pinchState.value;
+  const container = scrollRef.value;
+  if (!state || !container) return;
+
+  const newWidth = Math.min(
+    MAX_BEAT_WIDTH,
+    Math.max(MIN_BEAT_WIDTH, state.startBeatWidth * scale)
+  );
+  const newRowZoom = Math.min(
+    MAX_ROW_ZOOM,
+    Math.max(MIN_ROW_ZOOM, state.startRowZoom * scale)
+  );
+  if (newWidth === beatWidth.value && newRowZoom === rowZoom.value) return;
+
+  beatWidth.value = newWidth;
+  rowZoom.value = newRowZoom;
+
+  nextTick(() => {
+    container.scrollLeft = state.beatUnder * beatWidth.value - state.cursorX;
+    container.scrollTop = state.rowUnder * rowHeight.value - state.cursorY;
+  });
+}
+
+function zoomBeatWidthAt(clientX, factor) {
+  const container = scrollRef.value;
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const cursorX = clientX - rect.left;
+  const beatUnder = (container.scrollLeft + cursorX) / beatWidth.value;
+  const newWidth = Math.min(MAX_BEAT_WIDTH, Math.max(MIN_BEAT_WIDTH, beatWidth.value * factor));
+  if (newWidth === beatWidth.value) return;
+
+  beatWidth.value = newWidth;
+  nextTick(() => {
+    container.scrollLeft = beatUnder * newWidth - cursorX;
+  });
+}
+
+function zoomRowHeightAt(clientY, factor) {
+  const container = scrollRef.value;
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const cursorY = clientY - rect.top;
+  const rowUnder = (container.scrollTop + cursorY) / rowHeight.value;
+  const newZoom = Math.min(MAX_ROW_ZOOM, Math.max(MIN_ROW_ZOOM, rowZoom.value * factor));
+  if (newZoom === rowZoom.value) return;
+
+  rowZoom.value = newZoom;
+  nextTick(() => {
+    container.scrollTop = rowUnder * rowHeight.value - cursorY;
+  });
+}
+
 // Touch support: forwards to the same mouse handlers above with a
 // synthetic event carrying just the fields they read (clientX/clientY,
 // button, modifier keys). On coarse-pointer devices, onMouseDown routes
@@ -1296,6 +1393,14 @@ function toSyntheticMouseEvent(e, point) {
 }
 
 function onGridTouchStart(e) {
+  if (isZoomToolActive()) {
+    if (e.touches.length >= 2) {
+      e.preventDefault();
+      startPinch(e.touches);
+    }
+    return;
+  }
+
   const point = touchPoint(e);
   if (!point) return;
   // Suppresses the browser's default touch handling (callouts, the
@@ -1307,6 +1412,15 @@ function onGridTouchStart(e) {
 }
 
 function onGridTouchMove(e) {
+  if (pinchState.value && e.touches.length >= 2) {
+    e.preventDefault();
+    const scale = pinchDistance(e.touches) / pinchState.value.startDist;
+    applyPinchScale(scale);
+    return;
+  }
+
+  if (isZoomToolActive()) return;
+
   const point = touchPoint(e);
   if (!point) return;
   // Only block native scrolling once we're actually mid-edit (painting,
@@ -1317,7 +1431,12 @@ function onGridTouchMove(e) {
   onMouseMove(toSyntheticMouseEvent(e, point));
 }
 
-function onGridTouchEnd() {
+function onGridTouchEnd(e) {
+  if (pinchState.value && (!e || e.touches.length < 2)) {
+    pinchState.value = null;
+    return;
+  }
+  if (isZoomToolActive()) return;
   onWindowDragEnd();
 }
 
@@ -1470,50 +1589,23 @@ function onToolbarMouseDown(e) {
 // the cursor fixed in place — matches FL Studio's piano roll zoom behavior.
 // Adding Shift zooms vertically instead (taller/shorter rows), keeping
 // whichever row is under the cursor fixed in place the same way.
+// With the Zoom tool selected, wheel works without modifiers; pinch handles
+// both axes on touch.
 function onWheel(e) {
-  if (!e.metaKey && !e.ctrlKey) return;
+  const zoomTool = isZoomToolActive();
+  if (!zoomTool && !e.metaKey && !e.ctrlKey) return;
   e.preventDefault();
 
-  const container = scrollRef.value;
-  if (!container) return;
-  const rect = container.getBoundingClientRect();
+  const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
 
   if (e.shiftKey) {
-    // Holding Shift makes some browsers/mice report the wheel's motion via
-    // deltaX instead of deltaY (Shift+wheel is the browser-native "scroll
-    // sideways" convention) — deltaY alone would then read as a constant 0,
-    // making every scroll direction resolve to the same branch below. Fall
-    // back to deltaX whenever deltaY is 0 so direction is read correctly.
     const rawDelta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
-    // Inverted relative to the horizontal zoom's convention below: scrolling
-    // up should make rows taller, scrolling down shorter.
     const verticalFactor = rawDelta < 0 ? 1 / ZOOM_STEP : ZOOM_STEP;
-
-    const cursorY = e.clientY - rect.top;
-    const rowUnderCursor = (container.scrollTop + cursorY) / rowHeight.value;
-
-    const newZoom = Math.min(MAX_ROW_ZOOM, Math.max(MIN_ROW_ZOOM, rowZoom.value * verticalFactor));
-    if (newZoom === rowZoom.value) return;
-    rowZoom.value = newZoom;
-
-    nextTick(() => {
-      container.scrollTop = rowUnderCursor * rowHeight.value - cursorY;
-    });
+    zoomRowHeightAt(e.clientY, verticalFactor);
     return;
   }
 
-  const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-  const cursorX = e.clientX - rect.left;
-  const beatUnderCursor = (container.scrollLeft + cursorX) / beatWidth.value;
-
-  const newWidth = Math.min(MAX_BEAT_WIDTH, Math.max(MIN_BEAT_WIDTH, beatWidth.value * factor));
-  if (newWidth === beatWidth.value) return;
-
-  beatWidth.value = newWidth;
-
-  nextTick(() => {
-    container.scrollLeft = beatUnderCursor * newWidth - cursorX;
-  });
+  zoomBeatWidthAt(e.clientX, factor);
 }
 
 // True piano coloring: white keys light, black keys dark, like a real
@@ -1819,5 +1911,9 @@ onUnmounted(() => {
    note-editing drag is in progress (see onGridTouchMove). */
 .piano-roll canvas {
   touch-action: manipulation;
+}
+
+.piano-roll canvas.touch-pan {
+  touch-action: pan-x pan-y;
 }
 </style>

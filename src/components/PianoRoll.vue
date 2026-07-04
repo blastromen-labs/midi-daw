@@ -460,6 +460,9 @@ const DEFAULT_BEAT_WIDTH = 140;
 const MIN_BEAT_WIDTH = 20;
 const MAX_BEAT_WIDTH = 400;
 const ZOOM_STEP = 1.12;
+// Pinch maps finger spread to zoom; 1.0 would be 1:1 (too fast on tablet).
+// ~0.4 feels closer to a few wheel ticks per comfortable pinch gesture.
+const PINCH_ZOOM_SENSITIVITY = 0.4;
 // Vertical zoom is a multiplier on top of the base row height (20px MIDI /
 // 36px drum) rather than its own pixel range, so it scales sensibly for
 // either track kind without a second set of min/max pixel constants.
@@ -1232,8 +1235,8 @@ function onWindowDragEnd() {
 function onWindowDragTouchMove(e) {
   if (pinchState.value && e.touches.length >= 2) {
     e.preventDefault();
-    const scale = pinchDistance(e.touches) / pinchState.value.startDist;
-    applyPinchScale(scale);
+    const rawScale = pinchDistance(e.touches) / pinchState.value.startDist;
+    applyPinchScale(dampedPinchScale(rawScale));
     return;
   }
 
@@ -1438,6 +1441,10 @@ function startPinch(touches) {
     cursorX,
     cursorY,
   };
+}
+
+function dampedPinchScale(rawScale) {
+  return 1 + (rawScale - 1) * PINCH_ZOOM_SENSITIVITY;
 }
 
 function applyPinchScale(scale) {

@@ -1,7 +1,10 @@
 <template>
-  <div class="piano-roll flex flex-col bg-panel rounded-lg border border-zinc-800 overflow-hidden h-full">
+  <div ref="rootRef" class="piano-roll flex flex-col bg-panel rounded-lg border border-zinc-800 overflow-hidden h-full">
     <!-- Toolbar -->
-    <div class="flex items-center gap-3 px-3 py-2 bg-surface border-b border-zinc-800 flex-shrink-0">
+    <div
+      class="flex items-center gap-3 px-3 py-2 bg-surface border-b border-zinc-800 flex-shrink-0"
+      @mousedown="onToolbarMouseDown"
+    >
       <select :value="activeTrackId" @change="onTrackSelect" class="text-sm font-semibold">
         <option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</option>
       </select>
@@ -91,7 +94,7 @@
       </div>
 
       <!-- Grid -->
-      <div class="flex-1 overflow-auto" ref="scrollRef" @scroll="onScroll" @wheel="onWheel">
+      <div class="flex-1 overflow-auto" ref="scrollRef" @scroll="onScroll" @wheel="onWheel" @mousedown="onScrollAreaMouseDown">
         <div class="relative" :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }">
           <canvas
             ref="gridCanvas"
@@ -121,6 +124,46 @@
         </div>
       </div>
     </div>
+
+    <!-- Drag up/down to resize the velocity panel; drag down past the
+         threshold (or click the header) to collapse it out of the way. -->
+    <div
+      class="flex-shrink-0 h-2 bg-zinc-800 hover:bg-zinc-700 cursor-row-resize flex items-center justify-center transition-colors"
+      @mousedown="onVelocityResizeStart"
+    >
+      <div class="flex gap-0.5 pointer-events-none">
+        <span v-for="i in 5" :key="i" class="w-0.5 h-0.5 rounded-full bg-zinc-500"></span>
+      </div>
+    </div>
+
+    <!-- Velocity / control panel -->
+    <div class="flex-shrink-0 flex flex-col bg-surface">
+      <div
+        class="flex items-center h-6 px-3 gap-2 border-b border-zinc-800 flex-shrink-0"
+        @mousedown="onVelocityHeaderMouseDown"
+      >
+        <span class="text-xs text-zinc-400 cursor-pointer select-none" @click="toggleVelocityCollapse">
+          {{ velocityCollapsed ? '▸' : '▾' }} Control
+        </span>
+        <div class="h-3 w-px bg-zinc-700"></div>
+        <span class="text-xs text-accent select-none">Velocity</span>
+      </div>
+
+      <div v-show="!velocityCollapsed" class="flex" :style="{ height: velocityHeight + 'px' }">
+        <div class="flex-shrink-0 w-12 bg-zinc-900 border-r border-t border-zinc-800" @mousedown="clearSelection"></div>
+        <VelocityLane
+          v-if="activeTrack"
+          :notes="activeTrack.notes"
+          :selected-note-ids="selectedNoteIds"
+          :beat-width="beatWidth"
+          :grid-width="gridWidth"
+          :height="velocityHeight"
+          :color="activeTrack.color"
+          :scroll-left="mainScrollLeft"
+          @update-notes="emitNotes"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -131,10 +174,17 @@ import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { getActiveClock } from '../engine/activeClock.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import MidiRouteSelect from './MidiRouteSelect.vue';
+import VelocityLane from './VelocityLane.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
 const MIN_PREVIEW_MS = 60;
+const DEFAULT_VELOCITY_HEIGHT = 110;
+const MIN_VELOCITY_HEIGHT = 40;
+const MAX_VELOCITY_HEIGHT = 280;
+const VELOCITY_COLLAPSE_THRESHOLD = 20;
+const DEFAULT_NOTE_COLOR = '#8fd694';
+const NOTE_CORNER_RADIUS = 3;
 
 const props = defineProps({
   tracks: { type: Array, required: true },
@@ -166,12 +216,17 @@ const tool = ref('draw');
 const beatWidth = ref(DEFAULT_BEAT_WIDTH);
 const zoomPercent = computed(() => Math.round((beatWidth.value / DEFAULT_BEAT_WIDTH) * 100));
 
+const rootRef = ref(null);
 const containerRef = ref(null);
 const scrollRef = ref(null);
 const keysRef = ref(null);
 const gridCanvas = ref(null);
 const keysCanvas = ref(null);
 const playheadCanvas = ref(null);
+
+const mainScrollLeft = ref(0);
+const velocityHeight = ref(DEFAULT_VELOCITY_HEIGHT);
+const velocityCollapsed = ref(false);
 
 const canvasHeight = TOTAL_ROWS * ROW_HEIGHT;
 const gridWidth = computed(() => props.loopEndBeat * beatWidth.value);
@@ -202,6 +257,24 @@ const marqueeStyle = computed(() => {
     height: Math.abs(r.y2 - r.y1) + 'px',
   };
 });
+
+// `CanvasRenderingContext2D.roundRect` is widely supported in the Chrome/Edge
+// versions this app targets for Web MIDI, but we fall back to a manual arc
+// path just in case. Traces the path only — caller does fill()/stroke().
+function traceRoundedRect(ctx, x, y, w, h, radius) {
+  const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+    return;
+  }
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
 
 function pitchToY(pitch) {
   return (HIGH_PITCH - pitch) * ROW_HEIGHT;
@@ -428,7 +501,7 @@ function onMouseDown(e) {
   }
 
   if (tool.value === 'select') {
-    selectedNoteIds.value = new Set();
+    clearSelection();
     return;
   }
 
@@ -579,6 +652,65 @@ function onScroll() {
   if (keysRef.value && scrollRef.value) {
     keysRef.value.scrollTop = scrollRef.value.scrollTop;
   }
+  mainScrollLeft.value = scrollRef.value?.scrollLeft ?? 0;
+}
+
+function toggleVelocityCollapse() {
+  velocityCollapsed.value = !velocityCollapsed.value;
+}
+
+// Drag the handle above the velocity panel up/down to resize it; dragging
+// down past a small threshold (or clicking the header) collapses it out of
+// the way entirely, freeing up room for the note grid above.
+function onVelocityResizeStart(e) {
+  e.preventDefault();
+  const startY = e.clientY;
+  const startHeight = velocityCollapsed.value ? 0 : velocityHeight.value;
+  const prevUserSelect = document.body.style.userSelect;
+  document.body.style.userSelect = 'none';
+
+  function onMove(ev) {
+    const proposedHeight = startHeight + (startY - ev.clientY);
+    if (proposedHeight <= VELOCITY_COLLAPSE_THRESHOLD) {
+      velocityCollapsed.value = true;
+    } else {
+      velocityCollapsed.value = false;
+      velocityHeight.value = Math.max(MIN_VELOCITY_HEIGHT, Math.min(MAX_VELOCITY_HEIGHT, proposedHeight));
+    }
+  }
+
+  function onUp() {
+    document.body.style.userSelect = prevUserSelect;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  }
+
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+function clearSelection() {
+  selectedNoteIds.value = new Set();
+}
+
+// The grid canvas is only as wide/tall as the loop length, but its scrollable
+// container can be larger — leaving empty background beyond the canvas that
+// the canvas's own mousedown handler never sees. Clicking there should still
+// deselect, same as clicking anywhere else outside the actual note grid.
+function onScrollAreaMouseDown(e) {
+  if (e.target === scrollRef.value) clearSelection();
+}
+
+// Clicking a bar's own background (the gaps around its controls, not the
+// controls themselves) also deselects — clicking a select/input/button still
+// does whatever it normally does, since the target there is that control,
+// not the bar div. Shared by the toolbar and the velocity panel's header.
+function onToolbarMouseDown(e) {
+  if (e.target === e.currentTarget) clearSelection();
+}
+
+function onVelocityHeaderMouseDown(e) {
+  if (e.target === e.currentTarget) clearSelection();
 }
 
 // Cmd/Ctrl + wheel zooms the horizontal (time) axis, keeping the beat under the
@@ -609,6 +741,12 @@ function resetZoom() {
   beatWidth.value = DEFAULT_BEAT_WIDTH;
 }
 
+// True piano coloring: white keys light, black keys dark, like a real keyboard
+// — rather than the two dark greys used elsewhere in the app's theme.
+const WHITE_KEY_COLOR = '#eeeef2';
+const BLACK_KEY_COLOR = '#17171c';
+const PRESSED_KEY_COLOR = '#ff6b35';
+
 function drawKeys() {
   const canvas = keysCanvas.value;
   if (!canvas) return;
@@ -619,13 +757,13 @@ function drawKeys() {
     const y = pitchToY(p);
     const isPressed = p === previewingPitch.value;
     const isBlack = [1, 3, 6, 8, 10].includes(p % 12);
-    ctx.fillStyle = isPressed ? '#ff6b35' : isBlack ? '#1a1a22' : '#2a2a35';
+    ctx.fillStyle = isPressed ? PRESSED_KEY_COLOR : isBlack ? BLACK_KEY_COLOR : WHITE_KEY_COLOR;
     ctx.fillRect(0, y, 48, ROW_HEIGHT);
-    ctx.strokeStyle = '#333';
+    ctx.strokeStyle = isBlack ? '#000' : '#c8c8ce';
     ctx.strokeRect(0, y, 48, ROW_HEIGHT);
 
     if (p % 12 === 0) {
-      ctx.fillStyle = isPressed ? '#fff' : '#888';
+      ctx.fillStyle = isPressed ? '#fff' : isBlack ? '#aaa' : '#333';
       ctx.font = '9px JetBrains Mono';
       ctx.fillText(noteName(p), 2, y + ROW_HEIGHT - 3);
     }
@@ -661,22 +799,32 @@ function drawGrid() {
 
   // Notes
   const notes = getNotes();
-  const color = activeTrack.value?.color ?? '#6699ff';
+  const color = activeTrack.value?.color ?? DEFAULT_NOTE_COLOR;
   for (const note of notes) {
     const x = beatToX(note.startBeat);
     const y = pitchToY(note.pitch);
     const nw = note.duration * beatWidth.value;
     const isSelected = selectedNoteIds.value.has(note.id);
+    const noteRect = [x + 1, y + 1, nw - 2, ROW_HEIGHT - 2];
 
     ctx.fillStyle = color;
     ctx.globalAlpha = (note.velocity / 127) * 0.6 + 0.4;
-    ctx.fillRect(x + 1, y + 1, nw - 2, ROW_HEIGHT - 2);
+    traceRoundedRect(ctx, ...noteRect, NOTE_CORNER_RADIUS);
+    ctx.fill();
     ctx.globalAlpha = 1;
 
     if (isSelected) {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x + 1, y + 1, nw - 2, ROW_HEIGHT - 2);
+      traceRoundedRect(ctx, ...noteRect, NOTE_CORNER_RADIUS);
+      ctx.stroke();
+    }
+
+    if (nw > 18) {
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.75)';
+      ctx.font = '9px JetBrains Mono';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(noteName(note.pitch), x + 3, y + ROW_HEIGHT / 2 + 1, nw - 6);
     }
   }
 }
@@ -722,6 +870,38 @@ watch(() => props.playing, drawPlayhead);
 window.addEventListener('mouseup', stopPreview);
 window.addEventListener('blur', stopPreview);
 
+// Cmd/Ctrl+A selects every note in the active track instead of the browser's
+// page-wide "select all text". Only genuinely text-editable fields (not
+// <select> dropdowns or buttons, which have no text-selection semantics of
+// their own but can still hold keyboard focus) are excluded, so normal text
+// selection still works in e.g. the track rename input.
+function onKeyDown(e) {
+  const target = e.target;
+  const isTextField =
+    target?.tagName === 'TEXTAREA' ||
+    target?.isContentEditable ||
+    (target?.tagName === 'INPUT' && !['button', 'checkbox', 'radio', 'range'].includes(target.type));
+  if (isTextField) return;
+
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+    e.preventDefault();
+    selectedNoteIds.value = new Set(getNotes().map((n) => n.id));
+  }
+}
+window.addEventListener('keydown', onKeyDown);
+
+// Clicking anywhere outside the piano roll (another panel, the transport bar,
+// blank page background) clears the current note selection. Clicks inside —
+// including the toolbar, so changing Snap/Length doesn't deselect — are left
+// to the piano roll's own handlers.
+function onDocumentMouseDown(e) {
+  if (selectedNoteIds.value.size === 0) return;
+  if (rootRef.value && !rootRef.value.contains(e.target)) {
+    clearSelection();
+  }
+}
+window.addEventListener('mousedown', onDocumentMouseDown);
+
 onMounted(() => {
   render();
   drawPlayhead();
@@ -731,6 +911,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown);
+  window.removeEventListener('mousedown', onDocumentMouseDown);
   stopPreview();
   window.removeEventListener('mouseup', stopPreview);
   window.removeEventListener('blur', stopPreview);

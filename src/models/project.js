@@ -31,11 +31,15 @@ export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity 
   return { id: uid(), pitch, startBeat, duration, velocity };
 }
 
-export function createMidiTrack(name = 'MIDI 1') {
+// Cycled through as new MIDI tracks are added, so multiple tracks stay
+// visually distinguishable in the piano roll instead of all sharing one color.
+export const MIDI_TRACK_COLORS = ['#8fd694', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
+
+export function createMidiTrack(name = 'MIDI 1', colorIndex = 0) {
   return {
     id: uid(),
     name,
-    color: '#6699ff',
+    color: MIDI_TRACK_COLORS[colorIndex % MIDI_TRACK_COLORS.length],
     midiOutputId: '',
     midiChannel: 0,
     notes: [],
@@ -55,7 +59,7 @@ export function createProject() {
     syncMode: 'internal',
     clockInputId: '',
     drumTracks: DRUM_TYPES.map((d) => createDrumTrack(d)),
-    midiTracks: [createMidiTrack('Synth 1'), createMidiTrack('Synth 2')],
+    midiTracks: [createMidiTrack('Synth 1', 0), createMidiTrack('Synth 2', 1)],
   };
 }
 

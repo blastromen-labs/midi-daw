@@ -251,7 +251,7 @@ function updateMidiRoute(trackId, changes) {
 
 function addMidiTrack() {
   const n = project.midiTracks.length + 1;
-  const track = createMidiTrack(`Synth ${n}`);
+  const track = createMidiTrack(`Synth ${n}`, project.midiTracks.length);
   project.midiTracks.push(track);
   activeMidiTrackId.value = track.id;
 }

@@ -1,0 +1,102 @@
+---
+description: Project intent, architecture, and engineering standards for midi-daw
+alwaysApply: true
+---
+
+# midi-daw — Project Overview
+
+## What this is
+
+A browser-based mini DAW modeled on FL Studio, built with Vue 3 + Vite. It has
+four analog-style drum tracks, an FL Studio-style piano roll for MIDI
+composition, per-track MIDI output/channel routing to external synths via the
+Web MIDI API, and a jitter-free master clock. It can also run as a MIDI clock
+**follower**, syncing to an external master (e.g. FL Studio set as sync
+source) instead of generating its own clock.
+
+The core value proposition is **tight, reliable MIDI timing** — every
+scheduling decision should be made with jitter, drift, and note loss in mind.
+
+## Engineering standards (non-negotiable)
+
+All code in this repo — new and modified — must be:
+
+- **Performant**: no work that isn't audio/MIDI-scheduling-critical should run
+  on the same tick/frame budget as the scheduler. UI/animation updates must be
+  decoupled from audio-critical timing (see `usePlayheadBeat` / `requestAnimationFrame`
+  pattern below) — a slow render must never delay a MIDI event.
+- **Scalable**: assume more tracks, more notes, more clock sources, and more
+  UI panels will be added later. Don't hardcode assumptions (e.g. "4 drum
+  tracks") into logic that doesn't need them — the project model should stay
+  the single source of truth for counts/config.
+- **High quality and well maintained**: fix root causes, not symptoms. When
+  you find a timing/scheduling bug, explain *why* it happened in a comment,
+  not just what changed.
+- **Easy to contribute to**: prefer small, focused, well-named modules over
+  large multi-purpose files. A new contributor should be able to find "where
+  the clock lives" or "where MIDI gets sent" in seconds.
+- **Modular**: engine logic (clock, scheduling, MIDI I/O, synths) stays
+  decoupled from Vue components. Components should be thin — they read
+  reactive state and call engine functions, not reimplement scheduling logic.
+- **DRY**: shared behavior (e.g. reading the "current beat" for UI, converting
+  a relative delay to an absolute MIDI timestamp) belongs in one place —
+  a composable or engine helper — not copy-pasted across components.
+
+If a change would violate one of these, prefer refactoring over shipping the
+shortcut.
+
+## Architecture
+
+```
+src/
+  engine/            Framework-agnostic playback/MIDI logic (no Vue imports)
+    clock.js          TransportClock — the internal master clock. Web Audio-based,
+                       lookahead scheduler (SCHEDULE_AHEAD_SEC / LOOKAHEAD_MS),
+                       emits 'start'/'stop'/'clock'/'step'/'scheduleNotes' ticks.
+    externalClock.js  ExternalClock — follows an incoming MIDI clock (e.g. FL
+                       Studio as sync master). Implements the SAME interface as
+                       TransportClock (bpm, playing, beat math, onTick) so
+                       consumers don't need to know which one is active.
+    activeClock.js    Single source of truth for "whichever clock is driving
+                       playback right now". Swapped between clock.js and
+                       externalClock.js when Sync Mode changes. Every consumer
+                       (scheduler, UI) reads through getActiveClock(), never
+                       imports a concrete clock directly.
+    scheduler.js       PlaybackEngine — binds to the active clock's tick events
+                       and turns them into actual MIDI Note On/Off + clock bytes,
+                       plus drum synth triggers. Owns note dedup and the
+                       note-off timing-safety margins (see comments in file).
+    midi.js            Web MIDI API wrapper: device enumeration (with live
+                       hotplug updates), sending messages (always as an
+                       ABSOLUTE performance.now()-based timestamp — see
+                       toAbsoluteTimestamp), and listening to MIDI inputs.
+    drumSynth.js        Built-in Web Audio drum sounds (no samples).
+  models/
+    project.js         Plain-data project/track/note model + factory functions.
+                       No engine or Vue logic — just shape + small pure helpers.
+  composables/
+    usePlayheadBeat.js  Vue composables that sample the active clock via
+                       requestAnimationFrame, fully decoupled from the audio
+                       scheduler's own timer — see "Performant" above.
+  components/          Vue UI: TransportBar, DrumSequencer, PianoRoll,
+                       MidiRouteSelect. Read props/emit events; delegate all
+                       playback/MIDI decisions to engine/.
+  App.vue              Wires project state (reactive) to the engine singletons
+                       and owns sync-mode switching.
+```
+
+## Key invariants to preserve
+
+- **MIDI timestamps are absolute**, not relative. `midi.js` converts every
+  relative delay to `performance.now() + delay` in one place
+  (`toAbsoluteTimestamp`). Never call `output.send()` directly from elsewhere.
+- **Note Off always has a small lead-out** before the next event (see
+  `NOTE_OFF_LEAD_MS` / `MIN_GATE_MS` in `scheduler.js`) to avoid ambiguous
+  same-timestamp Off/On ordering on retriggered notes.
+- **UI redraws never run on the scheduler's timer.** Canvas/DOM updates driven
+  by playback position must go through `usePlayheadBeat` (rAF-based), not a
+  listener on the clock's tick events, or they'll compete with and delay
+  MIDI-critical scheduling.
+- **`getActiveClock()` is the only way consumers should read clock state.**
+  Don't import `transport` or `externalClock` directly outside of
+  `activeClock.js` and `App.vue`'s sync-mode wiring.

@@ -521,10 +521,14 @@ function beatToX(beat) {
 }
 
 // Rounds to the nearest grid line — used for continuous drag feedback
-// (moving/resizing an already-selected note), where snapping to whichever
-// line is closest to the cursor feels natural.
+// (moving an already-selected note), where snapping to whichever line is
+// closest to the cursor feels natural.
 function xToBeat(x) {
   return snapBeat(x / beatWidth.value, snap.value);
+}
+
+function xToBeatWithSnap(x, snapValue) {
+  return snapBeat(x / beatWidth.value, snapValue || 0.125);
 }
 
 // Floors to the start of the grid cell the cursor is currently inside — used
@@ -940,8 +944,10 @@ function onMouseMove(e) {
       })
     );
   } else if (drag.value.type === 'resize') {
-    const minDuration = snap.value || 0.125;
-    const endBeat = xToBeat(x);
+    // Len controls resize granularity independently of Snap (grid/placement).
+    const resizeSnap = noteLength.value || 0.125;
+    const minDuration = resizeSnap;
+    const endBeat = xToBeatWithSnap(x, resizeSnap);
     const newAnchorDuration = Math.max(minDuration, endBeat - drag.value.anchorOrigStartBeat);
     const deltaDuration = newAnchorDuration - drag.value.anchorOrigDuration;
 

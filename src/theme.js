@@ -9,6 +9,8 @@ export const THEME = {
     rowDark: '#2e3e48',
     lineBeat: '#4a5a64',
     lineSub: '#2a3a44',
+    // Stronger vertical guides at each bar boundary (every 4 beats).
+    lineBar: '#82929c',
   },
   keys: {
     whiteTop: '#d2d7dc',

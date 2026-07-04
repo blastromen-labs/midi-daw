@@ -329,7 +329,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, trackLoopEndBeat } from '../models/project.js';
+import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, BEATS_PER_BAR, trackLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
@@ -1703,12 +1703,23 @@ function drawGrid() {
     ctx.fillRect(0, y, w, rh);
   });
 
-  // Grid lines
+  // Grid lines — snap subdivisions, with slightly stronger lines on beats.
   const snapW = snap.value * beatWidth.value;
   for (let x = 0; x <= w; x += snapW) {
     const isBeat = Math.abs(x / beatWidth.value - Math.round(x / beatWidth.value)) < 0.001;
     ctx.strokeStyle = isBeat ? grid.lineBeat : grid.lineSub;
     ctx.lineWidth = isBeat ? 1 : 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+
+  // Bar guides — drawn on top so each 4-beat bar has a clearly visible boundary.
+  const barW = BEATS_PER_BAR * beatWidth.value;
+  ctx.strokeStyle = grid.lineBar;
+  ctx.lineWidth = 1.5;
+  for (let x = 0; x <= w; x += barW) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, h);

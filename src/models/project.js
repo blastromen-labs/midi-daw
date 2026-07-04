@@ -70,6 +70,9 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
 }
 
 // Step counts for 1/2/4/8 bars at 16 steps per bar (4 steps per beat).
+export const STEPS_PER_BEAT = 4;
+export const BEATS_PER_BAR = 4;
+
 export const BAR_LENGTH_OPTIONS = [
   { bars: 1, steps: 16 },
   { bars: 2, steps: 32 },

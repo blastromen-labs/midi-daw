@@ -245,9 +245,8 @@
             class="absolute top-0 left-0"
             :class="gridCursorClass"
             @mousedown="onMouseDown"
-            @mousemove="onMouseMove"
+            @mousemove="onCanvasMouseMove"
             @mouseup="onMouseUp"
-            @mouseleave="onMouseUp"
             @contextmenu="onGridContextMenu"
             @touchstart="onGridTouchStart"
             @touchmove="onGridTouchMove"
@@ -712,9 +711,13 @@ function onMouseDown(e) {
     return;
   }
 
-  // Right mouse button always paint-deletes — hold and drag to erase multiple
-  // notes in one stroke.
+  // Right mouse button paint-deletes — hold and drag to erase multiple notes
+  // in one stroke. Clicking empty space also clears the selection, same as
+  // a left-click there.
   if (e.button === 2) {
+    if (!findNoteAt(rawBeat, pitch)) {
+      clearSelection();
+    }
     eraseNoteAt(rawBeat, pitch);
     drag.value = { type: 'erasePaint' };
     return;
@@ -869,6 +872,36 @@ function onGridContextMenu(e) {
   e.preventDefault();
 }
 
+function onCanvasMouseMove(e) {
+  // Active drags are tracked on window so marquee/move/resize keep working
+  // when the pointer moves over the keyboard column or scroll padding.
+  if (drag.value) return;
+  onMouseMove(e);
+}
+
+function onWindowDragMove(e) {
+  if (!drag.value) return;
+  onMouseMove(e);
+}
+
+function onWindowDragEnd() {
+  if (!drag.value) return;
+  onMouseUp();
+}
+
+function onWindowDragTouchMove(e) {
+  if (!drag.value) return;
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  onMouseMove(toSyntheticMouseEvent(e, point));
+}
+
+function onWindowDragTouchEnd() {
+  if (!drag.value) return;
+  onMouseUp();
+}
+
 function onMouseMove(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
@@ -1009,7 +1042,7 @@ function onGridTouchMove(e) {
 }
 
 function onGridTouchEnd() {
-  onMouseUp();
+  onWindowDragEnd();
 }
 
 function slidePreview(pitch) {
@@ -1409,6 +1442,11 @@ watch(
 window.addEventListener('mouseup', stopPreview);
 window.addEventListener('touchend', stopPreview);
 window.addEventListener('blur', stopPreview);
+window.addEventListener('mousemove', onWindowDragMove);
+window.addEventListener('mouseup', onWindowDragEnd);
+window.addEventListener('touchmove', onWindowDragTouchMove, { passive: false });
+window.addEventListener('touchend', onWindowDragTouchEnd);
+window.addEventListener('touchcancel', onWindowDragTouchEnd);
 
 // Cmd/Ctrl+A selects every note in the active track instead of the browser's
 // page-wide "select all text". Only genuinely text-editable fields (not
@@ -1473,6 +1511,11 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', stopPreview);
   window.removeEventListener('touchend', stopPreview);
   window.removeEventListener('blur', stopPreview);
+  window.removeEventListener('mousemove', onWindowDragMove);
+  window.removeEventListener('mouseup', onWindowDragEnd);
+  window.removeEventListener('touchmove', onWindowDragTouchMove);
+  window.removeEventListener('touchend', onWindowDragTouchEnd);
+  window.removeEventListener('touchcancel', onWindowDragTouchEnd);
 });
 </script>
 

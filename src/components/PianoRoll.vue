@@ -122,7 +122,19 @@
         @output-change="(id) => updateRoute({ midiOutputId: id })"
         @channel-change="(ch) => updateRoute({ midiChannel: ch })"
       />
-      <span v-else-if="activeTrack" class="text-xs text-muted-dim flex-shrink-0">Sample-based</span>
+      <div
+        v-else-if="activeTrack"
+        class="flex items-center gap-1.5 flex-shrink-0"
+        :title="`Track volume — ${Math.round((activeTrack.volume ?? 1) * 100)}%`"
+      >
+        <span class="text-[10px] text-muted-dim">Vol</span>
+        <VolumeSlider
+          wide
+          class="w-20"
+          :model-value="activeTrack.volume ?? 1"
+          @update:model-value="(v) => emit('update-track', activeTrackId, { volume: v })"
+        />
+      </div>
 
       <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
 
@@ -160,11 +172,13 @@
           v-else-if="activeTrack"
           :pads="activeTrack.pads"
           :row-height="rowHeight"
+          :track-volume="activeTrack.volume ?? 1"
           @load-sample="onLoadSample"
           @clear-sample="onClearSample"
           @add-pad="onAddPad"
           @remove-pad="onRemovePad"
           @rename-pad="onRenamePad"
+          @update-pad="onUpdatePad"
         />
       </div>
 
@@ -262,6 +276,7 @@ import MidiRouteSelect from './MidiRouteSelect.vue';
 import VelocityLane from './VelocityLane.vue';
 import DrumPadList from './DrumPadList.vue';
 import TrackMenu from './TrackMenu.vue';
+import VolumeSlider from './VolumeSlider.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
@@ -301,6 +316,7 @@ const emit = defineEmits([
   'add-pad',
   'remove-pad',
   'rename-pad',
+  'update-track',
   'toggle-play',
   'bpm-change',
   'steps-change',
@@ -315,7 +331,7 @@ const ROW_HEIGHT = 20;
 // room than a plain chromatic piano-roll row.
 const DRUM_ROW_HEIGHT = 36;
 const KEY_WIDTH = 48;
-const DRUM_KEYS_WIDTH = 140;
+const DRUM_KEYS_WIDTH = 180;
 const DEFAULT_BEAT_WIDTH = 140;
 const MIN_BEAT_WIDTH = 20;
 const MAX_BEAT_WIDTH = 400;
@@ -662,7 +678,9 @@ function previewNotePulse(pitch, velocity, durationBeats) {
 
   if (track.kind === 'drum') {
     resumeSamplerAudio();
-    playSample(pitch, velocity);
+    const pad = track.pads.find((p) => p.id === pitch);
+    const gainMul = (pad?.volume ?? 1) * (track.volume ?? 1);
+    playSample(pitch, velocity, 0, gainMul);
     return;
   }
 
@@ -703,6 +721,10 @@ function onRemovePad(padId) {
 
 function onRenamePad(padId, name) {
   emit('rename-pad', props.activeTrackId, padId, name);
+}
+
+function onUpdatePad(padId, changes) {
+  emit('update-pad', props.activeTrackId, padId, changes);
 }
 
 // Actual deletion happens on mousedown/mousemove (see eraseNoteAt) so right-drag

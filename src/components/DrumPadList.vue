@@ -20,6 +20,12 @@
         @change="(e) => $emit('rename-pad', pad.id, e.target.value)"
       />
 
+      <VolumeSlider
+        :model-value="pad.volume ?? 1"
+        :title="`${pad.name} volume`"
+        @update:model-value="(v) => $emit('update-pad', pad.id, { volume: v })"
+      />
+
       <button
         class="px-1 py-0.5 rounded text-[9px] flex-shrink-0"
         :class="pad.fileName ? 'bg-surface-hover text-muted hover:bg-surface-active' : 'bg-accent/80 text-white hover:bg-accent'"
@@ -63,22 +69,25 @@
 <script setup>
 import { ref } from 'vue';
 import { playSample, resumeSamplerAudio } from '../engine/sampler.js';
+import VolumeSlider from './VolumeSlider.vue';
 
 const PREVIEW_VELOCITY = 100;
 
-defineProps({
+const props = defineProps({
   pads: { type: Array, required: true },
   rowHeight: { type: Number, required: true },
+  trackVolume: { type: Number, default: 1 },
 });
 
-const emit = defineEmits(['load-sample', 'clear-sample', 'add-pad', 'remove-pad', 'rename-pad']);
+const emit = defineEmits(['load-sample', 'clear-sample', 'add-pad', 'remove-pad', 'rename-pad', 'update-pad']);
 
 const fileInput = ref(null);
 const pendingPadId = ref(null);
 
 function preview(pad) {
   resumeSamplerAudio();
-  playSample(pad.id, PREVIEW_VELOCITY);
+  const gainMul = (pad.volume ?? 1) * (props.trackVolume ?? 1);
+  playSample(pad.id, PREVIEW_VELOCITY, 0, gainMul);
 }
 
 function browse(pad) {

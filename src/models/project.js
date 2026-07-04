@@ -31,7 +31,7 @@ export function createMidiTrack(name = 'MIDI 1', colorIndex = 0) {
 // of any reactive object — decoded audio buffers are large and not something
 // Vue's reactivity should be wrapping/tracking.
 export function createDrumPad(name, color) {
-  return { id: uid(), name, color, fileName: '' };
+  return { id: uid(), name, color, fileName: '', volume: 1 };
 }
 
 export const DEFAULT_DRUM_PADS = [
@@ -51,6 +51,7 @@ export function createDrumTrack(name = 'Drums 1', colorIndex = 0) {
     kind: 'drum',
     name,
     color: MIDI_TRACK_COLORS[colorIndex % MIDI_TRACK_COLORS.length],
+    volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
     // Note.pitch here is a pad id (string), not a MIDI pitch — it identifies
     // which pad's sample this note triggers. See createDrumPad above.

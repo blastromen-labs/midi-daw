@@ -50,7 +50,8 @@ export function hasSample(padId) {
 // different things — this bit the old drumSynth.js when following an
 // external MIDI clock, whose notion of "now" is performance.now()-based,
 // not tied to any particular AudioContext.
-export function playSample(padId, velocity = 100, delayMs = 0) {
+// `gainMul` scales the hit after velocity (pad volume × track volume).
+export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1) {
   const buffer = bufferCache.get(padId);
   if (!buffer) return;
 
@@ -59,7 +60,8 @@ export function playSample(padId, velocity = 100, delayMs = 0) {
   src.buffer = buffer;
 
   const gain = c.createGain();
-  gain.gain.value = Math.max(0, Math.min(1, velocity / 127));
+  const velGain = Math.max(0, Math.min(1, velocity / 127));
+  gain.gain.value = Math.max(0, Math.min(1, velGain * gainMul));
 
   src.connect(gain);
   gain.connect(c.destination);

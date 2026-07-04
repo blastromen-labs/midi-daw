@@ -148,7 +148,8 @@ export class PlaybackEngine {
   _triggerDrumNote(track, note, onDelay) {
     const pad = track.pads.find((p) => p.id === note.pitch);
     if (!pad) return;
-    playSample(pad.id, note.velocity, onDelay);
+    const gainMul = (pad.volume ?? 1) * (track.volume ?? 1);
+    playSample(pad.id, note.velocity, onDelay, gainMul);
   }
 
   _onScheduleNotes({ now, scheduleUntil }) {

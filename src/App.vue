@@ -21,6 +21,7 @@
           @add-track="addTrack"
           @rename-track="renameTrack"
           @update-pad="updatePad"
+          @update-track="updateTrack"
           @add-pad="addPad"
           @remove-pad="removePad"
           @rename-pad="renamePad"
@@ -237,6 +238,11 @@ function updatePad(trackId, padId, changes) {
   if (track?.kind !== 'drum') return;
   const pad = track.pads.find((p) => p.id === padId);
   if (pad) Object.assign(pad, changes);
+}
+
+function updateTrack(trackId, changes) {
+  const track = findTrack(trackId);
+  if (track) Object.assign(track, changes);
 }
 
 function addPad(trackId) {

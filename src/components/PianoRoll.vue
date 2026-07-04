@@ -90,6 +90,7 @@
       </button>
 
       <select
+        v-if="sendMidiClock"
         :value="clockOutputId"
         @change="(e) => $emit('clock-output-change', e.target.value)"
         class="text-xs max-w-24 flex-shrink-0"
@@ -101,15 +102,14 @@
 
       <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
 
-      <!-- Track -->
-      <select :value="activeTrackId" @change="onTrackSelect" class="text-sm font-semibold flex-shrink-0">
-        <option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</option>
-      </select>
-
-      <input
-        :value="activeTrack?.name"
-        @change="onRename"
-        class="bg-transparent border-b border-line-light text-sm px-1 w-20 focus:border-accent outline-none flex-shrink-0"
+      <!-- Track: select/rename/add-new all live in this one menu instead of
+           separate always-visible controls (see TrackMenu.vue). -->
+      <TrackMenu
+        :tracks="tracks"
+        :active-track-id="activeTrackId"
+        @select="(id) => $emit('select-track', id)"
+        @rename="(id, name) => $emit('rename-track', id, name)"
+        @add-track="(kind) => $emit('add-track', kind)"
       />
 
       <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
@@ -133,23 +133,6 @@
       <select v-model="noteLength" class="text-xs flex-shrink-0" title="Note length — independent of Snap">
         <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
       </select>
-
-      <div class="ml-auto flex gap-1 flex-shrink-0">
-        <button
-          class="px-2 py-0.5 rounded text-xs bg-surface-hover hover:bg-surface-active"
-          title="Add a MIDI channel"
-          @click="$emit('add-track', 'midi')"
-        >
-          + MIDI
-        </button>
-        <button
-          class="px-2 py-0.5 rounded text-xs bg-surface-hover hover:bg-surface-active"
-          title="Add a sample-based drum channel"
-          @click="$emit('add-track', 'drum')"
-        >
-          + Drum
-        </button>
-      </div>
     </div>
 
     <!-- Canvas area -->
@@ -278,6 +261,7 @@ import { THEME } from '../theme.js';
 import MidiRouteSelect from './MidiRouteSelect.vue';
 import VelocityLane from './VelocityLane.vue';
 import DrumPadList from './DrumPadList.vue';
+import TrackMenu from './TrackMenu.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
@@ -474,14 +458,6 @@ function xToBeatCell(x) {
 // of the current grid/snap setting.
 function xToRawBeat(x) {
   return x / beatWidth.value;
-}
-
-function onTrackSelect(e) {
-  emit('select-track', e.target.value);
-}
-
-function onRename(e) {
-  emit('rename-track', props.activeTrackId, e.target.value);
 }
 
 function updateRoute(changes) {

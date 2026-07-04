@@ -64,7 +64,7 @@ export function createProject() {
     patternSteps: 16,
     loopStartBeat: 0,
     loopEndBeat: 4,
-    sendMidiClock: true,
+    sendMidiClock: false,
     clockOutputId: '',
     // 'internal': this app is the master clock (default).
     // 'external': follow incoming MIDI clock from another app (e.g. FL Studio).

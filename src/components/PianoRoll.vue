@@ -247,13 +247,15 @@
           ref="keysCanvas"
           :width="KEY_WIDTH"
           :height="canvasHeight"
-          class="block cursor-pointer"
+          class="block cursor-pointer touch-none"
           @mousedown="onKeyMouseDown"
           @mousemove="onKeyMouseMove"
+          @mouseup="stopPreview"
+          @mouseleave="stopPreview"
           @touchstart="onKeyTouchStart"
           @touchmove="onKeyTouchMove"
-          @touchend="stopPreview"
-          @touchcancel="stopPreview"
+          @touchend="onPreviewTouchEnd"
+          @touchcancel="onPreviewTouchEnd"
         ></canvas>
         <DrumPadList
           v-else-if="activeTrack"
@@ -531,6 +533,10 @@ const pinchState = ref(null);
 const selectedNoteIds = ref(new Set());
 const marqueeRect = ref(null);
 const previewingPitch = ref(null);
+const PREVIEW_MIN_MS = 80;
+let previewStartedAt = 0;
+let previewStopTimer = null;
+let previewTouchId = null;
 const hoverResize = ref(false);
 const hoverMove = ref(false);
 // Clipboard stores note offsets so paste works within a track or across tracks.
@@ -1487,6 +1493,7 @@ function onGridTouchStart(e) {
   // scrolling is separately allowed to proceed via the touchmove check below
   // whenever no note-editing drag actually started.
   e.preventDefault();
+  bindPreviewTouch(e);
   onMouseDown(toSyntheticMouseEvent(e, point));
 }
 
@@ -1517,43 +1524,91 @@ function onGridTouchEnd(e) {
   }
   if (isZoomToolActive()) return;
   onWindowDragEnd();
+  onPreviewTouchEnd(e);
+}
+
+function bindPreviewTouch(e) {
+  const id = e.touches?.[0]?.identifier;
+  if (id !== undefined) previewTouchId = id;
+}
+
+function onPreviewTouchEnd(e) {
+  if (previewTouchId === null) return;
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === previewTouchId) {
+      previewTouchId = null;
+      stopPreview();
+      return;
+    }
+  }
 }
 
 function slidePreview(pitch) {
   if (pitch < LOW_PITCH || pitch > HIGH_PITCH || pitch === previewingPitch.value) return;
-  stopPreview();
+  stopPreviewNow();
   playPreview(pitch);
 }
 
 function playPreview(pitch) {
+  if (previewStopTimer) {
+    clearTimeout(previewStopTimer);
+    previewStopTimer = null;
+  }
+
   const track = activeTrack.value;
   if (track?.midiOutputId) {
     sendNoteOn(track.midiOutputId, track.midiChannel, pitch, PREVIEW_VELOCITY);
   }
   previewingPitch.value = pitch;
+  previewStartedAt = performance.now();
   drawKeys();
 }
 
-function stopPreview() {
+function stopPreviewNow() {
+  if (previewStopTimer) {
+    clearTimeout(previewStopTimer);
+    previewStopTimer = null;
+  }
+
   const track = activeTrack.value;
-  if (previewingPitch.value !== null && track?.midiOutputId) {
-    sendNoteOff(track.midiOutputId, track.midiChannel, previewingPitch.value);
+  const pitch = previewingPitch.value;
+  if (pitch !== null && track?.midiOutputId) {
+    sendNoteOff(track.midiOutputId, track.midiChannel, pitch);
   }
   previewingPitch.value = null;
   drawKeys();
 }
 
+function stopPreview() {
+  if (previewingPitch.value === null) return;
+
+  const elapsed = performance.now() - previewStartedAt;
+  const delay = Math.max(0, PREVIEW_MIN_MS - elapsed);
+  if (previewStopTimer) clearTimeout(previewStopTimer);
+  if (delay > 0) {
+    previewStopTimer = setTimeout(stopPreviewNow, delay);
+    return;
+  }
+  stopPreviewNow();
+}
+
+function keyEventToPitch(e) {
+  const keysEl = keysRef.value;
+  if (!keysEl) return null;
+  const y = e.clientY - keysEl.getBoundingClientRect().top + keysEl.scrollTop;
+  return yToPitch(y);
+}
+
 function onKeyMouseDown(e) {
-  const rect = keysCanvas.value.getBoundingClientRect();
-  const pitch = yToPitch(e.clientY - rect.top);
-  if (pitch < LOW_PITCH || pitch > HIGH_PITCH) return;
+  const pitch = keyEventToPitch(e);
+  if (pitch == null || pitch < LOW_PITCH || pitch > HIGH_PITCH) return;
   playPreview(pitch);
 }
 
 function onKeyMouseMove(e) {
   if (previewingPitch.value === null) return;
-  const rect = keysCanvas.value.getBoundingClientRect();
-  const pitch = yToPitch(e.clientY - rect.top);
+  const pitch = keyEventToPitch(e);
+  if (pitch == null) return;
   slidePreview(pitch);
 }
 
@@ -1561,6 +1616,7 @@ function onKeyTouchStart(e) {
   const point = touchPoint(e);
   if (!point) return;
   e.preventDefault();
+  bindPreviewTouch(e);
   onKeyMouseDown(toSyntheticMouseEvent(e, point));
 }
 
@@ -1914,7 +1970,8 @@ watch(
 // inside the keys canvas, so a stray note never gets stuck on if the
 // pointer/finger drifts off.
 window.addEventListener('mouseup', stopPreview);
-window.addEventListener('touchend', stopPreview);
+window.addEventListener('touchend', onPreviewTouchEnd);
+window.addEventListener('touchcancel', onPreviewTouchEnd);
 window.addEventListener('blur', stopPreview);
 window.addEventListener('mousemove', onWindowDragMove);
 window.addEventListener('mouseup', onWindowDragEnd);
@@ -1987,9 +2044,10 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('mousedown', onDocumentMouseDown);
   window.removeEventListener('touchstart', onDocumentMouseDown);
-  stopPreview();
+  stopPreviewNow();
   window.removeEventListener('mouseup', stopPreview);
-  window.removeEventListener('touchend', stopPreview);
+  window.removeEventListener('touchend', onPreviewTouchEnd);
+  window.removeEventListener('touchcancel', onPreviewTouchEnd);
   window.removeEventListener('blur', stopPreview);
   window.removeEventListener('mousemove', onWindowDragMove);
   window.removeEventListener('mouseup', onWindowDragEnd);

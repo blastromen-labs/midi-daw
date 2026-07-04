@@ -28,27 +28,3 @@ export function usePlayheadBeat() {
 
   return beat;
 }
-
-/**
- * Same idea, but samples the active clock's current bpm — useful for
- * displaying live-detected tempo while following an external MIDI clock.
- */
-export function useActiveClockBpm() {
-  const bpm = ref(getActiveClock().bpm);
-  let rafId = null;
-
-  function tick() {
-    bpm.value = getActiveClock().bpm;
-    rafId = requestAnimationFrame(tick);
-  }
-
-  onMounted(() => {
-    rafId = requestAnimationFrame(tick);
-  });
-
-  onUnmounted(() => {
-    if (rafId) cancelAnimationFrame(rafId);
-  });
-
-  return bpm;
-}

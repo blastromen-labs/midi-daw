@@ -1,22 +1,118 @@
 <template>
   <div ref="rootRef" class="piano-roll flex flex-col bg-panel rounded-lg border border-line overflow-hidden h-full">
-    <!-- Toolbar -->
+    <!-- Toolbar — the app's only nav bar: transport controls (play/tempo, or
+         a clock-input picker in External sync mode), track switching/routing,
+         and note-placement settings. overflow-x-auto is a safety net so this
+         still fits (scrollable, not broken) on a narrow/portrait tablet. -->
     <div
-      class="flex items-center gap-3 px-3 py-2 bg-surface border-b border-line flex-shrink-0"
+      class="flex items-center gap-2 px-2 py-1.5 bg-surface border-b border-line flex-shrink-0 overflow-x-auto"
       @mousedown="onToolbarMouseDown"
       @touchstart="onToolbarMouseDown"
     >
-      <select :value="activeTrackId" @change="onTrackSelect" class="text-sm font-semibold">
+      <!-- Transport -->
+      <button
+        v-if="syncMode !== 'external'"
+        class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+        :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
+        :title="playing ? 'Stop' : 'Play'"
+        @click="$emit('toggle-play')"
+      >
+        {{ playing ? '■' : '▶' }}
+      </button>
+      <input
+        v-if="syncMode !== 'external'"
+        type="number"
+        :value="bpm"
+        min="40"
+        max="300"
+        class="w-12 bg-surface border border-line-light rounded px-1 py-1 text-xs text-center flex-shrink-0"
+        title="BPM"
+        @change="(e) => $emit('bpm-change', Number(e.target.value))"
+      />
+      <template v-else>
+        <select
+          :value="clockInputId"
+          @change="(e) => $emit('clock-input-change', e.target.value)"
+          class="text-xs max-w-28 flex-shrink-0"
+          title="MIDI clock input to follow"
+        >
+          <option value="">Input…</option>
+          <option v-for="d in midiInputs" :key="d.id" :value="d.id">{{ d.name }}</option>
+        </select>
+        <span
+          class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+          :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"
+          :title="!clockInputId ? 'No input selected' : playing ? 'Synced — playing' : 'Waiting for clock…'"
+        ></span>
+      </template>
+
+      <select
+        :value="patternSteps"
+        @change="(e) => $emit('steps-change', Number(e.target.value))"
+        class="text-xs flex-shrink-0"
+        title="Bar length"
+      >
+        <option :value="16">16 (1 bar)</option>
+        <option :value="32">32 (2 bars)</option>
+        <option :value="64">64 (4 bars)</option>
+      </select>
+
+      <div
+        class="flex items-center gap-0.5 flex-shrink-0"
+        title="Sync: Internal (this app is the master clock) or External (follow an incoming MIDI clock, e.g. FL Studio)"
+      >
+        <button
+          class="px-1.5 py-0.5 rounded text-[10px] leading-none"
+          :class="syncMode === 'internal' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
+          @click="$emit('sync-mode-change', 'internal')"
+        >
+          Int
+        </button>
+        <button
+          class="px-1.5 py-0.5 rounded text-[10px] leading-none"
+          :class="syncMode === 'external' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
+          @click="$emit('sync-mode-change', 'external')"
+        >
+          Ext
+        </button>
+      </div>
+
+      <button
+        class="w-6 h-3.5 rounded-full transition-colors relative flex-shrink-0"
+        :class="sendMidiClock ? 'bg-accent' : 'bg-surface-hover'"
+        title="Send MIDI clock to connected outputs"
+        @click="$emit('toggle-clock')"
+      >
+        <span
+          class="absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all"
+          :class="sendMidiClock ? 'left-3' : 'left-0.5'"
+        ></span>
+      </button>
+
+      <select
+        :value="clockOutputId"
+        @change="(e) => $emit('clock-output-change', e.target.value)"
+        class="text-xs max-w-24 flex-shrink-0"
+        title="MIDI clock output"
+      >
+        <option value="">All outputs</option>
+        <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
+      </select>
+
+      <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
+
+      <!-- Track -->
+      <select :value="activeTrackId" @change="onTrackSelect" class="text-sm font-semibold flex-shrink-0">
         <option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</option>
       </select>
 
       <input
         :value="activeTrack?.name"
         @change="onRename"
-        class="bg-transparent border-b border-line-light text-sm px-1 w-24 focus:border-accent outline-none"
+        class="bg-transparent border-b border-line-light text-sm px-1 w-20 focus:border-accent outline-none flex-shrink-0"
       />
 
-      <div class="h-4 w-px bg-line-light"></div>
+      <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
 
       <MidiRouteSelect
         v-if="activeTrack && activeTrack.kind !== 'drum'"
@@ -26,54 +122,19 @@
         @output-change="(id) => updateRoute({ midiOutputId: id })"
         @channel-change="(ch) => updateRoute({ midiChannel: ch })"
       />
-      <span v-else-if="activeTrack" class="text-xs text-muted-dim">Sample-based &middot; no MIDI routing</span>
+      <span v-else-if="activeTrack" class="text-xs text-muted-dim flex-shrink-0">Sample-based</span>
 
-      <div class="h-4 w-px bg-line-light"></div>
+      <div class="h-4 w-px bg-line-light flex-shrink-0"></div>
 
-      <label class="text-xs text-muted">Snap</label>
-      <select v-model="snap" class="text-xs">
+      <!-- Note placement -->
+      <select v-model="snap" class="text-xs flex-shrink-0" title="Snap">
+        <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
+      </select>
+      <select v-model="noteLength" class="text-xs flex-shrink-0" title="Note length — independent of Snap">
         <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
       </select>
 
-      <label class="text-xs text-muted ml-1" title="Length of newly drawn notes — independent of Snap">Length</label>
-      <select v-model="noteLength" class="text-xs">
-        <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
-      </select>
-
-      <div class="h-4 w-px bg-line-light"></div>
-
-      <button
-        class="text-xs text-muted hover:text-white tabular-nums"
-        title="Cmd/Ctrl + scroll to zoom horizontally, + Shift to zoom row height — click to reset both"
-        @click="resetZoom"
-      >
-        Zoom {{ zoomPercent }}% / {{ rowZoomPercent }}%
-      </button>
-
-      <label class="text-xs text-muted ml-2">Draw</label>
-      <button
-        class="px-2 py-0.5 rounded text-xs"
-        :class="tool === 'draw' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
-        @click="tool = 'draw'"
-      >
-        ✏
-      </button>
-      <button
-        class="px-2 py-0.5 rounded text-xs"
-        :class="tool === 'select' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
-        @click="tool = 'select'"
-      >
-        ↖
-      </button>
-      <button
-        class="px-2 py-0.5 rounded text-xs"
-        :class="tool === 'erase' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
-        @click="tool = 'erase'"
-      >
-        ✕
-      </button>
-
-      <div class="ml-auto flex gap-1">
+      <div class="ml-auto flex gap-1 flex-shrink-0">
         <button
           class="px-2 py-0.5 rounded text-xs bg-surface-hover hover:bg-surface-active"
           title="Add a MIDI channel"
@@ -234,6 +295,14 @@ const props = defineProps({
   loopEndBeat: { type: Number, default: 4 },
   playing: Boolean,
   midiOutputs: { type: Array, default: () => [] },
+  // Transport — merged in here so this toolbar is the app's only nav bar.
+  bpm: Number,
+  patternSteps: Number,
+  sendMidiClock: Boolean,
+  clockOutputId: String,
+  syncMode: { type: String, default: 'internal' },
+  clockInputId: { type: String, default: '' },
+  midiInputs: { type: Array, default: () => [] },
 });
 
 const liveBeat = usePlayheadBeat();
@@ -248,6 +317,13 @@ const emit = defineEmits([
   'add-pad',
   'remove-pad',
   'rename-pad',
+  'toggle-play',
+  'bpm-change',
+  'steps-change',
+  'toggle-clock',
+  'clock-output-change',
+  'sync-mode-change',
+  'clock-input-change',
 ]);
 
 const ROW_HEIGHT = 20;
@@ -273,11 +349,8 @@ const snap = ref(0.25);
 // Independent from `snap` (grid/placement resolution) so you can e.g. place
 // 1/32-length notes while snapping their position to a 1/16 grid.
 const noteLength = ref(0.25);
-const tool = ref('draw');
 const beatWidth = ref(DEFAULT_BEAT_WIDTH);
 const rowZoom = ref(1);
-const zoomPercent = computed(() => Math.round((beatWidth.value / DEFAULT_BEAT_WIDTH) * 100));
-const rowZoomPercent = computed(() => Math.round(rowZoom.value * 100));
 
 const rootRef = ref(null);
 const containerRef = ref(null);
@@ -507,30 +580,24 @@ function onMouseDown(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
   // Right mouse button always paint-deletes — hold and drag to erase multiple
-  // notes in one stroke, regardless of tool.
+  // notes in one stroke.
   if (e.button === 2) {
     eraseNoteAt(rawBeat, pitch);
     drag.value = { type: 'erasePaint' };
     return;
   }
 
-  // Cmd/Ctrl + drag always starts a rubber-band multi-select, regardless of tool.
-  // Adding Shift makes it additive, keeping whatever was already selected so
-  // you can build up a scattered selection with several separate drags.
+  // Cmd/Ctrl + drag always starts a rubber-band multi-select. Adding Shift
+  // makes it additive, keeping whatever was already selected so you can
+  // build up a scattered selection with several separate drags.
   if (e.metaKey || e.ctrlKey) {
     drag.value = { type: 'marquee', additive: e.shiftKey, baseSelection: new Set(selectedNoteIds.value) };
     marqueeRect.value = { x1: x, y1: y, x2: x, y2: y };
     return;
   }
 
-  if (tool.value === 'erase') {
-    eraseNoteAt(rawBeat, pitch);
-    drag.value = { type: 'erasePaint' };
-    return;
-  }
-
-  // Grabbing a note's right edge resizes it, regardless of draw/select tool —
-  // matches FL Studio's "drag the tail to change length" convention. If the
+  // Grabbing a note's right edge resizes it — matches FL Studio's "drag the
+  // tail to change length" convention. If the
   // grabbed note is part of a multi-selection, the whole selection resizes
   // together by the same amount.
   const resizeTarget = findResizeHandle(x, y);
@@ -577,9 +644,8 @@ function onMouseDown(e) {
     return;
   }
 
-  // Grabbing any note's body moves it (and the rest of the selection, if it's
-  // part of one) — works in any tool except erase, so you don't have to
-  // switch away from draw just to nudge a note you just placed.
+  // Grabbing any note's body moves it (and the rest of the selection, if
+  // it's part of one).
   if (existing) {
     const keepSelection = selectedNoteIds.value.has(existing.id) && selectedNoteIds.value.size > 1;
     if (!keepSelection) selectedNoteIds.value = new Set([existing.id]);
@@ -596,21 +662,17 @@ function onMouseDown(e) {
     return;
   }
 
-  if (tool.value === 'select') {
-    clearSelection();
-    return;
-  }
-
-  if (tool.value === 'draw') {
-    const note = createNote(pitch, cellBeat, noteLength.value, 100);
-    emitNotes([...getNotes(), note]);
-    // Newly drawn notes start unselected — a fresh click shouldn't leave the
-    // selection outline sitting on the note you just placed.
-    clearSelection();
-    previewNotePulse(note.pitch, note.velocity, note.duration);
-    // Hold and drag to paint more notes into new cells in one stroke.
-    drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
-  }
+  // Clicking empty space places a note — right-click-drag (above) erases,
+  // Cmd/Ctrl-drag (above) marquee-selects, so a single click tool is enough
+  // without a separate Draw/Select/Erase mode switcher.
+  const note = createNote(pitch, cellBeat, noteLength.value, 100);
+  emitNotes([...getNotes(), note]);
+  // Newly drawn notes start unselected — a fresh click shouldn't leave the
+  // selection outline sitting on the note you just placed.
+  clearSelection();
+  previewNotePulse(note.pitch, note.velocity, note.duration);
+  // Hold and drag to paint more notes into new cells in one stroke.
+  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
 }
 
 // Briefly sounds a note when it's drawn, so you can hear it without having to
@@ -677,11 +739,6 @@ function onMouseMove(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
   if (!drag.value) {
-    if (tool.value === 'erase') {
-      hoverResize.value = false;
-      hoverMove.value = false;
-      return;
-    }
     const resizeNote = findResizeHandle(x, y);
     hoverResize.value = !!resizeNote;
     hoverMove.value = !resizeNote && !!findNoteAt(xToRawBeat(x), yToPitch(y));
@@ -802,9 +859,9 @@ function onGridTouchMove(e) {
   const point = touchPoint(e);
   if (!point) return;
   // Only block native scrolling once we're actually mid-edit (painting,
-  // moving, resizing, or marquee-selecting) — an idle touch-drag over empty
-  // space with nothing grabbed is left alone so the grid can still be
-  // panned by touch (e.g. in the Select tool).
+  // moving, resizing, or marquee-selecting) — a touch-drag with nothing
+  // grabbed (e.g. starting a marquee via a two-finger/modifier gesture, on
+  // devices that support one) is left alone so the grid can still be panned.
   if (drag.value) e.preventDefault();
   onMouseMove(toSyntheticMouseEvent(e, point));
 }
@@ -991,11 +1048,6 @@ function onWheel(e) {
   nextTick(() => {
     container.scrollLeft = beatUnderCursor * newWidth - cursorX;
   });
-}
-
-function resetZoom() {
-  beatWidth.value = DEFAULT_BEAT_WIDTH;
-  rowZoom.value = 1;
 }
 
 // True piano coloring: white keys light, black keys dark, like a real
@@ -1239,8 +1291,8 @@ onUnmounted(() => {
 }
 
 /* Disables double-tap-to-zoom/pinch on the note-editing surfaces without
-   blocking single-finger panning — panning is still allowed so the Select
-   tool can be used to scroll the grid by touch (see onGridTouchMove). */
+   blocking single-finger panning, which is still allowed whenever no
+   note-editing drag is in progress (see onGridTouchMove). */
 .piano-roll canvas {
   touch-action: manipulation;
 }

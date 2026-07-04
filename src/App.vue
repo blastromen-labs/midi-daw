@@ -1,24 +1,5 @@
 <template>
   <div class="daw h-screen flex flex-col" tabindex="0" @keydown="onKeyDown">
-    <TransportBar
-      :playing="playing"
-      :bpm="project.bpm"
-      :pattern-steps="project.patternSteps"
-      :send-midi-clock="project.sendMidiClock"
-      :clock-output-id="project.clockOutputId"
-      :midi-outputs="midiOutputs"
-      :sync-mode="project.syncMode"
-      :clock-input-id="project.clockInputId"
-      :midi-inputs="midiInputs"
-      @toggle-play="togglePlay"
-      @bpm-change="setBpm"
-      @steps-change="setPatternSteps"
-      @toggle-clock="project.sendMidiClock = !project.sendMidiClock"
-      @clock-output-change="project.clockOutputId = $event"
-      @sync-mode-change="project.syncMode = $event"
-      @clock-input-change="project.clockInputId = $event"
-    />
-
     <div class="flex-1 flex flex-col min-h-0 p-3 gap-3">
       <div class="flex-1 min-h-0">
         <PianoRoll
@@ -27,6 +8,13 @@
           :loop-end-beat="project.loopEndBeat"
           :playing="playing"
           :midi-outputs="midiOutputs"
+          :bpm="project.bpm"
+          :pattern-steps="project.patternSteps"
+          :send-midi-clock="project.sendMidiClock"
+          :clock-output-id="project.clockOutputId"
+          :sync-mode="project.syncMode"
+          :clock-input-id="project.clockInputId"
+          :midi-inputs="midiInputs"
           @update-notes="updateNotes"
           @select-track="activeTrackId = $event"
           @route-change="updateMidiRoute"
@@ -36,6 +24,13 @@
           @add-pad="addPad"
           @remove-pad="removePad"
           @rename-pad="renamePad"
+          @toggle-play="togglePlay"
+          @bpm-change="setBpm"
+          @steps-change="setPatternSteps"
+          @toggle-clock="project.sendMidiClock = !project.sendMidiClock"
+          @clock-output-change="project.clockOutputId = $event"
+          @sync-mode-change="project.syncMode = $event"
+          @clock-input-change="project.clockInputId = $event"
         />
       </div>
     </div>
@@ -48,7 +43,6 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
-import TransportBar from './components/TransportBar.vue';
 import PianoRoll from './components/PianoRoll.vue';
 import { createProject, createMidiTrack, createDrumTrack, createDrumPad } from './models/project.js';
 import {

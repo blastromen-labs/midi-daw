@@ -159,20 +159,14 @@
           <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
         </select>
       </ToolbarField>
-      <ToolbarField v-if="!isCoarsePointer" label="Tools">
-        <button
-          type="button"
-          class="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-colors"
-          :class="showToolFab ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active text-muted'"
-          :title="showToolFab ? 'Hide tool menu' : 'Show tool menu'"
-          @click="showToolFab = !showToolFab"
-        >
-          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-          </svg>
-        </button>
-      </ToolbarField>
+
+      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+
+      <EditToolBar
+        v-model="editTool"
+        :has-selection="hasSelection"
+        @delete-selection="deleteSelectedNotes"
+      />
     </div>
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -292,41 +286,7 @@
             :style="marqueeStyle"
           ></div>
         </div>
-
-        <!-- Tablet: docked to the grid viewport — does not scroll with note content. -->
-        <EditToolFab
-          v-if="isCoarsePointer"
-          align="left"
-          :allow-hide="false"
-          v-model="editTool"
-          :has-selection="hasSelection"
-          @delete-selection="deleteSelectedNotes"
-        />
       </div>
-
-      <!-- Desktop: optional bottom-right dock + restore chip when hidden. -->
-      <EditToolFab
-        v-if="!isCoarsePointer && showToolFab"
-        align="right"
-        v-model="editTool"
-        :has-selection="hasSelection"
-        @delete-selection="deleteSelectedNotes"
-        @hide="showToolFab = false"
-      />
-      <button
-        v-if="!isCoarsePointer && !showToolFab"
-        type="button"
-        class="absolute bottom-4 right-4 z-50 w-10 h-10 rounded-full flex items-center justify-center border border-line bg-surface-hover text-muted shadow-lg touch-manipulation"
-        title="Show tool menu"
-        @touchstart.stop
-        @mousedown.stop
-        @click="showToolFab = true"
-      >
-        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-        </svg>
-      </button>
     </div>
 
     <!-- Drag up/down to resize the velocity panel; a plain click (no drag)
@@ -371,7 +331,6 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, trackLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
-import { useCoarsePointer } from '../composables/useCoarsePointer.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
 import { shade } from '../utils/color.js';
@@ -382,7 +341,7 @@ import DrumPadList from './DrumPadList.vue';
 import TrackMenu from './TrackMenu.vue';
 import ToolbarField from './ToolbarField.vue';
 import VolumeSlider from './VolumeSlider.vue';
-import EditToolFab from './EditToolFab.vue';
+import EditToolBar from './EditToolBar.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
@@ -413,11 +372,11 @@ const props = defineProps({
 });
 
 const liveBeat = usePlayheadBeat();
-const { isCoarsePointer } = useCoarsePointer();
-const editTool = ref('pen');
-// Open by default on touch devices; desktop users opt in via the toolbar toggle.
-const showToolFab = ref(isCoarsePointer.value);
-const toolMenuActive = computed(() => isCoarsePointer.value || showToolFab.value);
+const editTool = ref(
+  typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches
+    ? 'multi'
+    : 'pen'
+);
 const barLengthOptions = BAR_LENGTH_OPTIONS;
 
 const emit = defineEmits([
@@ -465,6 +424,8 @@ const snap = ref(0.25);
 // Independent from `snap` (grid/placement resolution) so you can e.g. place
 // 1/32-length notes while snapping their position to a 1/16 grid.
 const noteLength = ref(0.25);
+// Click-to-stamp duration for new notes only — does not change the Len control.
+const stampDuration = ref(null);
 const beatWidth = ref(DEFAULT_BEAT_WIDTH);
 const rowZoom = ref(1);
 
@@ -569,19 +530,19 @@ const hasSelection = computed(() => selectedNoteIds.value.size > 0);
 
 const gridCursorClass = computed(() => {
   if (drag.value?.type === 'move') return 'cursor-grabbing';
-  if (toolMenuActive.value) {
-    if (editTool.value === 'zoom') return 'cursor-zoom-in';
-    if (editTool.value === 'length') return 'cursor-ew-resize';
-    if (editTool.value === 'select') return 'cursor-grab';
+  if (hoverResize.value) return 'cursor-ew-resize';
+  if (usesClassicGestures()) {
+    if (hoverMove.value) return 'cursor-grab';
     return 'cursor-crosshair';
   }
-  if (hoverResize.value) return 'cursor-ew-resize';
-  if (hoverMove.value) return 'cursor-grab';
+  if (editTool.value === 'zoom') return 'cursor-zoom-in';
+  if (editTool.value === 'length') return 'cursor-ew-resize';
+  if (editTool.value === 'select') return 'cursor-grab';
   return 'cursor-crosshair';
 });
 
 const gridTouchActionClass = computed(() =>
-  toolMenuActive.value && editTool.value === 'zoom' ? 'touch-pan' : ''
+  editTool.value === 'zoom' ? 'touch-pan' : ''
 );
 
 const marqueeStyle = computed(() => {
@@ -874,6 +835,7 @@ function startResizeDrag(resizeTarget) {
   selectedNoteIds.value = new Set(group.map((n) => n.id));
   drag.value = {
     type: 'resize',
+    anchorNoteId: resizeTarget.id,
     anchorOrigStartBeat: resizeTarget.startBeat,
     anchorOrigDuration: resizeTarget.duration,
     origDurations: new Map(group.map((n) => [n.id, n.duration])),
@@ -919,28 +881,47 @@ function promotePendingMarqueeToSelect(x, y) {
   marqueeRect.value = { x1: pending.x1, y1: pending.y1, x2: x, y2: y };
 }
 
-// Tablet tool modes — maps FAB selections to the same drag types desktop uses.
+function placementDuration() {
+  return stampDuration.value ?? noteLength.value;
+}
+
+function stampNoteDuration(note) {
+  if (!note?.duration) return;
+  stampDuration.value = note.duration;
+}
+
+function finalizeResizeStamp() {
+  const anchorId = drag.value?.anchorNoteId;
+  if (!anchorId) return;
+  const anchor = getNotes().find((n) => n.id === anchorId);
+  if (anchor) stampNoteDuration(anchor);
+}
+
+// Tablet tool modes — maps toolbar selections to the same drag types desktop uses.
+// Multi on touch devices falls back to pen behavior.
 function onToolModeDown(e) {
-  if (editTool.value === 'zoom') return;
+  const tool = editTool.value === 'multi' ? 'pen' : editTool.value;
+  if (tool === 'zoom') return;
 
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
-  if (editTool.value === 'erase') {
+  if (tool === 'erase') {
     if (!findNoteAt(rawBeat, pitch)) clearSelection();
     eraseNoteAt(rawBeat, pitch);
     drag.value = { type: 'erasePaint' };
     return;
   }
 
-  if (editTool.value === 'length') {
+  if (tool === 'length') {
     const resizeTarget = findResizeHandle(x, y, { generous: true });
     if (resizeTarget) startResizeDrag(resizeTarget);
     return;
   }
 
-  if (editTool.value === 'select') {
+  if (tool === 'select') {
     const existing = findNoteAt(rawBeat, pitch);
     if (existing) {
+      stampNoteDuration(existing);
       drag.value = { type: 'pendingSelect', noteId: existing.id, startX: x, startY: y };
       return;
     }
@@ -948,21 +929,46 @@ function onToolModeDown(e) {
     return;
   }
 
-  // Pen — draw on empty cells only; ignore taps on existing notes.
-  if (findNoteAt(rawBeat, pitch)) return;
+  // Pen — stamp length from an existing note, or draw on empty cells.
+  const existing = findNoteAt(rawBeat, pitch);
+  if (existing) {
+    stampNoteDuration(existing);
+    return;
+  }
 
-  const note = createNote(pitch, cellBeat, noteLength.value, 100);
+  const note = createNote(pitch, cellBeat, placementDuration(), 100);
   emitNotes([...getNotes(), note]);
   clearSelection();
   startDrawPreview(note.pitch, note.velocity);
   drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
 }
 
+function hasFinePointer() {
+  return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+}
+
+function usesClassicGestures() {
+  return editTool.value === 'multi' && hasFinePointer();
+}
+
 function onMouseDown(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
-  if (toolMenuActive.value && e.button === 0 && !e.metaKey && !e.ctrlKey) {
-    return onToolModeDown(e);
+  if (e.button === 0 && !e.metaKey && !e.ctrlKey) {
+    // Desktop mice: right-edge grab always resizes, like FL Studio, regardless
+    // of which toolbar tool is selected (Length tool still uses the wider
+    // touch target on coarse-pointer devices).
+    if (hasFinePointer()) {
+      const resizeTarget = findResizeHandle(x, y);
+      if (resizeTarget) {
+        startResizeDrag(resizeTarget);
+        return;
+      }
+    }
+    if (!usesClassicGestures()) {
+      return onToolModeDown(e);
+    }
+    // Multi tool on desktop: fall through to classic modifier-free gestures below.
   }
 
   // Alt+click sets both the paste beat and the base row (for cross-track row mapping).
@@ -1034,6 +1040,7 @@ function onMouseDown(e) {
   // Grabbing any note's body moves it (and the rest of the selection, if
   // it's part of one).
   if (existing) {
+    stampNoteDuration(existing);
     startMoveDrag(existing, x, y);
     return;
   }
@@ -1041,7 +1048,7 @@ function onMouseDown(e) {
   // Clicking empty space places a note — right-click-drag (above) erases,
   // Cmd/Ctrl-drag (above) marquee-selects, so a single click tool is enough
   // without a separate Draw/Select/Erase mode switcher.
-  const note = createNote(pitch, cellBeat, noteLength.value, 100);
+  const note = createNote(pitch, cellBeat, placementDuration(), 100);
   emitNotes([...getNotes(), note]);
   // Newly drawn notes start unselected — a fresh click shouldn't leave the
   // selection outline sitting on the note you just placed.
@@ -1172,10 +1179,11 @@ function onMouseMove(e) {
   }
 
   if (!drag.value) {
-    if (!toolMenuActive.value) {
+    if (hasFinePointer()) {
       const resizeNote = findResizeHandle(x, y);
       hoverResize.value = !!resizeNote;
-      hoverMove.value = !resizeNote && !!findNoteAt(xToRawBeat(x), yToPitch(y));
+      hoverMove.value =
+        usesClassicGestures() && !resizeNote && !!findNoteAt(xToRawBeat(x), yToPitch(y));
     }
     return;
   }
@@ -1195,7 +1203,7 @@ function onMouseMove(e) {
     drag.value.lastCell = cellKey;
 
     if (!findNoteAt(rawBeat, pitch)) {
-      const note = createNote(pitch, cellBeat, noteLength.value, 100);
+      const note = createNote(pitch, cellBeat, placementDuration(), 100);
       emitNotes([...getNotes(), note]);
       if (!props.playing && isDrumTrack.value) {
         startDrawPreview(note.pitch, note.velocity);
@@ -1269,6 +1277,7 @@ function onMouseUp() {
     drag.value = null;
     return;
   }
+  if (drag.value?.type === 'resize') finalizeResizeStamp();
   if (drag.value?.type === 'marquee') marqueeRect.value = null;
   drag.value = null;
 }
@@ -1306,7 +1315,7 @@ function pinchMidpoint(touches) {
 }
 
 function isZoomToolActive() {
-  return toolMenuActive.value && editTool.value === 'zoom';
+  return editTool.value === 'zoom';
 }
 
 function startPinch(touches) {
@@ -1384,8 +1393,8 @@ function zoomRowHeightAt(clientY, factor) {
 
 // Touch support: forwards to the same mouse handlers above with a
 // synthetic event carrying just the fields they read (clientX/clientY,
-// button, modifier keys). On coarse-pointer devices, onMouseDown routes
-// through the FAB tool modes (pen/erase/select/length) before desktop logic.
+// button, modifier keys). Left-click routes through the toolbar tool
+// modes (pen/erase/select/length/zoom) before desktop modifier gestures.
 function touchPoint(e) {
   const t = e.touches[0] ?? e.changedTouches[0];
   return t ? { clientX: t.clientX, clientY: t.clientY } : null;

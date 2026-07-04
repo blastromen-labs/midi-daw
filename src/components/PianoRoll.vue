@@ -15,7 +15,7 @@
           class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
           :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
           :title="playing ? 'Stop' : 'Play'"
-          @click="$emit('toggle-play')"
+          @click="onTogglePlay"
         >
           {{ playing ? '■' : '▶' }}
         </button>
@@ -173,11 +173,18 @@
         @scroll="onMarkerScroll"
       >
         <div
+          ref="markerBarRef"
           class="relative h-3 cursor-crosshair select-none"
           :style="{ width: gridWidth + 'px' }"
-          title="Click to set paste position (⌘V)"
+          title="Click: marker (play/paste) · Double-click drag: set loop · Double-click: clear loop"
           @mousedown="onPasteBarMouseDown"
+          @contextmenu.prevent
         >
+          <div
+            v-if="activeLoopRegion"
+            class="absolute top-0 bottom-0 pointer-events-none bg-accent/20 border-x border-accent/50"
+            :style="loopRegionStyle"
+          ></div>
           <div class="absolute inset-x-0 top-1/2 h-px bg-line-light pointer-events-none"></div>
           <div
             v-if="showPasteMarker"
@@ -345,6 +352,8 @@ const props = defineProps({
   syncMode: { type: String, default: 'internal' },
   clockInputId: { type: String, default: '' },
   midiInputs: { type: Array, default: () => [] },
+  markerBeat: { type: Number, default: null },
+  loopRegion: { type: Object, default: null },
 });
 
 const liveBeat = usePlayheadBeat();
@@ -363,6 +372,8 @@ const emit = defineEmits([
   'update-track',
   'delete-track',
   'toggle-play',
+  'marker-change',
+  'loop-region-change',
   'bpm-change',
   'toggle-clock',
   'clock-output-change',
@@ -400,6 +411,7 @@ const rootRef = ref(null);
 const containerRef = ref(null);
 const scrollRef = ref(null);
 const markerScrollRef = ref(null);
+const markerBarRef = ref(null);
 const keysRef = ref(null);
 const gridCanvas = ref(null);
 const keysCanvas = ref(null);
@@ -460,10 +472,36 @@ const hoverResize = ref(false);
 const hoverMove = ref(false);
 // Clipboard stores note offsets so paste works within a track or across tracks.
 const noteClipboard = ref(null);
-// Horizontal paste anchor — click the ruler above the grid, or Alt+click the grid.
-const pasteMarkerBeat = ref(0);
+// Horizontal paste/play anchor — click the ruler above the grid, or Alt+click the grid.
+const pasteMarkerBeat = ref(props.markerBeat ?? 0);
 const pasteMarkerRowIndex = ref(0);
-const showPasteMarker = computed(() => (pasteMarkerBeat.value ?? 0) > 0);
+const hasMarker = computed(() => props.markerBeat != null);
+const showPasteMarker = hasMarker;
+const loopDragPreview = ref(null);
+const activeLoopRegion = computed(() => loopDragPreview.value ?? props.loopRegion);
+const loopRegionStyle = computed(() => {
+  const region = activeLoopRegion.value;
+  if (!region) return {};
+  const left = beatToX(region.startBeat);
+  return { left: `${left}px`, width: `${beatToX(region.endBeat) - left}px` };
+});
+
+watch(
+  () => props.markerBeat,
+  (beat) => {
+    pasteMarkerBeat.value = beat ?? 0;
+  }
+);
+
+function setMarkerBeat(beat) {
+  pasteMarkerBeat.value = beat;
+  emit('marker-change', beat);
+}
+
+function onTogglePlay() {
+  const fromBeat = hasMarker.value ? pasteMarkerBeat.value : undefined;
+  emit('toggle-play', fromBeat);
+}
 
 const gridCursorClass = computed(() => {
   if (drag.value?.type === 'move') return 'cursor-grabbing';
@@ -616,9 +654,47 @@ function pasteClipboard() {
 function onPasteBarMouseDown(e) {
   e.preventDefault();
   e.stopPropagation();
-  const rect = e.currentTarget.getBoundingClientRect();
+  const beat = markerEventToBeat(e);
+
+  if (e.button === 2) {
+    emit('loop-region-change', null);
+    loopDragPreview.value = null;
+    return;
+  }
+
+  // Second click of a double-click starts a loop-region drag from this beat.
+  if (e.detail === 2) {
+    drag.value = { type: 'loopRegion', startBeat: beat, endBeat: beat, startX: e.clientX, moved: false };
+    return;
+  }
+
+  setMarkerBeat(beat);
+}
+
+function markerEventToBeat(e) {
+  const el = markerBarRef.value;
+  if (!el) return 0;
+  const rect = el.getBoundingClientRect();
   const x = e.clientX - rect.left;
-  pasteMarkerBeat.value = snapBeat(x / beatWidth.value, snap.value);
+  return snapBeat(Math.max(0, x / beatWidth.value), snap.value);
+}
+
+function finalizeLoopRegion() {
+  const { startBeat, endBeat, moved } = drag.value;
+
+  // Double-click without dragging clears an existing loop; otherwise cancel.
+  if (!moved) {
+    if (props.loopRegion) emit('loop-region-change', null);
+    loopDragPreview.value = null;
+    return;
+  }
+
+  const start = Math.min(startBeat, endBeat ?? startBeat);
+  let end = Math.max(startBeat, endBeat ?? startBeat);
+  const minLen = snap.value || 0.125;
+  if (end - start < minLen) end = start + minLen;
+  emit('loop-region-change', { startBeat: start, endBeat: end });
+  loopDragPreview.value = null;
 }
 
 function findNoteAt(beat, pitch) {
@@ -706,7 +782,7 @@ function onMouseDown(e) {
 
   // Alt+click sets both the paste beat and the base row (for cross-track row mapping).
   if (e.altKey) {
-    pasteMarkerBeat.value = cellBeat;
+    setMarkerBeat(cellBeat);
     pasteMarkerRowIndex.value = rowIndexOf(pitch);
     return;
   }
@@ -881,6 +957,18 @@ function onCanvasMouseMove(e) {
 
 function onWindowDragMove(e) {
   if (!drag.value) return;
+  if (drag.value.type === 'loopRegion') {
+    if (!drag.value.moved && Math.abs(e.clientX - drag.value.startX) <= CLICK_DRAG_THRESHOLD_PX) return;
+    drag.value.moved = true;
+    const beat = markerEventToBeat(e);
+    drag.value.endBeat = beat;
+    const start = Math.min(drag.value.startBeat, beat);
+    let end = Math.max(drag.value.startBeat, beat);
+    const minLen = snap.value || 0.125;
+    if (end - start < minLen) end = start + minLen;
+    loopDragPreview.value = { startBeat: start, endBeat: end };
+    return;
+  }
   onMouseMove(e);
 }
 
@@ -990,6 +1078,7 @@ function onMouseMove(e) {
 }
 
 function onMouseUp() {
+  if (drag.value?.type === 'loopRegion') finalizeLoopRegion();
   if (drag.value?.type === 'marquee') marqueeRect.value = null;
   drag.value = null;
 }
@@ -1329,6 +1418,17 @@ function drawGrid() {
     ctx.stroke();
   }
 
+  const loop = activeLoopRegion.value;
+  if (loop && loop.endBeat > loop.startBeat) {
+    const x0 = beatToX(loop.startBeat);
+    const x1 = beatToX(loop.endBeat);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+    if (x0 > 0) ctx.fillRect(0, 0, x0, h);
+    if (x1 < w) ctx.fillRect(x1, 0, w - x1, h);
+    ctx.fillStyle = 'rgba(102, 153, 255, 0.08)';
+    ctx.fillRect(x0, 0, x1 - x0, h);
+  }
+
   // Notes — rounded, with a soft top-lit gradient and a darker border.
   // MIDI tracks always use the green note palette; drum tracks use their accent.
   const notes = getNotes();
@@ -1415,6 +1515,8 @@ watch(
     rowZoom.value,
     selectedNoteIds.value,
     pasteMarkerBeat.value,
+    props.loopRegion,
+    loopDragPreview.value,
   ],
   () => nextTick(() => {
     render();

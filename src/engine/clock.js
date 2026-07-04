@@ -92,7 +92,7 @@ export class TransportClock {
     if (!this._ctx) await this.init();
     if (this._ctx.state === 'suspended') await this._ctx.resume();
 
-    const beat = fromBeat ?? this.currentBeat;
+    const beat = this._wrapBeat(fromBeat ?? this.currentBeat);
     this._startBeat = beat;
     this._startAudioTime = this._ctx.currentTime + 0.02;
     this.playing = true;

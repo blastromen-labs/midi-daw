@@ -32,6 +32,15 @@ function trackLoopLengthBeats(track) {
   return (track.patternSteps ?? 16) / 4;
 }
 
+// Next absolute beat (>= absBeat) whose wrapped position equals noteBeat inside the loop.
+function nextTransportLoopOccurrence(absBeat, noteBeat, loopStart, loopLen) {
+  const rel = ((absBeat - loopStart) % loopLen + loopLen) % loopLen;
+  const noteRel = noteBeat - loopStart;
+  let delta = noteRel - rel;
+  if (delta < -0.001) delta += loopLen;
+  return absBeat + delta;
+}
+
 export class PlaybackEngine {
   constructor() {
     this.project = null;
@@ -63,7 +72,7 @@ export class PlaybackEngine {
   // Binds to whichever clock is active right now (internal master or an
   // external MIDI-clock follower) and stays bound to it until stop() is
   // called, even if the active clock is switched elsewhere mid-playback.
-  start() {
+  start(fromBeat = null) {
     if (this._unsub) return;
     this._scheduledNotes.clear();
     this._updateClockOutputs();
@@ -90,7 +99,7 @@ export class PlaybackEngine {
     // Only the internal master clock needs an explicit play() — an external
     // clock is already listening for incoming MIDI Start/Stop and emits
     // 'start'/'stop' entirely on its own.
-    if (this._clock === transport) transport.play();
+    if (this._clock === transport) transport.play(fromBeat);
   }
 
   stop() {
@@ -162,6 +171,10 @@ export class PlaybackEngine {
     const clock = this._clock;
     const absBeat = clock.getAbsoluteBeat();
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
+    const useTransportLoop = !!this.project.loopRegion;
+    const loopStart = clock.loopStartBeat;
+    const loopEnd = clock.loopEndBeat;
+    const transportLoopLen = clock.loopLengthBeats;
 
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
@@ -171,6 +184,38 @@ export class PlaybackEngine {
 
       for (const note of track.notes) {
         if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
+
+        if (useTransportLoop) {
+          // User loop region: only notes inside [loopStart, loopEnd), repeating every
+          // transport loop cycle — not by full track length, so playback wraps at the
+          // loop end instead of running past it toward the pattern tail.
+          if (note.startBeat < loopStart || note.startBeat >= loopEnd) continue;
+
+          let occurrence = nextTransportLoopOccurrence(absBeat, note.startBeat, loopStart, transportLoopLen);
+          let cycle = Math.floor((occurrence - loopStart) / transportLoopLen);
+
+          while (occurrence <= endAbsBeat) {
+            const startTime = clock.beatToAudioTime(occurrence);
+            const noteKey = `n-${track.id}-${note.id}-t${cycle}`;
+
+            if (
+              !this._scheduledNotes.has(noteKey) &&
+              startTime >= now - 0.002 &&
+              startTime <= scheduleUntil + SCHEDULE_WINDOW_SLACK_SEC
+            ) {
+              this._scheduledNotes.add(noteKey);
+              const onDelay = this._delayMs(startTime);
+              if (track.kind === 'drum') {
+                this._triggerDrumNote(track, note, onDelay);
+              } else {
+                this._triggerMidiNote(track, note, onDelay, occurrence, clock);
+              }
+            }
+            occurrence += transportLoopLen;
+            cycle++;
+          }
+          continue;
+        }
 
         let occurrence = note.startBeat;
         if (occurrence < absBeat - 0.01) {

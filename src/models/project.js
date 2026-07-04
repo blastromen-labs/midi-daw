@@ -95,6 +95,10 @@ export function createProject() {
     // 'external': follow incoming MIDI clock from another app (e.g. FL Studio).
     syncMode: 'internal',
     clockInputId: '',
+    // Timeline marker — paste anchor and playback start position; null = not set.
+    markerBeat: null,
+    // User-drawn loop region on the timeline; null falls back to the full pattern length.
+    loopRegion: null,
     tracks: [
       createDrumTrack('Drums 1', TRACK_ACCENT_COLORS[3], 16),
       createMidiTrack('Synth 1', TRACK_ACCENT_COLORS[1], 32),

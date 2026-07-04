@@ -13,6 +13,8 @@
           :sync-mode="project.syncMode"
           :clock-input-id="project.clockInputId"
           :midi-inputs="midiInputs"
+          :marker-beat="project.markerBeat"
+          :loop-region="project.loopRegion"
           @update-notes="updateNotes"
           @select-track="activeTrackId = $event"
           @route-change="updateMidiRoute"
@@ -25,6 +27,8 @@
           @rename-pad="renamePad"
           @delete-track="removeTrack"
           @toggle-play="togglePlay"
+          @marker-change="project.markerBeat = $event"
+          @loop-region-change="setLoopRegion"
           @bpm-change="setBpm"
           @toggle-clock="project.sendMidiClock = !project.sendMidiClock"
           @clock-output-change="project.clockOutputId = $event"
@@ -79,15 +83,23 @@ let outputsUnsub = null;
 let inputsUnsub = null;
 let clockInputUnsub = null; // subscription to the selected external MIDI clock input
 
-// Transport loop spans the longest track pattern so shorter patterns can
-// repeat independently inside the scheduler while the master clock keeps running.
+// Transport loop spans the longest track pattern (or a user-drawn loop region)
+// so shorter patterns can repeat independently inside the scheduler.
 function syncClockLoopFromTracks() {
-  const loopEndBeat = projectLoopEndBeat(project.tracks);
+  const patternEndBeat = projectLoopEndBeat(project.tracks);
+  const region = project.loopRegion;
+  const loopStartBeat = region ? region.startBeat : 0;
+  const loopEndBeat = region ? Math.min(region.endBeat, patternEndBeat) : patternEndBeat;
   for (const clock of [transport, externalClock]) {
-    clock.loopStartBeat = 0;
+    clock.loopStartBeat = loopStartBeat;
     clock.loopEndBeat = loopEndBeat;
-    clock.patternSteps = loopEndBeat * 4;
+    clock.patternSteps = patternEndBeat * 4;
   }
+}
+
+function setLoopRegion(region) {
+  project.loopRegion = region;
+  syncClockLoopFromTracks();
 }
 
 function bindPlayingListener(clock) {
@@ -174,21 +186,24 @@ watch(
   { immediate: true }
 );
 
-function togglePlay() {
+function togglePlay(fromBeat) {
   if (project.syncMode === 'external') return; // controlled by the incoming MIDI clock
   if (playing.value) {
     stopPlayback();
   } else {
-    startPlayback();
+    const beat =
+      fromBeat ??
+      (project.markerBeat != null ? project.markerBeat : undefined);
+    startPlayback(beat);
   }
 }
 
-function startPlayback() {
+function startPlayback(fromBeat) {
   if (project.syncMode === 'external') return;
   playback.setProject(project);
   transport.bpm = project.bpm;
   syncClockLoopFromTracks();
-  playback.start();
+  playback.start(fromBeat);
   playing.value = true;
 }
 

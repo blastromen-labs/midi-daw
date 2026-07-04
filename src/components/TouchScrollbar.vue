@@ -4,7 +4,7 @@
     class="touch-scrollbar select-none"
     :class="[orientation, { dragging }]"
     :style="trackStyle"
-    @mousedown="onTrackPointerDown"
+    @mousedown.prevent="onTrackPointerDown"
     @touchstart.prevent="onTrackPointerDown"
   >
     <div class="touch-scrollbar-thumb" :class="{ dragging }" :style="thumbStyle"></div>
@@ -67,6 +67,10 @@ function readScrollPos() {
 }
 
 function onNativeScroll() {
+  // While dragging we drive scrollTop/scrollPos directly — reading back from
+  // the scroll event (often rounded differently) fights the drag and makes the
+  // thumb jump.
+  if (dragging.value) return;
   readScrollPos();
 }
 
@@ -124,8 +128,14 @@ const thumbOffset = computed(() => {
   return (scrollPos.value / maxScroll.value) * thumbTravel.value;
 });
 
+// Track size matches the scroll container's client area (not its border box),
+// so drag math and thumb rendering share the same coordinate space. The track
+// sits taller than clientHeight when a horizontal native scrollbar is present
+// — that mismatch was the source of jerky desktop drags.
 const trackStyle = computed(() =>
-  isVertical.value ? { width: `${props.thickness}px` } : { height: `${props.thickness}px` }
+  isVertical.value
+    ? { width: `${props.thickness}px`, height: `${viewportSize.value}px` }
+    : { height: `${props.thickness}px`, width: `${viewportSize.value}px` }
 );
 
 const thumbStyle = computed(() =>
@@ -139,15 +149,15 @@ function clientCoordOf(e) {
   return isVertical.value ? point.clientY : point.clientX;
 }
 
-// Whole-track dragging: wherever the finger/cursor lands maps directly to a
-// scroll position (thumb re-centers under it), then tracks movement 1:1.
-// Friendlier on touch than requiring a precise grab on a thin thumb.
-function scrollToClientCoord(clientCoord, trackRect) {
+function viewportTrackStart() {
+  const rect = props.container.getBoundingClientRect();
+  return isVertical.value ? rect.top : rect.left;
+}
+
+function scrollToClientCoord(clientCoord, grabOffset) {
   if (!props.container) return;
-  const trackStart = isVertical.value ? trackRect.top : trackRect.left;
-  const trackLength = isVertical.value ? trackRect.height : trackRect.width;
-  const usable = trackLength - thumbSize.value;
-  const ratio = usable > 0 ? (clientCoord - trackStart - thumbSize.value / 2) / usable : 0;
+  const travel = thumbTravel.value;
+  const ratio = travel > 0 ? (clientCoord - viewportTrackStart() - grabOffset) / travel : 0;
   const target = Math.min(1, Math.max(0, ratio)) * maxScroll.value;
 
   if (isVertical.value) {
@@ -160,16 +170,28 @@ function scrollToClientCoord(clientCoord, trackRect) {
 
 function onTrackPointerDown(e) {
   if (!props.container || e.button > 0) return;
-  const trackRect = e.currentTarget.getBoundingClientRect();
+
+  const coord = clientCoordOf(e);
+  const trackStart = viewportTrackStart();
+  const offsetInTrack = coord - trackStart;
+  const currentOffset = thumbOffset.value;
+  const size = thumbSize.value;
+
+  // Preserve grab point when dragging the thumb; center under the cursor when
+  // clicking empty track (touch-friendly jump-to-position).
+  const onThumb = offsetInTrack >= currentOffset && offsetInTrack <= currentOffset + size;
+  const grabOffset = onThumb ? offsetInTrack - currentOffset : size / 2;
+
   dragging.value = true;
-  scrollToClientCoord(clientCoordOf(e), trackRect);
+  scrollToClientCoord(coord, grabOffset);
 
   function onMove(ev) {
     ev.preventDefault();
-    scrollToClientCoord(clientCoordOf(ev), trackRect);
+    scrollToClientCoord(clientCoordOf(ev), grabOffset);
   }
   function onUp() {
     dragging.value = false;
+    readScrollPos();
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     window.removeEventListener('touchmove', onMove);
@@ -195,14 +217,12 @@ function onTrackPointerDown(e) {
 
 .touch-scrollbar.vertical {
   top: 0;
-  bottom: 0;
   right: 0;
   justify-content: center;
 }
 
 .touch-scrollbar.horizontal {
   left: 0;
-  right: 0;
   bottom: 0;
   align-items: center;
 }
@@ -211,7 +231,6 @@ function onTrackPointerDown(e) {
   background: #4c565c;
   border-radius: 999px;
   width: 60%;
-  transition: background-color 0.1s ease;
 }
 
 .touch-scrollbar.horizontal .touch-scrollbar-thumb {
@@ -219,11 +238,8 @@ function onTrackPointerDown(e) {
   height: 60%;
 }
 
+.touch-scrollbar:hover .touch-scrollbar-thumb,
 .touch-scrollbar-thumb.dragging {
-  background: #6fae78;
-}
-
-.touch-scrollbar:hover .touch-scrollbar-thumb {
   background: #5a6570;
 }
 </style>

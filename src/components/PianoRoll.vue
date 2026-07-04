@@ -888,22 +888,22 @@ function startResizeDrag(resizeTarget) {
   };
 }
 
-function startMoveDrag(existing, x, y) {
+function startMoveDrag(existing, clientX, clientY) {
   const keepSelection = selectedNoteIds.value.has(existing.id) && selectedNoteIds.value.size > 1;
   if (!keepSelection) selectedNoteIds.value = new Set([existing.id]);
 
   const group = getNotes().filter((n) => selectedNoteIds.value.has(n.id));
   drag.value = {
     type: 'move',
-    startX: x,
-    startY: y,
+    startClientX: clientX,
+    startClientY: clientY,
     anchorOrigBeat: existing.startBeat,
     anchorOrigPitch: existing.pitch,
     origPositions: new Map(group.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch }])),
   };
 }
 
-function promotePendingSelectToMove(x, y) {
+function promotePendingSelectToMove() {
   const pending = drag.value;
   if (pending?.type !== 'pendingSelect') return;
 
@@ -912,7 +912,7 @@ function promotePendingSelectToMove(x, y) {
     drag.value = null;
     return;
   }
-  startMoveDrag(existing, pending.startX, pending.startY);
+  startMoveDrag(existing, pending.startClientX, pending.startClientY);
 }
 
 function promotePendingMarqueeToSelect(x, y) {
@@ -968,10 +968,21 @@ function onToolModeDown(e) {
     const existing = findNoteAt(rawBeat, pitch);
     if (existing) {
       stampNoteDuration(existing);
-      drag.value = { type: 'pendingSelect', noteId: existing.id, startX: x, startY: y };
+      drag.value = {
+        type: 'pendingSelect',
+        noteId: existing.id,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+      };
       return;
     }
-    drag.value = { type: 'pendingMarquee', startX: x, startY: y, x1: x, y1: y };
+    drag.value = {
+      type: 'pendingMarquee',
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      x1: x,
+      y1: y,
+    };
     return;
   }
 
@@ -1074,8 +1085,8 @@ function onMouseDown(e) {
 
     drag.value = {
       type: 'move',
-      startX: x,
-      startY: y,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
       anchorOrigBeat: anchorClone.startBeat,
       anchorOrigPitch: anchorClone.pitch,
       origPositions: new Map(clones.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch }])),
@@ -1087,7 +1098,7 @@ function onMouseDown(e) {
   // it's part of one).
   if (existing) {
     stampNoteDuration(existing);
-    startMoveDrag(existing, x, y);
+    startMoveDrag(existing, e.clientX, e.clientY);
     return;
   }
 
@@ -1211,15 +1222,15 @@ function onMouseMove(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
   if (drag.value?.type === 'pendingSelect') {
-    const dx = x - drag.value.startX;
-    const dy = y - drag.value.startY;
-    if (Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX) promotePendingSelectToMove(x, y);
+    const dx = e.clientX - drag.value.startClientX;
+    const dy = e.clientY - drag.value.startClientY;
+    if (Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX) promotePendingSelectToMove();
     else return;
   }
 
   if (drag.value?.type === 'pendingMarquee') {
-    const dx = x - drag.value.startX;
-    const dy = y - drag.value.startY;
+    const dx = e.clientX - drag.value.startClientX;
+    const dy = e.clientY - drag.value.startClientY;
     if (Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX) promotePendingMarqueeToSelect(x, y);
     else return;
   }
@@ -1265,8 +1276,8 @@ function onMouseMove(e) {
   }
 
   if (drag.value.type === 'move') {
-    const dx = x - drag.value.startX;
-    const dy = y - drag.value.startY;
+    const dx = e.clientX - drag.value.startClientX;
+    const dy = e.clientY - drag.value.startClientY;
     const newAnchorBeat = snapBeat(drag.value.anchorOrigBeat + dx / beatWidth.value, snap.value);
     const deltaBeat = newAnchorBeat - drag.value.anchorOrigBeat;
 
@@ -1998,11 +2009,11 @@ onUnmounted(() => {
   transform: rotate(180deg);
 }
 
-/* Disables double-tap-to-zoom/pinch on the note-editing surfaces without
-   blocking single-finger panning, which is still allowed whenever no
-   note-editing drag is in progress (see onGridTouchMove). */
+/* Block browser pan/scroll on the grid while editing — `manipulation` still
+   allows single-finger panning on the scroll parent, which steals note moves
+   on tablet. Only the Zoom tool opts back into native pan (see .touch-pan). */
 .piano-roll canvas {
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .piano-roll canvas.touch-pan {
@@ -2011,13 +2022,18 @@ onUnmounted(() => {
 
 /* The grid's own vertical scrolling is handled by <TouchScrollbar> instead
    (see above) since it needs to be touch-draggable; hide the native
-   vertical thumb so the two don't visually double up. Horizontal keeps the
-   native (mouse-draggable) scrollbar since panning it via touch isn't the
-   reported issue and pinch-zoom already covers touch there. Per-axis hiding
-   is WebKit-only (Chrome/Safari/Edge) — Firefox/other engines will still
-   show both, which is a harmless fallback, not a functional regression. */
+   vertical thumb so the two don't visually double up. Horizontal scrolling
+   is driven from the marker bar above — hide the duplicate thumb here.
+   Per-axis hiding is WebKit-only (Chrome/Safari/Edge) — Firefox/other
+   engines will still show both, which is a harmless fallback, not a
+   functional regression. */
 .overflow-y-hidden-native::-webkit-scrollbar:vertical {
   width: 0;
+  display: none;
+}
+
+.overflow-y-hidden-native::-webkit-scrollbar:horizontal {
+  height: 0;
   display: none;
 }
 </style>

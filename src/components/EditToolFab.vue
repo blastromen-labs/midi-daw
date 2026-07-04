@@ -1,17 +1,19 @@
 <template>
   <div
-    class="edit-tool-fab absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2"
-    style="padding-bottom: env(safe-area-inset-bottom, 0); padding-right: env(safe-area-inset-right, 0)"
+    class="edit-tool-fab absolute bottom-4 z-50 flex flex-col gap-2 pointer-events-auto"
+    :class="align === 'left' ? 'left-4 items-start' : 'right-4 items-end'"
+    :style="fabSafeAreaStyle"
     @touchstart.stop
     @mousedown.stop
   >
     <TransitionGroup
       name="fab-satellite"
       tag="div"
-      class="flex flex-col items-end gap-2"
+      class="flex flex-col gap-2"
+      :class="align === 'left' ? 'items-start' : 'items-end'"
     >
       <button
-        v-if="expanded"
+        v-if="allowHide && expanded"
         key="hide"
         type="button"
         class="fab-satellite w-11 h-11 rounded-full flex items-center justify-center border border-line bg-surface-hover text-muted shadow-lg"
@@ -73,11 +75,19 @@ import { ref, computed, h } from 'vue';
 const props = defineProps({
   modelValue: { type: String, default: 'pen' },
   hasSelection: { type: Boolean, default: false },
+  align: { type: String, default: 'right' },
+  allowHide: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['update:modelValue', 'delete-selection', 'hide']);
 
 const expanded = ref(false);
+
+const fabSafeAreaStyle = computed(() => ({
+  paddingBottom: 'env(safe-area-inset-bottom, 0)',
+  paddingLeft: props.align === 'left' ? 'env(safe-area-inset-left, 0)' : undefined,
+  paddingRight: props.align === 'right' ? 'env(safe-area-inset-right, 0)' : undefined,
+}));
 
 const IconPen = {
   render() {

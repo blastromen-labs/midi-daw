@@ -159,7 +159,7 @@
           <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
         </select>
       </ToolbarField>
-      <ToolbarField label="Tools">
+      <ToolbarField v-if="!isCoarsePointer" label="Tools">
         <button
           type="button"
           class="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-colors"
@@ -219,7 +219,7 @@
     </div>
 
     <!-- Canvas area -->
-    <div class="flex flex-1 min-h-0 overflow-hidden" ref="containerRef">
+    <div class="flex flex-1 min-h-0 overflow-hidden relative" ref="containerRef">
       <!-- Piano keys (MIDI tracks) / pad list (drum tracks) -->
       <div
         class="flex-shrink-0 overflow-hidden bg-panel border-r border-line"
@@ -292,29 +292,41 @@
             :style="marqueeStyle"
           ></div>
         </div>
+
+        <!-- Tablet: docked to the grid viewport — does not scroll with note content. -->
         <EditToolFab
-          v-if="showToolFab"
+          v-if="isCoarsePointer"
+          align="left"
+          :allow-hide="false"
           v-model="editTool"
           :has-selection="hasSelection"
           @delete-selection="deleteSelectedNotes"
-          @hide="showToolFab = false"
         />
-        <button
-          v-else
-          type="button"
-          class="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center border border-line bg-surface-hover text-muted shadow-lg touch-manipulation"
-          style="padding-bottom: env(safe-area-inset-bottom, 0); padding-right: env(safe-area-inset-right, 0)"
-          title="Show tool menu"
-          @touchstart.stop
-          @mousedown.stop
-          @click="showToolFab = true"
-        >
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-          </svg>
-        </button>
       </div>
+
+      <!-- Desktop: optional bottom-right dock + restore chip when hidden. -->
+      <EditToolFab
+        v-if="!isCoarsePointer && showToolFab"
+        align="right"
+        v-model="editTool"
+        :has-selection="hasSelection"
+        @delete-selection="deleteSelectedNotes"
+        @hide="showToolFab = false"
+      />
+      <button
+        v-if="!isCoarsePointer && !showToolFab"
+        type="button"
+        class="absolute bottom-4 right-4 z-50 w-10 h-10 rounded-full flex items-center justify-center border border-line bg-surface-hover text-muted shadow-lg touch-manipulation"
+        title="Show tool menu"
+        @touchstart.stop
+        @mousedown.stop
+        @click="showToolFab = true"
+      >
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      </button>
     </div>
 
     <!-- Drag up/down to resize the velocity panel; a plain click (no drag)
@@ -405,6 +417,7 @@ const { isCoarsePointer } = useCoarsePointer();
 const editTool = ref('pen');
 // Open by default on touch devices; desktop users opt in via the toolbar toggle.
 const showToolFab = ref(isCoarsePointer.value);
+const toolMenuActive = computed(() => isCoarsePointer.value || showToolFab.value);
 const barLengthOptions = BAR_LENGTH_OPTIONS;
 
 const emit = defineEmits([
@@ -556,7 +569,7 @@ const hasSelection = computed(() => selectedNoteIds.value.size > 0);
 
 const gridCursorClass = computed(() => {
   if (drag.value?.type === 'move') return 'cursor-grabbing';
-  if (showToolFab.value) {
+  if (toolMenuActive.value) {
     if (editTool.value === 'zoom') return 'cursor-zoom-in';
     if (editTool.value === 'length') return 'cursor-ew-resize';
     if (editTool.value === 'select') return 'cursor-grab';
@@ -568,7 +581,7 @@ const gridCursorClass = computed(() => {
 });
 
 const gridTouchActionClass = computed(() =>
-  showToolFab.value && editTool.value === 'zoom' ? 'touch-pan' : ''
+  toolMenuActive.value && editTool.value === 'zoom' ? 'touch-pan' : ''
 );
 
 const marqueeStyle = computed(() => {
@@ -948,7 +961,7 @@ function onToolModeDown(e) {
 function onMouseDown(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
 
-  if (showToolFab.value && e.button === 0 && !e.metaKey && !e.ctrlKey) {
+  if (toolMenuActive.value && e.button === 0 && !e.metaKey && !e.ctrlKey) {
     return onToolModeDown(e);
   }
 
@@ -1159,7 +1172,7 @@ function onMouseMove(e) {
   }
 
   if (!drag.value) {
-    if (!showToolFab.value) {
+    if (!toolMenuActive.value) {
       const resizeNote = findResizeHandle(x, y);
       hoverResize.value = !!resizeNote;
       hoverMove.value = !resizeNote && !!findNoteAt(xToRawBeat(x), yToPitch(y));
@@ -1293,7 +1306,7 @@ function pinchMidpoint(touches) {
 }
 
 function isZoomToolActive() {
-  return showToolFab.value && editTool.value === 'zoom';
+  return toolMenuActive.value && editTool.value === 'zoom';
 }
 
 function startPinch(touches) {

@@ -67,7 +67,9 @@ import { playback } from './engine/scheduler.js';
 
 const project = reactive(createProject());
 const playing = ref(false);
-const activeTrackId = ref(project.tracks[0].id);
+// Defaults to the first MIDI channel (falling back to whatever's first) so
+// the piano roll opens on a familiar MIDI-note view rather than the drum pad list.
+const activeTrackId = ref((project.tracks.find((t) => t.kind === 'midi') ?? project.tracks[0]).id);
 const midiOutputs = ref([]);
 const midiInputs = ref([]);
 const midiError = ref('');

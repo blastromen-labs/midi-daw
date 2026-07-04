@@ -271,7 +271,9 @@ const playheadCanvas = ref(null);
 
 const mainScrollLeft = ref(0);
 const velocityHeight = ref(DEFAULT_VELOCITY_HEIGHT);
-const velocityCollapsed = ref(false);
+// Collapsed by default so the note grid gets the most room on first load —
+// still just a click (or drag) away on the resize handle above it.
+const velocityCollapsed = ref(true);
 
 const gridWidth = computed(() => props.loopEndBeat * beatWidth.value);
 

@@ -39,6 +39,16 @@ export function getActivePattern(track) {
   return track.patterns.find((p) => p.id === track.activePatternId) ?? track.patterns[0];
 }
 
+/** Move a pattern within a track's patterns array (Live view drag reorder). */
+export function reorderPatterns(track, fromIndex, toIndex) {
+  if (!track?.patterns?.length) return;
+  if (fromIndex === toIndex) return;
+  if (fromIndex < 0 || fromIndex >= track.patterns.length) return;
+  if (toIndex < 0 || toIndex >= track.patterns.length) return;
+  const [pattern] = track.patterns.splice(fromIndex, 1);
+  track.patterns.splice(toIndex, 0, pattern);
+}
+
 // Sentinel for playingPatternId/pendingPatternId meaning "this track is
 // deliberately silent in Live mode" — distinct from `null`, which instead
 // means "no Live-mode override yet, just follow activePatternId" (the

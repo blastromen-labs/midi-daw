@@ -69,43 +69,59 @@
           <span class="text-[9px] text-muted-dim uppercase tracking-wide">{{ track.kind }}</span>
         </div>
 
-        <div class="flex flex-wrap gap-1.5 flex-1 content-start">
-          <button
-            v-for="pattern in track.patterns"
-            :key="pattern.id"
-            type="button"
-            class="clip relative w-24 h-14 flex-shrink-0 rounded-md overflow-hidden text-left px-2 py-1 transition-transform active:scale-[0.97]"
-            :class="clipStateClass(track, pattern)"
-            :style="clipStyle(track, pattern)"
-            :title="clipTitle(track, pattern)"
-            @click="$emit('trigger-pattern', track.id, pattern.id)"
-            @dblclick="$emit('edit-pattern', track.id, pattern.id)"
-          >
-            <span class="block text-[11px] font-medium truncate">{{ pattern.name }}</span>
-            <span class="block text-[9px] opacity-70">{{ barsLabel(pattern.patternSteps) }}</span>
+        <div class="flex flex-wrap gap-1.5 flex-1 content-start relative" :data-clip-track="track.id">
+          <template v-for="(pattern, index) in track.patterns" :key="pattern.id">
+            <div
+              v-if="isDropBefore(track.id, index)"
+              class="w-0.5 h-14 flex-shrink-0 rounded-full bg-white/80 self-center pointer-events-none"
+              aria-hidden="true"
+            ></div>
+            <button
+              type="button"
+              class="clip relative w-24 h-14 flex-shrink-0 rounded-md overflow-hidden text-left px-2 py-1 transition-transform active:scale-[0.97]"
+              :class="[
+                clipStateClass(track, pattern),
+                clipDragClass(track.id, index),
+              ]"
+              :style="clipStyle(track, pattern)"
+              :title="clipTitle(track, pattern)"
+              :data-track-id="track.id"
+              :data-clip-index="index"
+              @pointerdown="onClipPointerDown($event, track.id, index)"
+              @click="onClipClick(track.id, pattern.id)"
+              @dblclick="$emit('edit-pattern', track.id, pattern.id)"
+            >
+              <span class="block text-[11px] font-medium truncate">{{ pattern.name }}</span>
+              <span class="block text-[9px] opacity-70">{{ barsLabel(pattern.patternSteps) }}</span>
 
-            <span
-              v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping'"
-              class="absolute left-0 bottom-0 h-0.5 bg-white/80"
-              :style="{ width: clipProgress(pattern) * 100 + '%' }"
-            ></span>
-            <span
-              v-if="clipStatus(track, pattern) === 'playing'"
-              class="absolute top-1 right-1 text-[10px] leading-none"
-            >▶</span>
-            <span
-              v-else-if="clipStatus(track, pattern) === 'stopping'"
-              class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
-            ></span>
-            <span
-              v-else-if="clipStatus(track, pattern) === 'queued'"
-              class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
-            ></span>
-            <span
-              v-else-if="clipStatus(track, pattern) === 'armed'"
-              class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
-            >▶</span>
-          </button>
+              <span
+                v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping'"
+                class="absolute left-0 bottom-0 h-0.5 bg-white/80"
+                :style="{ width: clipProgress(pattern) * 100 + '%' }"
+              ></span>
+              <span
+                v-if="clipStatus(track, pattern) === 'playing'"
+                class="absolute top-1 right-1 text-[10px] leading-none"
+              >▶</span>
+              <span
+                v-else-if="clipStatus(track, pattern) === 'stopping'"
+                class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
+              ></span>
+              <span
+                v-else-if="clipStatus(track, pattern) === 'queued'"
+                class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+              ></span>
+              <span
+                v-else-if="clipStatus(track, pattern) === 'armed'"
+                class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
+              >▶</span>
+            </button>
+          </template>
+          <div
+            v-if="isDropBefore(track.id, track.patterns.length)"
+            class="w-0.5 h-14 flex-shrink-0 rounded-full bg-white/80 self-center pointer-events-none"
+            aria-hidden="true"
+          ></div>
 
           <div v-if="!track.patterns.length" class="text-xs text-muted-dim px-2 py-4">No patterns</div>
         </div>
@@ -117,6 +133,7 @@
 </template>
 
 <script setup>
+import { ref, onUnmounted } from 'vue';
 import {
   BAR_LENGTH_OPTIONS,
   isPatternPlaying,
@@ -138,16 +155,119 @@ const props = defineProps({
   midiInputs: { type: Array, default: () => [] },
 });
 
-defineEmits([
+const emit = defineEmits([
   'toggle-play',
   'bpm-change',
   'clock-input-change',
   'view-mode-change',
   'trigger-pattern',
   'edit-pattern',
+  'reorder-patterns',
 ]);
 
 const absBeat = useAbsolutePlayheadBeat();
+
+const CLICK_DRAG_THRESHOLD_PX = 5;
+const drag = ref(null);
+let suppressNextClick = false;
+
+function onClipPointerDown(e, trackId, fromIndex) {
+  if (e.button !== 0) return;
+  e.currentTarget.setPointerCapture(e.pointerId);
+  drag.value = {
+    trackId,
+    fromIndex,
+    dropIndex: fromIndex,
+    startX: e.clientX,
+    startY: e.clientY,
+    moved: false,
+    pointerId: e.pointerId,
+  };
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', onDragEnd);
+  window.addEventListener('pointercancel', onDragEnd);
+}
+
+function dropIndexFromPoint(clientX, clientY, trackId) {
+  const el = document.elementFromPoint(clientX, clientY);
+  const clipEl = el?.closest('[data-clip-index]');
+  if (clipEl?.dataset.trackId === trackId) {
+    const index = Number(clipEl.dataset.clipIndex);
+    if (!Number.isNaN(index)) {
+      const rect = clipEl.getBoundingClientRect();
+      return clientX < rect.left + rect.width / 2 ? index : index + 1;
+    }
+  }
+
+  const trackRow = el?.closest(`[data-clip-track="${trackId}"]`);
+  if (!trackRow) return null;
+
+  const clips = [...trackRow.querySelectorAll('[data-clip-index]')];
+  if (!clips.length) return 0;
+
+  const firstRect = clips[0].getBoundingClientRect();
+  if (clientX < firstRect.left) return 0;
+
+  const lastRect = clips[clips.length - 1].getBoundingClientRect();
+  if (clientX > lastRect.right) return clips.length;
+
+  return null;
+}
+
+function onDragMove(e) {
+  if (!drag.value || e.pointerId !== drag.value.pointerId) return;
+
+  const dx = e.clientX - drag.value.startX;
+  const dy = e.clientY - drag.value.startY;
+  if (!drag.value.moved && Math.hypot(dx, dy) < CLICK_DRAG_THRESHOLD_PX) return;
+
+  drag.value.moved = true;
+  const nextDrop = dropIndexFromPoint(e.clientX, e.clientY, drag.value.trackId);
+  if (nextDrop != null) drag.value.dropIndex = nextDrop;
+}
+
+function onDragEnd(e) {
+  if (!drag.value || (e?.pointerId != null && e.pointerId !== drag.value.pointerId)) return;
+
+  window.removeEventListener('pointermove', onDragMove);
+  window.removeEventListener('pointerup', onDragEnd);
+  window.removeEventListener('pointercancel', onDragEnd);
+
+  const { trackId, fromIndex, dropIndex, moved } = drag.value;
+  drag.value = null;
+
+  if (!moved) return;
+
+  suppressNextClick = true;
+  let toIndex = dropIndex;
+  if (toIndex > fromIndex) toIndex -= 1;
+  if (fromIndex !== toIndex) emit('reorder-patterns', trackId, fromIndex, toIndex);
+}
+
+function onClipClick(trackId, patternId) {
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    return;
+  }
+  emit('trigger-pattern', trackId, patternId);
+}
+
+function isDropBefore(trackId, index) {
+  return drag.value?.moved && drag.value.trackId === trackId && drag.value.dropIndex === index;
+}
+
+function clipDragClass(trackId, index) {
+  if (!drag.value || drag.value.trackId !== trackId) return '';
+  if (drag.value.fromIndex === index && drag.value.moved) return 'opacity-40 scale-95 cursor-grabbing pointer-events-none';
+  if (drag.value.moved) return 'cursor-grabbing';
+  return 'cursor-grab';
+}
+
+onUnmounted(() => {
+  window.removeEventListener('pointermove', onDragMove);
+  window.removeEventListener('pointerup', onDragEnd);
+  window.removeEventListener('pointercancel', onDragEnd);
+});
 
 function barsLabel(steps) {
   const opt = BAR_LENGTH_OPTIONS.find((o) => o.steps === steps);
@@ -206,12 +326,13 @@ function clipTitle(track, pattern) {
   if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)`;
   if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)`;
   if (status === 'armed') return `${pattern.name} — will play when you press Play (click to un-arm)`;
-  return `${pattern.name} — click to launch, double-click to edit`;
+  return `${pattern.name} — click to launch, drag to reorder, double-click to edit`;
 }
 </script>
 
 <style scoped>
 .clip {
-  cursor: pointer;
+  touch-action: none;
+  user-select: none;
 }
 </style>

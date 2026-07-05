@@ -56,6 +56,7 @@
           @view-mode-change="viewMode = $event"
           @trigger-pattern="queueOrLaunchPattern"
           @edit-pattern="editPattern"
+          @reorder-patterns="reorderPatterns"
         />
       </div>
     </div>
@@ -81,6 +82,7 @@ import {
   getActivePattern,
   isPatternPlaying,
   projectLoopEndBeat,
+  reorderPatterns as reorderTrackPatterns,
 } from './models/project.js';
 import {
   initMidi,
@@ -363,6 +365,11 @@ function editPattern(trackId, patternId) {
   if (track) track.activePatternId = patternId;
   activeTrackId.value = trackId;
   viewMode.value = 'roll';
+}
+
+function reorderPatterns(trackId, fromIndex, toIndex) {
+  const track = findTrack(trackId);
+  if (track) reorderTrackPatterns(track, fromIndex, toIndex);
 }
 
 function updateMidiRoute(trackId, changes) {

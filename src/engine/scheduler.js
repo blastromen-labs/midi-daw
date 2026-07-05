@@ -30,6 +30,12 @@ const MIN_GATE_MS = 10;
 // internal clock's much larger lookahead window.
 const SCHEDULE_WINDOW_SLACK_SEC = 0.05;
 
+// If the main thread stalls and the scheduler wakes after a note's ideal time,
+// the old `now - 2ms` cutoff rejected it on every subsequent tick too (the
+// note was never deduped, but always "too late") — a silent drop. Late notes
+// within one 16th of the tick snapshot are fired immediately instead.
+const MAX_LATE_NOTE_GRACE_SEC = 0.15;
+
 // Splits a track's [rangeStart, rangeEnd) schedule window around a pending
 // Live-mode launch boundary, so each pattern is only ever scheduled for the
 // span it's actually sounding during:
@@ -219,7 +225,10 @@ export class PlaybackEngine {
     if (this._scheduledNotes.has(noteKey)) return;
 
     const startTime = clock.beatToAudioTime(occurrence);
-    if (startTime < now - 0.002 || startTime > scheduleUntil + SCHEDULE_WINDOW_SLACK_SEC) return;
+    if (startTime > scheduleUntil + SCHEDULE_WINDOW_SLACK_SEC) return;
+
+    const lateGraceSec = Math.min(MAX_LATE_NOTE_GRACE_SEC, clock.beatToSec(0.25));
+    if (startTime < now - lateGraceSec) return;
 
     this._scheduledNotes.add(noteKey);
     const onDelay = this._delayMs(startTime);
@@ -277,29 +286,30 @@ export class PlaybackEngine {
             if (note.startBeat < loopStart || note.startBeat >= loopEnd) continue;
 
             let occurrence = nextTransportLoopOccurrence(rangeStart, note.startBeat, loopStart, transportLoopLen);
-            let cycle = Math.floor((occurrence - loopStart) / transportLoopLen);
+            let cycle = Math.floor((occurrence - loopStart) / transportLoopLen + 1e-9);
 
-            while (occurrence <= rangeEnd) {
+            while (occurrence <= rangeEnd + 1e-9) {
               const noteKey = `n-${track.id}-${note.id}-t${cycle}`;
               this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
-              occurrence += transportLoopLen;
               cycle++;
+              occurrence += transportLoopLen;
             }
             continue;
           }
 
-          let occurrence = note.startBeat;
-          if (occurrence < rangeStart - 0.01) {
-            const loopsElapsed = Math.floor((rangeStart - note.startBeat) / trackLoopLen);
-            occurrence = note.startBeat + loopsElapsed * trackLoopLen;
-            if (occurrence < rangeStart - 0.01) occurrence += trackLoopLen;
+          let iteration = 0;
+          if (note.startBeat < rangeStart - 0.01) {
+            iteration = Math.floor((rangeStart - note.startBeat) / trackLoopLen);
+            if (note.startBeat + iteration * trackLoopLen < rangeStart - 0.01) iteration++;
           }
 
-          while (occurrence <= rangeEnd) {
-            const iteration = Math.round((occurrence - note.startBeat) / trackLoopLen);
+          while (true) {
+            const occurrence = note.startBeat + iteration * trackLoopLen;
+            if (occurrence > rangeEnd + 1e-9) break;
+
             const noteKey = `n-${track.id}-${note.id}-${iteration}`;
             this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
-            occurrence += trackLoopLen;
+            iteration++;
           }
         }
       }

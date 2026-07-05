@@ -1,4 +1,4 @@
-import { PPQN } from './midi.js';
+import { PPQN, beginMidiScheduleTick, endMidiScheduleTick } from './midi.js';
 
 const TICK_HISTORY = PPQN; // one beat's worth — smooths jitter without lagging tempo changes
 const MAX_VALID_INTERVAL_MS = 2000;
@@ -88,12 +88,22 @@ export class ExternalClock {
     this._intervals = [];
     this._lastTickAt = null;
     this.playing = true;
-    this._emit('start', { beat: 0, time: this.currentTime });
+    beginMidiScheduleTick();
+    try {
+      this._emit('start', { beat: 0, time: this.currentTime });
+    } finally {
+      endMidiScheduleTick();
+    }
   }
 
   _onContinue() {
     this.playing = true;
-    this._emit('start', { beat: this.getCurrentBeat(), time: this.currentTime });
+    beginMidiScheduleTick();
+    try {
+      this._emit('start', { beat: this.getCurrentBeat(), time: this.currentTime });
+    } finally {
+      endMidiScheduleTick();
+    }
   }
 
   _onStop() {
@@ -119,11 +129,16 @@ export class ExternalClock {
     const time = this.currentTime;
     const beat = this._wrapBeat(this.getAbsoluteBeat());
 
-    this._emit('clock', { time, tick: this._tickCount, beat });
+    beginMidiScheduleTick(now);
+    try {
+      this._emit('clock', { time, tick: this._tickCount, beat });
 
-    // Zero-width window: we only ever know "now", so this fires notes whose
-    // scheduled beat lines up with the current tick (~1/24 beat resolution).
-    this._emit('scheduleNotes', { now: time, scheduleUntil: time });
+      // Zero-width window: we only ever know "now", so this fires notes whose
+      // scheduled beat lines up with the current tick (~1/24 beat resolution).
+      this._emit('scheduleNotes', { now: time, scheduleUntil: time });
+    } finally {
+      endMidiScheduleTick();
+    }
 
     this._tickCount++;
   }

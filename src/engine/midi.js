@@ -87,8 +87,23 @@ export function getOutput(id) {
 // Web MIDI's MIDIOutput.send(data, timestamp) expects an ABSOLUTE timestamp in the
 // same time base as performance.now() — not a relative delay. Callers throughout this
 // app compute a relative "ms from now" delay, so we convert it here in one place.
+//
+// When the scheduler is mid-pass (see beginMidiScheduleTick), every send in that
+// pass shares one performance.now() snapshot so dense 16th-note bursts don't
+// spread across multiple clock reads.
+let scheduleAnchorPerfMs = null;
+
+export function beginMidiScheduleTick(anchorPerfMs = performance.now()) {
+  scheduleAnchorPerfMs = anchorPerfMs;
+}
+
+export function endMidiScheduleTick() {
+  scheduleAnchorPerfMs = null;
+}
+
 function toAbsoluteTimestamp(delayMs) {
-  return performance.now() + Math.max(0, delayMs);
+  const now = scheduleAnchorPerfMs ?? performance.now();
+  return now + Math.max(0, delayMs);
 }
 
 export function sendNoteOn(outputId, channel, note, velocity, delayMs = 0) {

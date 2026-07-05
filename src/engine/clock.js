@@ -1,7 +1,8 @@
-import { PPQN } from './midi.js';
+import { PPQN, beginMidiScheduleTick, endMidiScheduleTick } from './midi.js';
+import { resumeSharedAudioContext, getSharedAudioContext } from './audioContext.js';
 
-const SCHEDULE_AHEAD_SEC = 0.15;
-const LOOKAHEAD_MS = 25;
+const SCHEDULE_AHEAD_SEC = 0.22;
+const LOOKAHEAD_MS = 12;
 
 export class TransportClock {
   constructor() {
@@ -31,13 +32,12 @@ export class TransportClock {
   }
 
   async init() {
-    this._ctx = new AudioContext();
-    if (this._ctx.state === 'suspended') await this._ctx.resume();
+    this._ctx = await resumeSharedAudioContext();
     return this._ctx;
   }
 
   get audioContext() {
-    return this._ctx;
+    return this._ctx ?? getSharedAudioContext();
   }
 
   get currentTime() {
@@ -99,15 +99,19 @@ export class TransportClock {
     this._nextClockTick = Math.floor(beat * PPQN);
     this._scheduled.clear();
 
-    this._emit('start', { beat, time: this._startAudioTime });
-    this._timer = setInterval(() => this._scheduler(), LOOKAHEAD_MS);
+    beginMidiScheduleTick();
+    try {
+      this._emit('start', { beat, time: this._startAudioTime });
+    } finally {
+      endMidiScheduleTick();
+    }
     this._scheduler();
   }
 
   stop() {
     this.playing = false;
     if (this._timer) {
-      clearInterval(this._timer);
+      clearTimeout(this._timer);
       this._timer = null;
     }
     this.currentBeat = this.getCurrentBeat();
@@ -129,19 +133,33 @@ export class TransportClock {
   _scheduler() {
     if (!this.playing || !this._ctx) return;
 
-    const now = this._ctx.currentTime;
-    const scheduleUntil = now + SCHEDULE_AHEAD_SEC;
+    const tickStartPerf = performance.now();
+    beginMidiScheduleTick(tickStartPerf);
+    try {
+      const now = this._ctx.currentTime;
+      const scheduleUntil = now + SCHEDULE_AHEAD_SEC;
 
-    this._scheduleClockTicks(now, scheduleUntil);
-    this._scheduleNotes(now, scheduleUntil);
+      this._scheduleClockTicks(now, scheduleUntil);
+      this._scheduleNotes(now, scheduleUntil);
+    } finally {
+      endMidiScheduleTick();
+    }
+
+    this._scheduleNextTick(tickStartPerf);
+  }
+
+  // Self-correcting setTimeout loop: each wake schedules the next from when
+  // this pass *started*, not when it finished, so main-thread stalls don't
+  // accumulate drift the way setInterval does.
+  _scheduleNextTick(tickStartPerf) {
+    if (!this.playing) return;
+    const elapsed = performance.now() - tickStartPerf;
+    const nextDelay = Math.max(0, LOOKAHEAD_MS - elapsed);
+    this._timer = setTimeout(() => this._scheduler(), nextDelay);
   }
 
   _scheduleClockTicks(now, scheduleUntil) {
-    const tickSec = 60 / (this.bpm * PPQN);
-
     while (true) {
-      const tickTime = this._startAudioTime + (this._nextClockTick / PPQN - this._startBeat) * (60 / this.bpm);
-      // Recalculate more precisely:
       const tickBeat = this._nextClockTick / PPQN;
       const preciseTime = this._startAudioTime + this.beatToSec(tickBeat - this._startBeat);
 

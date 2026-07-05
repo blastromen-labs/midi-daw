@@ -6,17 +6,10 @@
 // stored on the reactive project (see createDrumPad in models/project.js) —
 // mirrors how midi.js keeps its output cache outside of any reactive object.
 
-let ctx = null;
-
-function getCtx() {
-  if (!ctx) ctx = new AudioContext();
-  return ctx;
-}
+import { getSharedAudioContext, resumeSharedAudioContext } from './audioContext.js';
 
 export async function resumeSamplerAudio() {
-  const c = getCtx();
-  if (c.state === 'suspended') await c.resume();
-  return c;
+  return resumeSharedAudioContext();
 }
 
 const bufferCache = new Map(); // padId -> AudioBuffer
@@ -40,22 +33,15 @@ export function hasSample(padId) {
   return bufferCache.has(padId);
 }
 
-// `delayMs` is a relative delay from now, in the SAME convention as
-// toAbsoluteTimestamp() in midi.js — every caller computes "how many ms from
-// now should this fire" once, and this is the one place that turns it into
-// an absolute AudioContext time. Keeping one time base for one-shot sample
-// triggers (rather than mixing in a caller's own AudioContext.currentTime,
-// which may belong to a different context entirely) avoids a class of bugs
-// where drum hits drift or fire immediately because "now" meant two
-// different things — this bit the old drumSynth.js when following an
-// external MIDI clock, whose notion of "now" is performance.now()-based,
-// not tied to any particular AudioContext.
+// `delayMs` is relative to the shared transport AudioContext's currentTime —
+// same convention as _delayMs() in scheduler.js. Using the shared context
+// (see audioContext.js) keeps drum hits aligned with MIDI note scheduling.
 // `gainMul` scales the hit after velocity (pad volume × track volume).
 export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1) {
   const buffer = bufferCache.get(padId);
   if (!buffer) return;
 
-  const c = getCtx();
+  const c = getSharedAudioContext();
   const src = c.createBufferSource();
   src.buffer = buffer;
 

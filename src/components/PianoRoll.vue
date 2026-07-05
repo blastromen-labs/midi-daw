@@ -183,6 +183,7 @@
 
     <!-- Pattern selector — one row of patterns for the active track. -->
     <PatternBar
+      :tracks="tracks"
       :track="activeTrack"
       :midi-io-enabled="activeTrack?.kind === 'midi'"
       @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
@@ -192,6 +193,7 @@
       @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
       @import-midi="onImportMidi"
       @export-midi="onExportMidi"
+      @ghost-source-change="(changes) => emit('update-track', activeTrackId, changes)"
     />
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -372,7 +374,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, BEATS_PER_BAR, getActivePattern, patternLoopEndBeat } from '../models/project.js';
+import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import {
@@ -511,6 +513,8 @@ const gridWidth = computed(() => activeLoopEndBeat.value * beatWidth.value);
 
 const activeTrack = computed(() => props.tracks.find((t) => t.id === props.activeTrackId));
 const activePattern = computed(() => getActivePattern(activeTrack.value));
+const ghostSource = computed(() => getGhostSource(activeTrack.value, props.tracks));
+const ghostPattern = computed(() => ghostSource.value?.pattern ?? null);
 const isDrumTrack = computed(() => activeTrack.value?.kind === 'drum');
 const activePatternSteps = computed(() => activePattern.value?.patternSteps ?? 16);
 const activeLoopEndBeat = computed(() => patternLoopEndBeat(activePattern.value));
@@ -1955,6 +1959,57 @@ function noteLabel(note) {
   return activeTrack.value?.pads?.find((p) => p.id === note.pitch)?.name ?? '';
 }
 
+function ghostNoteLabel(note) {
+  const sourceTrack = ghostSource.value?.track;
+  if (!sourceTrack) return '';
+  if (sourceTrack.kind === 'drum') {
+    return sourceTrack.pads?.find((p) => p.id === note.pitch)?.name ?? '';
+  }
+  return noteName(note.pitch);
+}
+
+// Faded reference overlay — drawn beneath editable notes, not hit-tested.
+function drawGhostNotes(ctx, rh) {
+  const pattern = ghostPattern.value;
+  const notes = pattern?.notes;
+  if (!notes?.length) return;
+
+  const ghostFillTop = 'rgba(210, 214, 222, 0.42)';
+  const ghostFillBottom = 'rgba(170, 176, 188, 0.28)';
+  const ghostBorder = 'rgba(195, 200, 210, 0.55)';
+
+  for (const note of notes) {
+    if (!keyToIndex.value.has(note.pitch)) continue;
+
+    const x = beatToX(note.startBeat);
+    const y = pitchToY(note.pitch);
+    const nw = note.duration * beatWidth.value;
+    if (x + nw < 0 || x > gridWidth.value) continue;
+
+    const noteRect = [x + 1, y + 1, nw - 1, rh - 1];
+    const grad = ctx.createLinearGradient(0, noteRect[1], 0, noteRect[1] + noteRect[3]);
+    grad.addColorStop(0, ghostFillTop);
+    grad.addColorStop(1, ghostFillBottom);
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = (note.velocity / 127) * 0.35 + 0.25;
+    traceRoundedRect(ctx, ...noteRect, NOTE_CORNER_RADIUS);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = ghostBorder;
+    ctx.lineWidth = 1;
+    traceRoundedRect(ctx, ...noteRect, NOTE_CORNER_RADIUS);
+    ctx.stroke();
+
+    if (nw > 18) {
+      ctx.fillStyle = 'rgba(235, 238, 244, 0.55)';
+      ctx.font = '9px JetBrains Mono';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ghostNoteLabel(note), x + 3, y + rh / 2 + 1, nw - 6);
+    }
+  }
+}
+
 function drawGrid() {
   const canvas = gridCanvas.value;
   if (!canvas) return;
@@ -2006,6 +2061,8 @@ function drawGrid() {
     ctx.fillStyle = 'rgba(102, 153, 255, 0.08)';
     ctx.fillRect(x0, 0, x1 - x0, h);
   }
+
+  drawGhostNotes(ctx, rh);
 
   // Notes — rounded, with a soft top-lit gradient and a darker border.
   // MIDI tracks always use the green note palette; drum tracks use their accent.
@@ -2088,6 +2145,8 @@ watch(
     props.tracks,
     props.activeTrackId,
     activeLoopEndBeat.value,
+    ghostPattern.value?.id,
+    ghostPattern.value?.notes,
     snap.value,
     beatWidth.value,
     rowZoom.value,

@@ -332,6 +332,12 @@ function deletePattern(trackId, patternId) {
     track.pendingPatternId = null;
     track.pendingLaunchBeat = null;
   }
+  for (const t of project.tracks) {
+    if (t.ghostTrackId === trackId && t.ghostPatternId === patternId) {
+      t.ghostTrackId = null;
+      t.ghostPatternId = null;
+    }
+  }
 }
 
 // Live mode click handling — a clip is a toggle:
@@ -402,6 +408,13 @@ function removeTrack(trackId) {
   }
 
   project.tracks.splice(idx, 1);
+
+  for (const t of project.tracks) {
+    if (t.ghostTrackId === trackId) {
+      t.ghostTrackId = null;
+      t.ghostPatternId = null;
+    }
+  }
 
   if (activeTrackId.value === trackId) {
     const fallback = project.tracks[idx] ?? project.tracks[idx - 1];

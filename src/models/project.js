@@ -49,6 +49,27 @@ export function reorderPatterns(track, fromIndex, toIndex) {
   track.patterns.splice(toIndex, 0, pattern);
 }
 
+/** Source track + pattern shown as a non-editable reference overlay in the piano roll. */
+export function getGhostSource(viewingTrack, tracks = []) {
+  if (!viewingTrack?.ghostPatternId) return null;
+
+  const sourceTrackId = viewingTrack.ghostTrackId ?? viewingTrack.id;
+  const sourceTrack = tracks.find((t) => t.id === sourceTrackId);
+  if (!sourceTrack?.patterns?.length) return null;
+
+  if (
+    sourceTrack.id === viewingTrack.id &&
+    viewingTrack.ghostPatternId === viewingTrack.activePatternId
+  ) {
+    return null;
+  }
+
+  const pattern = sourceTrack.patterns.find((p) => p.id === viewingTrack.ghostPatternId);
+  if (!pattern) return null;
+
+  return { track: sourceTrack, pattern };
+}
+
 // Sentinel for playingPatternId/pendingPatternId meaning "this track is
 // deliberately silent in Live mode" — distinct from `null`, which instead
 // means "no Live-mode override yet, just follow activePatternId" (the
@@ -103,6 +124,8 @@ export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), pat
     color,
     patterns: [pattern],
     activePatternId: pattern.id,
+    ghostTrackId: null,
+    ghostPatternId: null,
     // Live mode fields — see engine/liveLauncher.js. playingPatternId is the
     // pattern actually sounding right now (null = follow activePatternId);
     // pendingPatternId/pendingLaunchBeat describe a queued-but-not-yet-live
@@ -145,6 +168,8 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     color,
     patterns: [pattern],
     activePatternId: pattern.id,
+    ghostTrackId: null,
+    ghostPatternId: null,
     playingPatternId: null,
     pendingPatternId: null,
     pendingLaunchBeat: null,

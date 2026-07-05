@@ -73,6 +73,39 @@
       </button>
     </div>
 
+    <div class="flex items-center gap-1 flex-shrink-0 border-l border-line/60 pl-1.5 ml-0.5">
+      <span class="text-[7px] leading-none text-muted-dim uppercase tracking-wider select-none">Ghost</span>
+      <select
+        :value="track.ghostTrackId ?? ''"
+        class="text-[11px] max-w-24 py-0.5 bg-surface border border-line-light rounded"
+        title="Track to show ghost notes from"
+        @change="onGhostTrackChange"
+        @mousedown.stop
+        @click.stop
+      >
+        <option value="">Off</option>
+        <option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</option>
+      </select>
+      <select
+        v-if="track.ghostTrackId"
+        :value="track.ghostPatternId ?? ''"
+        class="text-[11px] max-w-24 py-0.5 bg-surface border border-line-light rounded"
+        title="Pattern to show as a faded reference overlay"
+        @change="onGhostPatternChange"
+        @mousedown.stop
+        @click.stop
+      >
+        <option value="">—</option>
+        <option
+          v-for="pattern in ghostPatternOptions"
+          :key="pattern.id"
+          :value="pattern.id"
+        >
+          {{ pattern.name }}
+        </option>
+      </select>
+    </div>
+
     <div v-if="midiIoEnabled" class="flex items-center gap-0.5 flex-shrink-0 border-l border-line/60 pl-1.5 ml-0.5">
       <input
         ref="midiFileInputRef"
@@ -145,6 +178,7 @@ import { ref, computed, nextTick, onUnmounted, watch } from 'vue';
 import { TRACK_ACCENT_COLORS, BAR_LENGTH_OPTIONS } from '../models/project.js';
 
 const props = defineProps({
+  tracks: { type: Array, default: () => [] },
   track: { type: Object, default: null },
   /** Show Load/Save MIDI controls (MIDI synth tracks only). */
   midiIoEnabled: { type: Boolean, default: false },
@@ -158,6 +192,7 @@ const emit = defineEmits([
   'delete-pattern',
   'import-midi',
   'export-midi',
+  'ghost-source-change',
 ]);
 
 const midiFileInputRef = ref(null);
@@ -175,6 +210,54 @@ const activePickerColor = computed(() => {
   if (!colorPickerId.value || !props.track) return null;
   return props.track.patterns.find((p) => p.id === colorPickerId.value)?.color ?? null;
 });
+
+const ghostSourceTrack = computed(() =>
+  props.tracks.find((t) => t.id === props.track?.ghostTrackId) ?? null
+);
+
+const ghostPatternOptions = computed(() => {
+  const source = ghostSourceTrack.value;
+  if (!source?.patterns?.length) return [];
+  if (source.id === props.track?.id) {
+    return source.patterns.filter((p) => p.id !== props.track.activePatternId);
+  }
+  return source.patterns;
+});
+
+function firstGhostPatternId(sourceTrack) {
+  return ghostPatternOptionsForTrack(sourceTrack, props.track)?.[0]?.id ?? null;
+}
+
+function ghostPatternOptionsForTrack(sourceTrack, viewingTrack) {
+  if (!sourceTrack?.patterns?.length) return [];
+  if (sourceTrack.id === viewingTrack?.id) {
+    return sourceTrack.patterns.filter((p) => p.id !== viewingTrack.activePatternId);
+  }
+  return sourceTrack.patterns;
+}
+
+function onGhostTrackChange(e) {
+  const trackId = e.target.value || null;
+  if (!trackId) {
+    emit('ghost-source-change', { ghostTrackId: null, ghostPatternId: null });
+    return;
+  }
+
+  const sourceTrack = props.tracks.find((t) => t.id === trackId);
+  emit('ghost-source-change', {
+    ghostTrackId: trackId,
+    ghostPatternId: firstGhostPatternId(sourceTrack),
+  });
+}
+
+function onGhostPatternChange(e) {
+  const patternId = e.target.value || null;
+  if (!props.track?.ghostTrackId) return;
+  emit('ghost-source-change', {
+    ghostTrackId: props.track.ghostTrackId,
+    ghostPatternId: patternId,
+  });
+}
 
 function barsLabel(steps) {
   const opt = BAR_LENGTH_OPTIONS.find((o) => o.steps === steps);
@@ -294,6 +377,12 @@ watch(
   () => {
     renamingId.value = null;
     confirmDeleteId.value = null;
+    if (
+      props.track?.ghostTrackId === props.track?.id &&
+      props.track?.ghostPatternId === props.track.activePatternId
+    ) {
+      emit('ghost-source-change', { ghostTrackId: null, ghostPatternId: null });
+    }
   }
 );
 

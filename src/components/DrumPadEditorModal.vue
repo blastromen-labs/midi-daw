@@ -101,19 +101,7 @@
             </div>
 
             <div>
-              <div class="flex items-center justify-between gap-2 mb-1.5">
-                <span class="text-[10px] uppercase tracking-wider text-muted-dim">Length &amp; fade</span>
-                <button
-                  type="button"
-                  class="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-accent text-white hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Preview with current pitch, length, and fade"
-                  :disabled="!canPreview"
-                  @click="preview"
-                >
-                  <span aria-hidden="true">▶</span>
-                  Play
-                </button>
-              </div>
+              <span class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Length &amp; fade</span>
               <p class="text-[10px] text-muted-dim mb-2">
                 Drag the end handle for length. Drag the fade slope to taper the tail.
               </p>
@@ -159,6 +147,42 @@
           </section>
 
           <section class="border-t border-line pt-4">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+              <label class="text-[10px] uppercase tracking-wider text-muted-dim">
+                Reverb — {{ Math.round(draft.reverb * 100) }}%
+              </label>
+              <button
+                type="button"
+                class="px-2 py-0.5 rounded text-[10px] ring-1 transition-colors"
+                :class="draft.reverb > 0 ? 'bg-accent/25 ring-accent text-white' : 'bg-surface-hover ring-line-light text-muted hover:text-white'"
+                @click="draft.reverb = draft.reverb > 0 ? 0 : 0.35"
+              >
+                {{ draft.reverb > 0 ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <input
+              v-model.number="draft.reverb"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              class="w-full accent-accent"
+            />
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mt-3 mb-1.5">
+              Decay — {{ decayLabel }}
+            </label>
+            <input
+              v-model.number="draftReverbDecay"
+              type="range"
+              :min="REVERB_DECAY_MIN"
+              :max="REVERB_DECAY_MAX"
+              step="0.05"
+              class="w-full accent-accent"
+              @input="onReverbDecayInput"
+            />
+          </section>
+
+          <section class="border-t border-line pt-4">
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
               Pad volume — {{ Math.round(draft.volume * 100) }}%
             </label>
@@ -167,15 +191,26 @@
         </div>
 
         <div class="flex items-center justify-between gap-2 px-4 py-3 border-t border-line bg-surface/40 flex-shrink-0">
-          <button
-            v-if="canRemove"
-            type="button"
-            class="px-2 py-1.5 rounded text-xs text-red-400 hover:text-red-300 hover:bg-surface-hover"
-            @click="emit('remove')"
-          >
-            Remove pad
-          </button>
-          <span v-else></span>
+          <div class="flex items-center gap-2 min-w-0">
+            <button
+              v-if="canRemove"
+              type="button"
+              class="px-2 py-1.5 rounded text-xs text-red-400 hover:text-red-300 hover:bg-surface-hover"
+              @click="emit('remove')"
+            >
+              Remove pad
+            </button>
+            <button
+              type="button"
+              class="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold bg-accent text-white hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Preview with current settings"
+              :disabled="!canPreview"
+              @click="preview"
+            >
+              <span aria-hidden="true">▶</span>
+              Play
+            </button>
+          </div>
           <div class="flex items-center gap-2">
             <button
               type="button"
@@ -201,7 +236,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { DRUM_PAD_COLORS } from '../models/project.js';
+import { DRUM_PAD_COLORS, REVERB_DECAY_MIN, REVERB_DECAY_MAX, REVERB_DECAY_DEFAULT } from '../models/project.js';
 import {
   playSample,
   resumeSamplerAudio,
@@ -209,7 +244,7 @@ import {
   getSampleWaveformPeaks,
   getSampleDuration,
 } from '../engine/sampler.js';
-import { padPlaybackOpts } from '../engine/padPlayback.js';
+import { padPlaybackOpts, previewTrackOpts } from '../engine/padPlayback.js';
 import VolumeSlider from './VolumeSlider.vue';
 import SampleWaveformEditor from './SampleWaveformEditor.vue';
 
@@ -218,11 +253,13 @@ const PREVIEW_VELOCITY = 100;
 const props = defineProps({
   pad: { type: Object, required: true },
   allPads: { type: Array, default: () => [] },
+  trackId: { type: String, required: true },
   trackVolume: { type: Number, default: 1 },
+  reverbDecay: { type: Number, default: REVERB_DECAY_DEFAULT },
   canRemove: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['save', 'load-sample', 'clear-sample', 'remove', 'cancel']);
+const emit = defineEmits(['save', 'load-sample', 'clear-sample', 'remove', 'cancel', 'update-reverb-decay']);
 
 const padColors = DRUM_PAD_COLORS;
 const nameInputRef = ref(null);
@@ -238,11 +275,18 @@ const draft = reactive({
   pitch: 0,
   sampleLength: 1,
   fadeOut: 0,
+  reverb: 0,
 });
+
+const draftReverbDecay = ref(REVERB_DECAY_DEFAULT);
 
 const sampleLabel = computed(() => props.pad.fileName || (hasSample(props.pad.id) ? 'Loaded sample' : 'No sample loaded'));
 const canPreview = computed(() => hasSample(props.pad.id));
 const otherPads = computed(() => props.allPads.filter((p) => p.id !== props.pad.id));
+const decayLabel = computed(() => {
+  const sec = draftReverbDecay.value ?? REVERB_DECAY_DEFAULT;
+  return sec >= 1 ? `${sec.toFixed(1)}s` : `${Math.round(sec * 1000)}ms`;
+});
 const pitchLabel = computed(() => {
   const p = draft.pitch ?? 0;
   if (p === 0) return 'Original';
@@ -267,8 +311,14 @@ function syncFromPad() {
   draft.pitch = props.pad.pitch ?? 0;
   draft.sampleLength = props.pad.sampleLength ?? 1;
   draft.fadeOut = props.pad.fadeOut ?? 0;
+  draft.reverb = props.pad.reverb ?? 0;
+  draftReverbDecay.value = props.reverbDecay ?? REVERB_DECAY_DEFAULT;
   refreshWaveform();
 }
+
+watch(() => props.reverbDecay, (v) => {
+  draftReverbDecay.value = v ?? REVERB_DECAY_DEFAULT;
+});
 
 watch(() => props.pad, syncFromPad, { immediate: true, deep: true });
 watch(() => props.pad.fileName, refreshWaveform);
@@ -277,6 +327,12 @@ function toggleCutBy(padId) {
   const idx = draft.cutByPads.indexOf(padId);
   if (idx === -1) draft.cutByPads.push(padId);
   else draft.cutByPads.splice(idx, 1);
+}
+
+function onReverbDecayInput() {
+  const v = Math.max(REVERB_DECAY_MIN, Math.min(REVERB_DECAY_MAX, draftReverbDecay.value));
+  draftReverbDecay.value = v;
+  emit('update-reverb-decay', v);
 }
 
 function submit() {
@@ -291,6 +347,7 @@ function submit() {
     pitch: draft.pitch,
     sampleLength: draft.sampleLength,
     fadeOut: draft.fadeOut,
+    reverb: draft.reverb,
   });
 }
 
@@ -311,14 +368,15 @@ function preview() {
     pitch: draft.pitch,
     sampleLength: draft.sampleLength,
     fadeOut: draft.fadeOut,
+    reverb: draft.reverb,
   };
-  playSample(
-    props.pad.id,
-    PREVIEW_VELOCITY,
-    0,
-    gainMul,
-    padPlaybackOpts(previewPad, props.allPads)
-  );
+  const track = previewTrackOpts({
+    id: props.trackId,
+    pads: props.allPads,
+    reverbDecay: draftReverbDecay.value,
+    volume: props.trackVolume,
+  });
+  playSample(props.pad.id, PREVIEW_VELOCITY, 0, gainMul, padPlaybackOpts(previewPad, track));
 }
 
 function onKeyDown(e) {

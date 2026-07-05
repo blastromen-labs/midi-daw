@@ -233,6 +233,8 @@ export function createDrumPad(name, color) {
     sampleLength: 1,
     // Fraction of the played region that fades out at the end (0 = hard cut).
     fadeOut: 0,
+    // Dry/wet send to the shared drum reverb bus (0 = off).
+    reverb: 0,
   };
 }
 
@@ -244,8 +246,10 @@ export function normalizeDrumPad(pad) {
   if (pad.pitch == null) pad.pitch = 0;
   if (pad.sampleLength == null) pad.sampleLength = 1;
   if (pad.fadeOut == null) pad.fadeOut = 0;
+  if (pad.reverb == null) pad.reverb = 0;
   pad.sampleLength = Math.max(0.01, Math.min(1, pad.sampleLength));
   pad.fadeOut = Math.max(0, Math.min(1, pad.fadeOut));
+  pad.reverb = Math.max(0, Math.min(1, pad.reverb));
   pad.pitch = Math.max(-24, Math.min(24, pad.pitch));
   return pad;
 }
@@ -296,14 +300,28 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     pendingPatternId: null,
     pendingLaunchBeat: null,
     volume: 1,
+    // Room reverb tail length in seconds (track-wide shared bus).
+    reverbDecay: REVERB_DECAY_DEFAULT,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
   };
+}
+
+export const REVERB_DECAY_MIN = 0.15;
+export const REVERB_DECAY_MAX = 5;
+export const REVERB_DECAY_DEFAULT = 1.2;
+
+export function normalizeDrumTrack(track) {
+  if (track?.kind !== 'drum') return track;
+  if (track.reverbDecay == null) track.reverbDecay = REVERB_DECAY_DEFAULT;
+  track.reverbDecay = Math.max(REVERB_DECAY_MIN, Math.min(REVERB_DECAY_MAX, track.reverbDecay));
+  return track;
 }
 
 /** Append default kit pads missing from saved drum tracks (e.g. Zap added after save). */
 export function ensureDefaultDrumPads(tracks) {
   for (const track of tracks) {
     if (track.kind !== 'drum' || !Array.isArray(track.pads)) continue;
+    normalizeDrumTrack(track);
     const names = new Set(track.pads.map((p) => p.name));
     for (const [padName, color] of DEFAULT_DRUM_PADS) {
       if (names.has(padName)) continue;

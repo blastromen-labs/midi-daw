@@ -7,6 +7,7 @@
 // mirrors how midi.js keeps its output cache outside of any reactive object.
 
 import { getSharedAudioContext, resumeSharedAudioContext } from './audioContext.js';
+import { getReverbInput } from './reverb.js';
 import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
 
 export async function resumeSamplerAudio() {
@@ -90,9 +91,9 @@ function applyCut(triggerPadId, trackPads, whenSec) {
 }
 
 function playbackSettings(opts = {}) {
-  const pitch = Math.max(-24, Math.min(24, opts.pitch ?? 0));
-  const sampleLength = Math.max(0.01, Math.min(1, opts.sampleLength ?? 1));
-  const fadeOut = Math.max(0, Math.min(1, opts.fadeOut ?? 0));
+  const pitch = Math.max(-24, Math.min(24, Number(opts.pitch) || 0));
+  const sampleLength = Math.max(0.01, Math.min(1, Number(opts.sampleLength) || 1));
+  const fadeOut = Math.max(0, Math.min(1, Number(opts.fadeOut) || 0));
   const rate = Math.pow(2, pitch / 12);
   return { pitch, sampleLength, fadeOut, rate };
 }
@@ -171,17 +172,36 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   const playDurationSec = (buffer.duration * sampleLength) / rate;
   const fadeDurationSec = playDurationSec * fadeOut;
   const fadeStartSec = when + playDurationSec - fadeDurationSec;
+  const endTime = when + playDurationSec;
 
   const src = c.createBufferSource();
   src.buffer = buffer;
-  src.playbackRate.value = rate;
+  // Schedule rate at the voice start time — assigning .value alone misses future
+  // scheduled hits and can leave playbackRate at 1 in some browsers.
+  src.playbackRate.cancelScheduledValues(0);
+  src.detune.cancelScheduledValues(0);
+  src.playbackRate.setValueAtTime(rate, when);
+  src.detune.setValueAtTime(0, when);
 
   const gain = c.createGain();
   const velGain = Math.max(0, Math.min(1, velocity / 127));
   const peakGain = Math.max(0, Math.min(1, velGain * gainMul));
+  const reverbSend = Math.max(0, Math.min(1, opts.reverb ?? 0));
 
   src.connect(gain);
-  gain.connect(c.destination);
+
+  if (reverbSend > 0.001) {
+    const dryGain = c.createGain();
+    const wetGain = c.createGain();
+    dryGain.gain.value = 1 - reverbSend;
+    wetGain.gain.value = reverbSend;
+    gain.connect(dryGain);
+    gain.connect(wetGain);
+    dryGain.connect(c.destination);
+    wetGain.connect(getReverbInput(opts.trackId, opts.reverbDecay));
+  } else {
+    gain.connect(c.destination);
+  }
 
   gain.gain.setValueAtTime(peakGain, when);
   if (fadeOut > 0 && fadeDurationSec > 0.001) {
@@ -193,5 +213,6 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   activeVoices.set(voice.id, voice);
   src.onended = () => activeVoices.delete(voice.id);
 
-  src.start(when, 0, playDurationSec);
+  src.start(when, 0);
+  src.stop(endTime);
 }

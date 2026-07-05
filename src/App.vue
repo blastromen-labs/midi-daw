@@ -104,6 +104,7 @@ import {
   syncUidCounter,
   defaultDrumSampleFile,
   ensureDefaultDrumPads,
+  normalizeDrumTrack,
   LIVE_LAUNCH_MODES,
 } from './models/project.js';
 import {
@@ -126,6 +127,7 @@ import { externalClock } from './engine/externalClock.js';
 import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
 import { clearSample, hasSample, loadSampleUrl } from './engine/sampler.js';
+import { removeReverbBus } from './engine/reverb.js';
 import { normalizeDrumPad } from './models/project.js';
 import { hasFileDrag } from './utils/audioFile.js';
 import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately, holdPatternDown, holdPatternUp } from './engine/liveLauncher.js';
@@ -610,7 +612,10 @@ function reorderPatterns(trackId, fromIndex, toIndex) {
 
 function updateTrack(trackId, changes) {
   const track = findTrack(trackId);
-  if (track) Object.assign(track, changes);
+  if (track) {
+    Object.assign(track, changes);
+    if (track.kind === 'drum') normalizeDrumTrack(track);
+  }
 }
 
 function addTrack(kind, config = {}) {
@@ -640,6 +645,7 @@ function removeTrack(trackId) {
   const track = project.tracks[idx];
   if (track.kind === 'drum') {
     for (const pad of track.pads) clearSample(pad.id);
+    removeReverbBus(trackId);
   }
 
   project.tracks.splice(idx, 1);

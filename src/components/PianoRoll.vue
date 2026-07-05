@@ -28,6 +28,9 @@
         @select="(id) => $emit('select-song', id)"
         @rename="(id, name) => $emit('rename-song', id, name)"
         @create="(name) => $emit('create-song', name)"
+        @save-file="$emit('save-song-file')"
+        @load-file="(text) => $emit('load-song-file', text)"
+        @load-file-error="(msg) => $emit('load-song-file-error', msg)"
       />
 
       <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
@@ -425,6 +428,9 @@ const emit = defineEmits([
   'select-song',
   'rename-song',
   'create-song',
+  'save-song-file',
+  'load-song-file',
+  'load-song-file-error',
 ]);
 
 const ROW_HEIGHT = 20;

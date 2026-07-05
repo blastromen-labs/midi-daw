@@ -53,6 +53,28 @@
         </div>
 
         <div class="border-t border-line">
+          <button
+            class="w-full text-left text-xs px-2 py-1.5 hover:bg-surface-hover text-muted hover:text-white"
+            @click="onSaveFile"
+          >
+            Save to File…
+          </button>
+          <button
+            class="w-full text-left text-xs px-2 py-1.5 hover:bg-surface-hover text-muted hover:text-white"
+            @click="onLoadFileClick"
+          >
+            Load from File…
+          </button>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept=".json,application/json"
+            class="hidden"
+            @change="onFileSelected"
+          />
+        </div>
+
+        <div class="border-t border-line">
           <div v-if="creating" class="flex items-center gap-1 px-2 py-1.5" @click.stop>
             <input
               ref="createInputRef"
@@ -91,7 +113,7 @@ const props = defineProps({
   activeSongId: String,
 });
 
-const emit = defineEmits(['select', 'rename', 'create']);
+const emit = defineEmits(['select', 'rename', 'create', 'save-file', 'load-file', 'load-file-error']);
 
 const open = ref(false);
 const renamingId = ref(null);
@@ -101,6 +123,7 @@ const rootRef = ref(null);
 const triggerRef = ref(null);
 const panelRef = ref(null);
 const createInputRef = ref(null);
+const fileInputRef = ref(null);
 const panelStyle = ref({});
 
 const activeSong = computed(() => props.songs.find((s) => s.id === props.activeSongId));
@@ -163,6 +186,32 @@ function commitCreate() {
   creating.value = false;
   newSongName.value = '';
   open.value = false;
+}
+
+function onSaveFile() {
+  emit('save-file');
+  open.value = false;
+}
+
+function onLoadFileClick() {
+  fileInputRef.value?.click();
+}
+
+function onFileSelected(e) {
+  const input = e.target;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  open.value = false;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    emit('load-file', reader.result);
+  };
+  reader.onerror = () => {
+    emit('load-file-error', 'Could not read the selected file.');
+  };
+  reader.readAsText(file);
 }
 
 function onDocumentPointerDown(e) {

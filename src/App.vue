@@ -46,6 +46,9 @@
           @select-song="selectSong"
           @rename-song="renameSong"
           @create-song="createSong"
+          @save-song-file="saveSongToFile"
+          @load-song-file="loadSongFromFile"
+          @load-song-file-error="onLoadSongFileError"
         />
         <LiveView
           v-show="viewMode === 'live'"
@@ -75,12 +78,18 @@
           @select-song="selectSong"
           @rename-song="renameSong"
           @create-song="createSong"
+          @save-song-file="saveSongToFile"
+          @load-song-file="loadSongFromFile"
+          @load-song-file-error="onLoadSongFileError"
         />
       </div>
     </div>
 
     <div v-if="midiError" class="fixed bottom-4 right-4 bg-red-900/90 text-red-200 px-4 py-2 rounded text-sm">
       {{ midiError }}
+    </div>
+    <div v-if="fileError" class="fixed bottom-4 left-4 bg-red-900/90 text-red-200 px-4 py-2 rounded text-sm max-w-sm">
+      {{ fileError }}
     </div>
   </div>
 </template>
@@ -113,6 +122,8 @@ import {
   serializeProject,
   deserializeProject,
   createSongEntry,
+  downloadSongFile,
+  parseSongFileJson,
 } from './engine/songStorage.js';
 import {
   initMidi,
@@ -152,6 +163,7 @@ const activeTrackId = ref((project.tracks.find((t) => t.kind === 'midi') ?? proj
 const midiOutputs = ref([]);
 const midiInputs = ref([]);
 const midiError = ref('');
+const fileError = ref('');
 
 let playingUnsub = null; // tracks 'start'/'stop' on whichever clock is currently active
 let outputsUnsub = null;
@@ -313,6 +325,50 @@ function renameSong(songId, name) {
   song.name = name.trim() || song.name;
   song.updatedAt = new Date().toISOString();
   persistSongs();
+}
+
+function applySyncSettingsFromProject(snapshot) {
+  if (snapshot.syncMode != null) syncSettings.syncMode = snapshot.syncMode;
+  if (snapshot.clockInputId != null) syncSettings.clockInputId = snapshot.clockInputId;
+  if (snapshot.sendMidiClock != null) syncSettings.sendMidiClock = snapshot.sendMidiClock;
+  if (snapshot.clockOutputId != null) syncSettings.clockOutputId = snapshot.clockOutputId;
+}
+
+function showFileError(message) {
+  fileError.value = message;
+  window.setTimeout(() => {
+    if (fileError.value === message) fileError.value = '';
+  }, 5000);
+}
+
+function saveSongToFile() {
+  saveCurrentSong();
+  const song = songs.value.find((s) => s.id === currentSongId.value);
+  const name = song?.name ?? 'Untitled';
+  applyGlobalSettingsToProject();
+  downloadSongFile(name, project);
+}
+
+function loadSongFromFile(text) {
+  let parsed;
+  try {
+    parsed = parseSongFileJson(text);
+  } catch (err) {
+    showFileError(err instanceof Error ? err.message : 'Could not load song file.');
+    return;
+  }
+
+  saveCurrentSong();
+  applySyncSettingsFromProject(parsed.project);
+  const entry = createSongEntry(parsed.name, parsed.project);
+  songs.value.push(entry);
+  currentSongId.value = entry.id;
+  replaceProject(entry.project, { preserveSelection: true });
+  persistSongs();
+}
+
+function onLoadSongFileError(message) {
+  showFileError(message);
 }
 
 // Transport loop spans the longest track pattern (or a user-drawn loop region)

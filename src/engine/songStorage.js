@@ -3,6 +3,20 @@ import { uid, normalizeTrackCategory } from '../models/project.js';
 const SONGS_KEY = 'midi-daw:songs';
 const CURRENT_SONG_KEY = 'midi-daw:currentSongId';
 const STORAGE_VERSION = 1;
+export const SONG_FILE_FORMAT = 'midi-daw-song';
+export const SONG_FILE_VERSION = 1;
+
+/** Project fields persisted to localStorage and song files (Live-mode runtime excluded). */
+const PERSISTED_PROJECT_SCALAR_KEYS = [
+  'bpm',
+  'sessionView',
+  'sendMidiClock',
+  'clockOutputId',
+  'syncMode',
+  'clockInputId',
+  'markerBeat',
+  'loopRegion',
+];
 
 /** Fields stripped before persisting — Live-mode runtime only. */
 const EPHEMERAL_TRACK_FIELDS = [
@@ -20,22 +34,30 @@ function stripEphemeralTrackFields(track) {
   return copy;
 }
 
-/** Deep-clone project state suitable for localStorage. */
+/** Deep-clone project state suitable for localStorage and JSON export. */
 export function serializeProject(project) {
-  return JSON.parse(
-    JSON.stringify({
-      bpm: project.bpm,
-      markerBeat: project.markerBeat,
-      loopRegion: project.loopRegion,
-      tracks: project.tracks.map(stripEphemeralTrackFields),
-    })
-  );
+  const snapshot = {
+    tracks: project.tracks.map(stripEphemeralTrackFields),
+  };
+  for (const key of PERSISTED_PROJECT_SCALAR_KEYS) {
+    if (project[key] !== undefined) snapshot[key] = project[key];
+  }
+  return JSON.parse(JSON.stringify(snapshot));
 }
 
 /** Restore a saved project snapshot; Live-mode fields start cleared. */
 export function deserializeProject(data) {
   const project = JSON.parse(JSON.stringify(data));
-  for (const track of project.tracks ?? []) {
+  project.bpm = project.bpm ?? 120;
+  project.sessionView = project.sessionView ?? 'roll';
+  project.syncMode = project.syncMode ?? 'internal';
+  project.clockInputId = project.clockInputId ?? '';
+  project.sendMidiClock = project.sendMidiClock ?? false;
+  project.clockOutputId = project.clockOutputId ?? '';
+  project.markerBeat = project.markerBeat ?? null;
+  project.loopRegion = project.loopRegion ?? null;
+  project.tracks = project.tracks ?? [];
+  for (const track of project.tracks) {
     track.playingPatternId = null;
     track.pendingPatternId = null;
     track.pendingLaunchBeat = null;
@@ -82,4 +104,61 @@ export function persistSongLibrary(songs, currentSongId) {
   );
   if (currentSongId) localStorage.setItem(CURRENT_SONG_KEY, currentSongId);
   else localStorage.removeItem(CURRENT_SONG_KEY);
+}
+
+export function sanitizeSongFilename(name) {
+  const base = (name || 'Untitled')
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .slice(0, 120);
+  return base || 'Untitled';
+}
+
+/** Build the on-disk JSON payload for one song. */
+export function buildSongFileExport(name, project) {
+  return {
+    format: SONG_FILE_FORMAT,
+    version: SONG_FILE_VERSION,
+    name: (name || 'Untitled').trim() || 'Untitled',
+    savedAt: new Date().toISOString(),
+    project: serializeProject(project),
+  };
+}
+
+/** Trigger a browser download of the song as a `.json` file. */
+export function downloadSongFile(name, project) {
+  const payload = buildSongFileExport(name, project);
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${sanitizeSongFilename(name)}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Parse song file text. Accepts the wrapped export format or a bare legacy
+ * project object that only contains `tracks`.
+ */
+export function parseSongFileJson(text) {
+  const data = JSON.parse(text);
+  if (
+    data?.format === SONG_FILE_FORMAT &&
+    data.version === SONG_FILE_VERSION &&
+    data.project
+  ) {
+    return {
+      name: (data.name || 'Untitled').trim() || 'Untitled',
+      project: deserializeProject(data.project),
+    };
+  }
+  if (Array.isArray(data?.tracks)) {
+    return {
+      name: 'Imported',
+      project: deserializeProject(data),
+    };
+  }
+  throw new Error('Unrecognized song file — expected a midi-daw song export.');
 }

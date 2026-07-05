@@ -11,10 +11,6 @@
     </button>
     <span class="text-[7px] leading-none text-muted-dim uppercase tracking-wider select-none">Track</span>
 
-    <!-- Teleported so the toolbar's own overflow-x-auto (needed for narrow
-         screens) can't clip this panel — an absolutely-positioned child
-         would otherwise get cut off since setting overflow-x forces
-         overflow-y to compute as non-visible too. -->
     <Teleport to="body">
       <div
         v-if="open"
@@ -39,31 +35,20 @@
                 @click.stop="toggleColorPicker(t.id)"
               />
 
-              <input
-                v-if="renamingId === t.id"
-                :ref="(el) => setRenameInputRef(el)"
-                :value="t.name"
-                class="flex-1 min-w-0 bg-transparent border-b border-accent text-xs px-0.5 outline-none"
-                @click.stop
-                @keydown.enter="commitRename($event, t.id)"
-                @keydown.esc="renamingId = null"
-                @blur="commitRename($event, t.id)"
-              />
-              <span v-else class="flex-1 min-w-0 truncate text-xs">{{ t.name }}</span>
+              <span class="flex-1 min-w-0 truncate text-xs">{{ t.name }}</span>
 
-              <span class="text-[9px] text-muted-dim uppercase flex-shrink-0">{{ t.kind }}</span>
+              <span class="text-[9px] text-muted-dim uppercase flex-shrink-0">{{ t.category }}</span>
 
               <button
-                v-if="renamingId !== t.id"
                 class="opacity-0 group-hover:opacity-100 text-[10px] text-muted-dim hover:text-white flex-shrink-0"
-                title="Rename track"
-                @click.stop="startRename(t)"
+                title="Edit track"
+                @click.stop="startEdit(t)"
               >
                 ✎
               </button>
 
               <button
-                v-if="renamingId !== t.id && confirmDeleteId !== t.id"
+                v-if="confirmDeleteId !== t.id"
                 class="opacity-0 group-hover:opacity-100 text-[10px] text-muted-dim hover:text-red-400 flex-shrink-0"
                 title="Delete track"
                 @click.stop="requestDelete(t)"
@@ -119,37 +104,48 @@
           <button
             class="flex-1 text-xs py-1.5 hover:bg-surface-hover text-muted hover:text-white"
             title="Add a MIDI channel"
-            @click="addTrack('midi')"
+            @click="startCreate('midi')"
           >
             + MIDI
           </button>
           <button
             class="flex-1 text-xs py-1.5 hover:bg-surface-hover text-muted hover:text-white border-l border-line"
             title="Add a sample-based drum channel"
-            @click="addTrack('drum')"
+            @click="startCreate('drum')"
           >
             + Drum
           </button>
         </div>
       </div>
     </Teleport>
+
+    <TrackEditorModal
+      v-if="editorOpen"
+      :mode="editorMode"
+      :kind="editorKind"
+      :initial="editorInitial"
+      :midi-outputs="midiOutputs"
+      @save="commitEditor"
+      @cancel="closeEditor"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, nextTick, onUnmounted } from 'vue';
-import { TRACK_ACCENT_COLORS } from '../models/project.js';
+import { TRACK_ACCENT_COLORS, randomTrackColor, defaultTrackCategory } from '../models/project.js';
+import TrackEditorModal from './TrackEditorModal.vue';
 
 const props = defineProps({
   tracks: { type: Array, required: true },
   activeTrackId: String,
+  midiOutputs: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(['select', 'rename', 'add-track', 'update-track', 'delete-track']);
+const emit = defineEmits(['select', 'add-track', 'update-track', 'delete-track']);
 
 const accentColors = TRACK_ACCENT_COLORS;
 const open = ref(false);
-const renamingId = ref(null);
 const colorPickerId = ref(null);
 const confirmDeleteId = ref(null);
 const rootRef = ref(null);
@@ -157,7 +153,32 @@ const triggerRef = ref(null);
 const panelRef = ref(null);
 const panelStyle = ref({});
 
+const editorOpen = ref(false);
+const editorMode = ref('create');
+const editorKind = ref('midi');
+const editorTrackId = ref(null);
+const editorInitial = ref({});
+
 const activeTrack = computed(() => props.tracks.find((t) => t.id === props.activeTrackId));
+
+function defaultTrackName(kind) {
+  const n =
+    kind === 'drum'
+      ? props.tracks.filter((t) => t.kind === 'drum').length + 1
+      : props.tracks.filter((t) => t.kind === 'midi').length + 1;
+  return kind === 'drum' ? `Drums ${n}` : `MIDI ${n}`;
+}
+
+function trackToDraft(track) {
+  return {
+    name: track.name,
+    color: track.color,
+    category: track.category,
+    midiOutputId: track.midiOutputId ?? '',
+    midiChannel: track.midiChannel ?? 0,
+    volume: track.volume ?? 1,
+  };
+}
 
 function updatePosition() {
   const el = triggerRef.value;
@@ -170,15 +191,52 @@ function toggleOpen() {
   open.value = !open.value;
   if (open.value) nextTick(updatePosition);
   else {
-    renamingId.value = null;
     colorPickerId.value = null;
     confirmDeleteId.value = null;
   }
 }
 
+function closeEditor() {
+  editorOpen.value = false;
+  editorTrackId.value = null;
+}
+
+function startCreate(kind) {
+  editorMode.value = 'create';
+  editorKind.value = kind;
+  editorTrackId.value = null;
+  editorInitial.value = {
+    name: defaultTrackName(kind),
+    color: randomTrackColor(props.tracks.map((t) => t.color)),
+    category: defaultTrackCategory(kind),
+    midiOutputId: '',
+    midiChannel: 0,
+    volume: 1,
+  };
+  open.value = false;
+  editorOpen.value = true;
+}
+
+function startEdit(track) {
+  editorMode.value = 'edit';
+  editorKind.value = track.kind;
+  editorTrackId.value = track.id;
+  editorInitial.value = trackToDraft(track);
+  open.value = false;
+  editorOpen.value = true;
+}
+
+function commitEditor(values) {
+  if (editorMode.value === 'create') {
+    emit('add-track', editorKind.value, values);
+  } else if (editorTrackId.value) {
+    emit('update-track', editorTrackId.value, values);
+  }
+  closeEditor();
+}
+
 function requestDelete(t) {
   colorPickerId.value = null;
-  renamingId.value = null;
   confirmDeleteId.value = t.id;
 }
 
@@ -197,40 +255,18 @@ function pickColor(trackId, color) {
   colorPickerId.value = null;
 }
 
-function setRenameInputRef(el) {
-  if (el) nextTick(() => el.focus());
-}
-
 function selectTrack(t) {
   emit('select', t.id);
   open.value = false;
 }
 
-function startRename(t) {
-  renamingId.value = t.id;
-}
-
-// Guarded by the renamingId check so a commit already handled by one event
-// (e.g. Enter) doesn't fire a second time when the resulting blur follows.
-function commitRename(e, trackId) {
-  if (renamingId.value !== trackId) return;
-  const name = e.target.value.trim();
-  renamingId.value = null;
-  if (name) emit('rename', trackId, name);
-}
-
-function addTrack(kind) {
-  emit('add-track', kind);
-  open.value = false;
-}
-
 function onDocumentPointerDown(e) {
+  if (editorOpen.value) return;
   if (!open.value) return;
   const insideTrigger = rootRef.value?.contains(e.target);
   const insidePanel = panelRef.value?.contains(e.target);
   if (!insideTrigger && !insidePanel) {
     open.value = false;
-    renamingId.value = null;
     colorPickerId.value = null;
     confirmDeleteId.value = null;
   }
@@ -241,6 +277,7 @@ function onWindowChange() {
 }
 
 function onKeyDown(e) {
+  if (editorOpen.value) return;
   if (open.value && e.key === 'Escape') {
     if (confirmDeleteId.value) {
       confirmDeleteId.value = null;
@@ -251,7 +288,6 @@ function onKeyDown(e) {
       return;
     }
     open.value = false;
-    renamingId.value = null;
   }
 }
 

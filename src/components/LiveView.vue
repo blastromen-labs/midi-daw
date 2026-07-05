@@ -1,8 +1,21 @@
 <template>
-  <div class="live-view flex flex-col h-full bg-panel">
+  <div class="live-view flex flex-col h-full bg-panel rounded-lg border border-line overflow-hidden">
     <!-- Minimal transport bar — mirrors the piano roll's toolbar just enough
          to jam without switching views (see ToolbarField usage there). -->
     <div class="flex items-end gap-2 px-2 py-1 bg-surface border-b border-line flex-shrink-0 overflow-x-auto">
+      <SettingsToolbarButton
+        :sync-mode="syncMode"
+        :clock-input-id="clockInputId"
+        :send-midi-clock="sendMidiClock"
+        :clock-output-id="clockOutputId"
+        :midi-inputs="midiInputs"
+        :midi-outputs="midiOutputs"
+        @sync-mode-change="(v) => $emit('sync-mode-change', v)"
+        @clock-input-change="(v) => $emit('clock-input-change', v)"
+        @toggle-clock="$emit('toggle-clock')"
+        @clock-output-change="(v) => $emit('clock-output-change', v)"
+      />
+
       <SongMenu
         :songs="songs"
         :active-song-id="activeSongId"
@@ -34,24 +47,13 @@
           @change="(e) => $emit('bpm-change', Number(e.target.value))"
         />
       </ToolbarField>
-      <template v-else>
-        <ToolbarField label="In">
-          <select
-            :value="clockInputId"
-            @change="(e) => $emit('clock-input-change', e.target.value)"
-            class="text-xs max-w-28 flex-shrink-0 py-0.5"
-            title="MIDI clock input to follow"
-          >
-            <option value="">—</option>
-            <option v-for="d in midiInputs" :key="d.id" :value="d.id">{{ d.name }}</option>
-          </select>
-        </ToolbarField>
+      <ToolbarField v-else label="Sync">
         <span
-          class="w-1.5 h-1.5 rounded-full flex-shrink-0 mb-2"
+          class="w-1.5 h-1.5 rounded-full flex-shrink-0"
           :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"
-          :title="!clockInputId ? 'No input selected' : playing ? 'Synced — playing' : 'Waiting for clock…'"
+          :title="!clockInputId ? 'External sync — choose input in Settings' : playing ? 'Synced — playing' : 'Waiting for clock…'"
         ></span>
-      </template>
+      </ToolbarField>
 
       <div class="flex-1"></div>
 
@@ -76,7 +78,7 @@
             <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: track.color }"></span>
             <span class="truncate text-xs font-semibold">{{ track.name }}</span>
           </div>
-          <span class="text-[9px] text-muted-dim uppercase tracking-wide">{{ track.kind }}</span>
+          <span class="text-[9px] text-muted-dim uppercase tracking-wide">{{ track.category }}</span>
         </div>
 
         <div class="flex flex-wrap gap-1.5 flex-1 content-start relative" :data-clip-track="track.id">
@@ -155,6 +157,7 @@ import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import ToolbarField from './ToolbarField.vue';
 import SongMenu from './SongMenu.vue';
+import SettingsToolbarButton from './SettingsToolbarButton.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
 
 const props = defineProps({
@@ -165,13 +168,19 @@ const props = defineProps({
   bpm: Number,
   syncMode: { type: String, default: 'internal' },
   clockInputId: { type: String, default: '' },
+  sendMidiClock: Boolean,
+  clockOutputId: { type: String, default: '' },
   midiInputs: { type: Array, default: () => [] },
+  midiOutputs: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
   'toggle-play',
   'bpm-change',
+  'sync-mode-change',
   'clock-input-change',
+  'toggle-clock',
+  'clock-output-change',
   'view-mode-change',
   'trigger-pattern',
   'edit-pattern',

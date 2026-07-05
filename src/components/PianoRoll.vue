@@ -9,6 +9,19 @@
       @mousedown="onToolbarMouseDown"
       @touchstart="onToolbarMouseDown"
     >
+      <SettingsToolbarButton
+        :sync-mode="syncMode"
+        :clock-input-id="clockInputId"
+        :send-midi-clock="sendMidiClock"
+        :clock-output-id="clockOutputId"
+        :midi-inputs="midiInputs"
+        :midi-outputs="midiOutputs"
+        @sync-mode-change="(v) => $emit('sync-mode-change', v)"
+        @clock-input-change="(v) => $emit('clock-input-change', v)"
+        @toggle-clock="$emit('toggle-clock')"
+        @clock-output-change="(v) => $emit('clock-output-change', v)"
+      />
+
       <SongMenu
         :songs="songs"
         :active-song-id="activeSongId"
@@ -41,24 +54,13 @@
           @change="(e) => $emit('bpm-change', Number(e.target.value))"
         />
       </ToolbarField>
-      <template v-else>
-        <ToolbarField label="In">
-          <select
-            :value="clockInputId"
-            @change="(e) => $emit('clock-input-change', e.target.value)"
-            class="text-xs max-w-28 flex-shrink-0 py-0.5"
-            title="MIDI clock input to follow"
-          >
-            <option value="">—</option>
-            <option v-for="d in midiInputs" :key="d.id" :value="d.id">{{ d.name }}</option>
-          </select>
-        </ToolbarField>
+      <ToolbarField v-else label="Sync">
         <span
-          class="w-1.5 h-1.5 rounded-full flex-shrink-0 mb-2"
+          class="w-1.5 h-1.5 rounded-full flex-shrink-0"
           :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"
-          :title="!clockInputId ? 'No input selected' : playing ? 'Synced — playing' : 'Waiting for clock…'"
+          :title="!clockInputId ? 'External sync — choose input in Settings' : playing ? 'Synced — playing' : 'Waiting for clock…'"
         ></span>
-      </template>
+      </ToolbarField>
 
       <ToolbarField v-if="activeTrack" label="Bar">
         <select
@@ -71,59 +73,6 @@
         </select>
       </ToolbarField>
 
-      <ToolbarField
-        label="Sync"
-        title="Internal (this app is the master clock) or External (follow an incoming MIDI clock, e.g. FL Studio)"
-      >
-        <div class="flex items-center gap-0.5 flex-shrink-0">
-          <button
-            class="px-1.5 py-0.5 rounded text-[10px] leading-none"
-            :class="syncMode === 'internal' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
-            @click="$emit('sync-mode-change', 'internal')"
-          >
-            Int
-          </button>
-          <button
-            class="px-1.5 py-0.5 rounded text-[10px] leading-none"
-            :class="syncMode === 'external' ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
-            @click="$emit('sync-mode-change', 'external')"
-          >
-            Ext
-          </button>
-        </div>
-      </ToolbarField>
-
-      <ToolbarField label="Clk">
-        <button
-          class="w-6 h-3.5 rounded-full transition-colors relative flex-shrink-0"
-          :class="sendMidiClock ? 'bg-accent' : 'bg-surface-hover'"
-          title="Send MIDI clock to connected outputs"
-          @click="$emit('toggle-clock')"
-        >
-          <span
-            class="absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all"
-            :class="sendMidiClock ? 'left-3' : 'left-0.5'"
-          ></span>
-        </button>
-      </ToolbarField>
-
-      <ToolbarField
-        label="Out"
-        class="flex-shrink-0"
-        :class="sendMidiClock ? '' : 'invisible pointer-events-none'"
-      >
-        <select
-          :value="clockOutputId"
-          @change="(e) => $emit('clock-output-change', e.target.value)"
-          class="text-xs w-24 flex-shrink-0 py-0.5"
-          title="MIDI clock output"
-          :tabindex="sendMidiClock ? 0 : -1"
-        >
-          <option value="">All</option>
-          <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
-        </select>
-      </ToolbarField>
-
       <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
       <!-- Track: select/rename/add-new all live in this one menu instead of
@@ -131,37 +80,12 @@
       <TrackMenu
         :tracks="tracks"
         :active-track-id="activeTrackId"
+        :midi-outputs="midiOutputs"
         @select="(id) => $emit('select-track', id)"
-        @rename="(id, name) => $emit('rename-track', id, name)"
-        @add-track="(kind) => $emit('add-track', kind)"
+        @add-track="(kind, config) => $emit('add-track', kind, config)"
         @update-track="(id, changes) => $emit('update-track', id, changes)"
         @delete-track="(id) => $emit('delete-track', id)"
       />
-
-      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
-
-      <div class="flex-shrink-0 w-[10.5rem]">
-        <MidiRouteSelect
-          v-if="activeTrack && activeTrack.kind !== 'drum'"
-          :output-id="activeTrack.midiOutputId"
-          :channel="activeTrack.midiChannel"
-          :outputs="midiOutputs"
-          @output-change="(id) => updateRoute({ midiOutputId: id })"
-          @channel-change="(ch) => updateRoute({ midiChannel: ch })"
-        />
-        <ToolbarField
-          v-else-if="activeTrack"
-          label="Vol"
-          :title="`Track volume — ${Math.round((activeTrack.volume ?? 1) * 100)}%`"
-        >
-          <VolumeSlider
-            wide
-            class="w-full"
-            :model-value="activeTrack.volume ?? 1"
-            @update:model-value="(v) => emit('update-track', activeTrackId, { volume: v })"
-          />
-        </ToolbarField>
-      </div>
 
       <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
@@ -403,13 +327,12 @@ import {
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
-import MidiRouteSelect from './MidiRouteSelect.vue';
 import VelocityLane from './VelocityLane.vue';
 import DrumPadList from './DrumPadList.vue';
 import TrackMenu from './TrackMenu.vue';
 import SongMenu from './SongMenu.vue';
+import SettingsToolbarButton from './SettingsToolbarButton.vue';
 import ToolbarField from './ToolbarField.vue';
-import VolumeSlider from './VolumeSlider.vue';
 import EditToolBar from './EditToolBar.vue';
 import PatternBar from './PatternBar.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
@@ -461,9 +384,7 @@ const emit = defineEmits([
   'rename-pattern',
   'update-pattern',
   'delete-pattern',
-  'route-change',
   'add-track',
-  'rename-track',
   'update-pad',
   'add-pad',
   'remove-pad',
@@ -793,10 +714,6 @@ function xToBeatCell(x) {
 // of the current grid/snap setting.
 function xToRawBeat(x) {
   return x / beatWidth.value;
-}
-
-function updateRoute(changes) {
-  emit('route-change', props.activeTrackId, changes);
 }
 
 function getNotes() {

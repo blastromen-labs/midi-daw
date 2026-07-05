@@ -11,10 +11,10 @@
           :playing="playing"
           :midi-outputs="midiOutputs"
           :bpm="project.bpm"
-          :send-midi-clock="project.sendMidiClock"
-          :clock-output-id="project.clockOutputId"
-          :sync-mode="project.syncMode"
-          :clock-input-id="project.clockInputId"
+          :send-midi-clock="syncSettings.sendMidiClock"
+          :clock-output-id="syncSettings.clockOutputId"
+          :sync-mode="syncSettings.syncMode"
+          :clock-input-id="syncSettings.clockInputId"
           :midi-inputs="midiInputs"
           :marker-beat="project.markerBeat"
           :loop-region="project.loopRegion"
@@ -25,9 +25,7 @@
           @rename-pattern="renamePattern"
           @update-pattern="updatePattern"
           @delete-pattern="deletePattern"
-          @route-change="updateMidiRoute"
           @add-track="addTrack"
-          @rename-track="renameTrack"
           @update-pad="updatePad"
           @update-track="updateTrack"
           @add-pad="addPad"
@@ -38,10 +36,10 @@
           @marker-change="project.markerBeat = $event"
           @loop-region-change="setLoopRegion"
           @bpm-change="setBpm"
-          @toggle-clock="project.sendMidiClock = !project.sendMidiClock"
-          @clock-output-change="project.clockOutputId = $event"
-          @sync-mode-change="project.syncMode = $event"
-          @clock-input-change="project.clockInputId = $event"
+          @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
+          @clock-output-change="syncSettings.clockOutputId = $event"
+          @sync-mode-change="syncSettings.syncMode = $event"
+          @clock-input-change="syncSettings.clockInputId = $event"
           @view-mode-change="viewMode = $event"
           @select-song="selectSong"
           @rename-song="renameSong"
@@ -54,12 +52,18 @@
           :tracks="project.tracks"
           :playing="playing"
           :bpm="project.bpm"
-          :sync-mode="project.syncMode"
-          :clock-input-id="project.clockInputId"
+          :sync-mode="syncSettings.syncMode"
+          :clock-input-id="syncSettings.clockInputId"
+          :send-midi-clock="syncSettings.sendMidiClock"
+          :clock-output-id="syncSettings.clockOutputId"
           :midi-inputs="midiInputs"
+          :midi-outputs="midiOutputs"
           @toggle-play="togglePlay"
           @bpm-change="setBpm"
-          @clock-input-change="project.clockInputId = $event"
+          @sync-mode-change="syncSettings.syncMode = $event"
+          @clock-input-change="syncSettings.clockInputId = $event"
+          @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
+          @clock-output-change="syncSettings.clockOutputId = $event"
           @view-mode-change="viewMode = $event"
           @trigger-pattern="queueOrLaunchPattern"
           @edit-pattern="editPattern"
@@ -124,6 +128,13 @@ const playing = ref(false);
 // 'roll': piano roll editor (default). 'live': session-style launch grid —
 // toggled via Tab or the View control in either view's toolbar.
 const viewMode = ref('roll');
+// Sync/clock routing is global — not per-song (scheduler still reads project.*).
+const syncSettings = reactive({
+  syncMode: 'internal',
+  clockInputId: '',
+  sendMidiClock: false,
+  clockOutputId: '',
+});
 // Defaults to the first MIDI channel (falling back to whatever's first) so
 // the piano roll opens on a familiar MIDI-note view rather than the drum pad list.
 const activeTrackId = ref((project.tracks.find((t) => t.kind === 'midi') ?? project.tracks[0]).id);
@@ -170,6 +181,14 @@ function applySessionSelection(tracks, trackIndex, patternIndex) {
   }
 }
 
+function applyGlobalSettingsToProject() {
+  project.sessionView = viewMode.value;
+  project.syncMode = syncSettings.syncMode;
+  project.clockInputId = syncSettings.clockInputId;
+  project.sendMidiClock = syncSettings.sendMidiClock;
+  project.clockOutputId = syncSettings.clockOutputId;
+}
+
 function replaceProject(snapshot, { preserveSelection = false } = {}) {
   let trackIndex = 0;
   let patternIndex = 0;
@@ -191,7 +210,8 @@ function replaceProject(snapshot, { preserveSelection = false } = {}) {
     activeTrackId.value =
       (project.tracks.find((t) => t.kind === 'midi') ?? project.tracks[0])?.id ?? null;
   }
-  viewMode.value = project.sessionView === 'live' ? 'live' : 'roll';
+  // View mode and sync settings are global — not per-song.
+  applyGlobalSettingsToProject();
   syncClockLoopFromTracks();
   playback.setProject(project);
   engageSyncMode();
@@ -348,7 +368,9 @@ onUnmounted(() => {
   if (clockInputUnsub) clockInputUnsub();
 });
 
-watch(() => [project.syncMode, project.clockInputId], engageSyncMode);
+watch(viewMode, applyGlobalSettingsToProject, { immediate: true });
+watch(syncSettings, applyGlobalSettingsToProject, { deep: true });
+watch(() => [syncSettings.syncMode, syncSettings.clockInputId], engageSyncMode);
 
 watch(
   () => project.bpm,
@@ -377,10 +399,6 @@ watch(
   () => syncClockLoopFromTracks(),
   { immediate: true }
 );
-
-watch(viewMode, (mode) => {
-  project.sessionView = mode;
-}, { immediate: true });
 
 watch(
   project,
@@ -527,24 +545,28 @@ function reorderPatterns(trackId, fromIndex, toIndex) {
   if (track) reorderTrackPatterns(track, fromIndex, toIndex);
 }
 
-function updateMidiRoute(trackId, changes) {
+function updateTrack(trackId, changes) {
   const track = findTrack(trackId);
-  if (track && track.kind === 'midi') Object.assign(track, changes);
+  if (track) Object.assign(track, changes);
 }
 
-function addTrack(kind) {
-  const color = randomTrackColor(project.tracks.map((t) => t.color));
+function addTrack(kind, config = {}) {
+  const color = config.color ?? randomTrackColor(project.tracks.map((t) => t.color));
+  const midiCount = project.tracks.filter((t) => t.kind === 'midi').length;
+  const drumCount = project.tracks.filter((t) => t.kind === 'drum').length;
+  const defaultName = kind === 'drum' ? `Drums ${drumCount + 1}` : `MIDI ${midiCount + 1}`;
   const track =
     kind === 'drum'
-      ? createDrumTrack(`Drums ${project.tracks.filter((t) => t.kind === 'drum').length + 1}`, color)
-      : createMidiTrack(`MIDI ${project.tracks.filter((t) => t.kind === 'midi').length + 1}`, color);
+      ? createDrumTrack(config.name ?? defaultName, color)
+      : createMidiTrack(config.name ?? defaultName, color);
+  if (kind === 'midi') {
+    track.midiOutputId = config.midiOutputId ?? '';
+    track.midiChannel = config.midiChannel ?? 0;
+  }
+  if (kind === 'drum' && config.volume != null) track.volume = config.volume;
+  if (config.category) track.category = config.category;
   project.tracks.push(track);
   activeTrackId.value = track.id;
-}
-
-function renameTrack(trackId, name) {
-  const track = findTrack(trackId);
-  if (track) track.name = name;
 }
 
 function removeTrack(trackId) {
@@ -576,11 +598,6 @@ function updatePad(trackId, padId, changes) {
   if (track?.kind !== 'drum') return;
   const pad = track.pads.find((p) => p.id === padId);
   if (pad) Object.assign(pad, changes);
-}
-
-function updateTrack(trackId, changes) {
-  const track = findTrack(trackId);
-  if (track) Object.assign(track, changes);
 }
 
 function addPad(trackId) {

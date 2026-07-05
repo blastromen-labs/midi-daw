@@ -29,6 +29,37 @@ export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity 
 
 // Accent swatches for the track menu — independent of piano-roll note color.
 export const TRACK_ACCENT_COLORS = ['#a7d7af', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
+
+/** Instrument role / mix grouping for a track (saved per track in the song). */
+export const TRACK_CATEGORIES = [
+  'Drums',
+  'Perc',
+  'Bass',
+  'Sub',
+  'Lead',
+  'Melody',
+  'Pad',
+  'String',
+  'Arp',
+  'Pluck',
+  'Keys',
+  'Choir',
+  'Chord',
+  'FX',
+  'Noise',
+  'Atmos',
+];
+
+export function defaultTrackCategory(kind = 'midi') {
+  return kind === 'drum' ? 'Drums' : 'Lead';
+}
+
+/** Coerce legacy or missing category values when loading a song. */
+export function normalizeTrackCategory(track) {
+  if (track?.category && TRACK_CATEGORIES.includes(track.category)) return track.category;
+  return defaultTrackCategory(track?.kind ?? 'midi');
+}
+
 // MIDI/synth notes in the piano roll always use this green, regardless of accent.
 export const MIDI_NOTE_COLOR = '#a7d7af';
 
@@ -142,6 +173,7 @@ export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), pat
     kind: 'midi',
     name,
     color,
+    category: defaultTrackCategory('midi'),
     patterns: [pattern],
     activePatternId: pattern.id,
     ghostTrackId: null,
@@ -186,6 +218,7 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     kind: 'drum',
     name,
     color,
+    category: defaultTrackCategory('drum'),
     patterns: [pattern],
     activePatternId: pattern.id,
     ghostTrackId: null,

@@ -1,4 +1,4 @@
-import { uid } from '../models/project.js';
+import { uid, normalizeTrackCategory } from '../models/project.js';
 
 const SONGS_KEY = 'midi-daw:songs';
 const CURRENT_SONG_KEY = 'midi-daw:currentSongId';
@@ -18,11 +18,6 @@ export function serializeProject(project) {
   return JSON.parse(
     JSON.stringify({
       bpm: project.bpm,
-      sessionView: project.sessionView,
-      sendMidiClock: project.sendMidiClock,
-      clockOutputId: project.clockOutputId,
-      syncMode: project.syncMode,
-      clockInputId: project.clockInputId,
       markerBeat: project.markerBeat,
       loopRegion: project.loopRegion,
       tracks: project.tracks.map(stripEphemeralTrackFields),
@@ -37,6 +32,7 @@ export function deserializeProject(data) {
     track.playingPatternId = null;
     track.pendingPatternId = null;
     track.pendingLaunchBeat = null;
+    track.category = normalizeTrackCategory(track);
   }
   return project;
 }

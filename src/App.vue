@@ -124,6 +124,7 @@ import { externalClock } from './engine/externalClock.js';
 import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
 import { clearSample } from './engine/sampler.js';
+import { hasFileDrag } from './utils/audioFile.js';
 import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately, holdPatternDown, holdPatternUp } from './engine/liveLauncher.js';
 
 const project = reactive(createProject());
@@ -346,7 +347,12 @@ function engageSyncMode() {
   }
 }
 
+function onWindowDragOver(e) {
+  if (hasFileDrag(e.dataTransfer)) e.preventDefault();
+}
+
 onMounted(async () => {
+  window.addEventListener('dragover', onWindowDragOver);
   try {
     await initMidi();
     midiOutputs.value = listOutputs();
@@ -367,6 +373,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('dragover', onWindowDragOver);
   if (saveTimer) clearTimeout(saveTimer);
   saveCurrentSong();
   playback.stop();

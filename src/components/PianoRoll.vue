@@ -244,10 +244,10 @@
           ref="gridContentRef"
           class="relative"
           :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }"
-          @dragenter="onSampleDragEnter"
-          @dragover="onSampleDragOver"
-          @dragleave="onSampleDragLeave"
-          @drop="onSampleDrop"
+          @dragenter.capture="onSampleDragEnter"
+          @dragover.capture="onSampleDragOver"
+          @dragleave.capture="onSampleDragLeave"
+          @drop.capture="onSampleDrop"
         >
           <canvas
             ref="gridCanvas"
@@ -322,7 +322,8 @@
         :beat-width="beatWidth"
         :grid-width="gridWidth"
         :height="velocityHeight"
-        :color="noteDrawColor"
+        :color-for-note="colorForNote"
+        :color-key="drumPadColorsKey"
         :scroll-left="mainScrollLeft"
         @update-notes="emitNotes"
       />
@@ -342,7 +343,7 @@ import {
   readMidiFile,
 } from '../engine/midiFile.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
-import { audioFileFromDataTransfer } from '../utils/audioFile.js';
+import { audioFileFromDataTransfer, acceptFileDrag } from '../utils/audioFile.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import VelocityLane from './VelocityLane.vue';
@@ -430,7 +431,7 @@ const ROW_HEIGHT = 20;
 // room than a plain chromatic piano-roll row.
 const DRUM_ROW_HEIGHT = 36;
 const KEY_WIDTH = 48;
-const DRUM_KEYS_WIDTH = 180;
+const DRUM_KEYS_WIDTH = 288;
 const DEFAULT_BEAT_WIDTH = 140;
 const MIN_BEAT_WIDTH = 20;
 const MAX_BEAT_WIDTH = 400;
@@ -488,9 +489,16 @@ const displayPlayheadBeat = computed(() => {
   if (len <= 0) return liveBeat.value;
   return ((liveBeat.value % len) + len) % len;
 });
-// Track accent colors are menu-only; MIDI notes always use the green palette.
-const noteDrawColor = computed(() =>
-  isDrumTrack.value ? (activePattern.value?.color ?? activeTrack.value?.color ?? DEFAULT_NOTE_COLOR) : MIDI_NOTE_COLOR,
+// MIDI notes use the green palette; drum steps use each pad's own color.
+function colorForNote(note) {
+  if (isDrumTrack.value) {
+    return activeTrack.value?.pads?.find((p) => p.id === note.pitch)?.color ?? DEFAULT_NOTE_COLOR;
+  }
+  return MIDI_NOTE_COLOR;
+}
+
+const drumPadColorsKey = computed(() =>
+  isDrumTrack.value ? (activeTrack.value?.pads ?? []).map((p) => p.color).join('|') : ''
 );
 const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
 const keysWidth = computed(() => (isDrumTrack.value ? DRUM_KEYS_WIDTH : KEY_WIDTH));
@@ -1261,10 +1269,8 @@ async function onLoadSample(padId, file) {
 }
 
 function acceptSampleDrag(e) {
-  if (!isDrumTrack.value || !e.dataTransfer?.types?.includes('Files')) return false;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'copy';
-  return true;
+  if (!isDrumTrack.value) return false;
+  return acceptFileDrag(e);
 }
 
 function onSampleDragEnter(e) {
@@ -1282,13 +1288,13 @@ function onSampleDragLeave(e) {
 }
 
 async function onSampleDrop(e) {
-  sampleDropPadId.value = null;
   if (!isDrumTrack.value) return;
-  const file = audioFileFromDataTransfer(e.dataTransfer);
-  if (!file) return;
   e.preventDefault();
-  const padId = eventToGridPos(e).pitch;
-  if (!padId) return;
+  e.stopPropagation();
+  const padId = eventToGridPos(e).pitch ?? sampleDropPadId.value;
+  sampleDropPadId.value = null;
+  const file = audioFileFromDataTransfer(e.dataTransfer);
+  if (!file || !padId) return;
   await onLoadSample(padId, file);
 }
 
@@ -2058,13 +2064,12 @@ function drawGrid() {
   drawGhostNotes(ctx, rh);
 
   // Notes — rounded, with a soft top-lit gradient and a darker border.
-  // MIDI tracks always use the green note palette; drum tracks use their accent.
   const notes = getNotes();
-  const color = noteDrawColor.value;
-  const topColor = shade(color, 0.3);
-  const bottomColor = shade(color, -0.08);
-  const borderColor = shade(color, -0.32);
   for (const note of notes) {
+    const color = colorForNote(note);
+    const topColor = shade(color, 0.3);
+    const bottomColor = shade(color, -0.08);
+    const borderColor = shade(color, -0.32);
     const x = beatToX(note.startBeat);
     const y = pitchToY(note.pitch);
     const nw = note.duration * beatWidth.value;

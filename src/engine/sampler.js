@@ -7,6 +7,7 @@
 // mirrors how midi.js keeps its output cache outside of any reactive object.
 
 import { getSharedAudioContext, resumeSharedAudioContext } from './audioContext.js';
+import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
 
 export async function resumeSamplerAudio() {
   return resumeSharedAudioContext();
@@ -14,13 +15,35 @@ export async function resumeSamplerAudio() {
 
 const bufferCache = new Map(); // padId -> AudioBuffer
 
+async function decodeSampleFile(file, arrayBuffer, audioContext) {
+  if (isAiffFile(file) || isAiffBuffer(arrayBuffer)) {
+    try {
+      return decodeAiffToAudioBuffer(arrayBuffer, audioContext);
+    } catch (aiffErr) {
+      console.warn(`AIFF parser failed for "${file.name}", trying native decoder:`, aiffErr);
+    }
+  }
+
+  try {
+    return await audioContext.decodeAudioData(arrayBuffer.slice(0));
+  } catch (nativeErr) {
+    if (isAiffFile(file) || isAiffBuffer(arrayBuffer)) {
+      throw new Error(
+        `Could not decode "${file.name}". Try exporting as WAV, or use an uncompressed AIFF/AIFC (PCM/sowt).`
+      );
+    }
+    throw new Error(`Could not decode "${file.name}": ${nativeErr.message ?? nativeErr}`);
+  }
+}
+
 // Decodes the given File/Blob and caches it under padId, replacing whatever
 // sample (if any) was previously assigned to that pad. Returns the decoded
 // buffer's duration in seconds, handy for UI feedback.
 export async function loadSampleFile(padId, file) {
   const c = await resumeSamplerAudio();
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = await c.decodeAudioData(arrayBuffer);
+  const raw = await file.arrayBuffer();
+  const arrayBuffer = raw.slice(0);
+  const buffer = await decodeSampleFile(file, arrayBuffer, c);
   bufferCache.set(padId, buffer);
   return buffer.duration;
 }

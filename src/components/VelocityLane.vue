@@ -35,6 +35,8 @@ const props = defineProps({
   gridWidth: { type: Number, required: true },
   height: { type: Number, required: true },
   color: { type: String, default: '#a7d7af' },
+  colorForNote: { type: Function, default: null },
+  colorKey: { type: String, default: '' },
   scrollLeft: { type: Number, default: 0 },
 });
 
@@ -214,10 +216,10 @@ function render() {
     const topY = velocityToY(note.velocity);
     const bottomY = h - LANE_PADDING;
     const isSelected = props.selectedNoteIds.has(note.id);
-    // Derived from the track's own color, same as the note gradient in the
-    // grid above, so the velocity lane visually matches its notes.
-    const lineColor = isSelected ? '#ffffff' : shade(props.color, -0.35);
-    const dotColor = isSelected ? '#ffffff' : shade(props.color, 0.6);
+    const baseColor = props.colorForNote?.(note) ?? props.color;
+    // Derived from the note's own color, same as the step block in the grid above.
+    const lineColor = isSelected ? '#ffffff' : shade(baseColor, -0.35);
+    const dotColor = isSelected ? '#ffffff' : shade(baseColor, 0.6);
 
     ctx.strokeStyle = lineColor;
     ctx.lineWidth = 2;
@@ -237,7 +239,7 @@ function render() {
 }
 
 watch(
-  () => [props.notes, props.selectedNoteIds, props.height, props.gridWidth, props.beatWidth],
+  () => [props.notes, props.selectedNoteIds, props.height, props.gridWidth, props.beatWidth, props.colorKey],
   () => nextTick(render),
   { deep: true }
 );

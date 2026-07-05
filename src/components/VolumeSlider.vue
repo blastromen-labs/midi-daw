@@ -1,7 +1,7 @@
 <template>
   <div
     class="volume-slider-wrap"
-    :class="wide ? 'volume-slider-wrap--wide' : 'volume-slider-wrap--compact'"
+    :class="wide ? 'volume-slider-wrap--wide' : drum ? 'volume-slider-wrap--drum' : 'volume-slider-wrap--compact'"
   >
     <input
       type="range"
@@ -26,6 +26,7 @@ const props = defineProps({
   modelValue: { type: Number, default: 1 },
   title: String,
   wide: Boolean,
+  drum: Boolean,
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -90,6 +91,12 @@ function onPointerDown(e) {
   padding: 0 3px;
 }
 
+.volume-slider-wrap--drum {
+  width: 5.75rem;
+  min-height: 28px;
+  padding: 0 4px;
+}
+
 .volume-slider-wrap--wide {
   width: 100%;
   min-width: 0;
@@ -135,6 +142,10 @@ function onPointerDown(e) {
 
   .volume-slider-wrap--compact {
     width: 4rem;
+  }
+
+  .volume-slider-wrap--drum {
+    width: 6.5rem;
   }
 
   .volume-slider {

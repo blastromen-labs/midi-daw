@@ -1,81 +1,83 @@
 <template>
-  <div class="drum-pad-list flex flex-col w-full">
+  <div
+    ref="listRef"
+    class="drum-pad-list flex flex-col w-full"
+    @dragenter.capture.prevent="onListDragOver"
+    @dragover.capture.prevent="onListDragOver"
+    @dragleave.capture="onListDragLeave"
+    @drop.capture.prevent="onListDrop"
+  >
     <div
       v-for="pad in pads"
       :key="pad.id"
-      class="pad-row flex items-center gap-0.5 px-1 border-b border-line/60 group transition-colors"
+      class="pad-row flex items-start gap-1 px-1 py-1 border-b border-line/60 group transition-colors pointer-events-none"
       :class="dragOverPadId === pad.id ? 'bg-accent/15 ring-1 ring-inset ring-accent/50' : ''"
       :style="{ height: rowHeight + 'px' }"
-      @dragenter.prevent="onDragEnter(pad, $event)"
-      @dragover.prevent="onDragOver(pad, $event)"
-      @dragleave="onDragLeave(pad, $event)"
-      @drop.prevent="onDrop(pad, $event)"
+      :data-pad-id="pad.id"
     >
       <button
-        class="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+        type="button"
+        class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/60 pointer-events-auto"
         :style="{ background: pad.color }"
-        title="Click to preview sample"
-        @mousedown.prevent="preview(pad)"
-        @touchstart.prevent="preview(pad)"
+        title="Double-click to preview sample"
+        @dblclick.stop.prevent="preview(pad)"
       ></button>
 
-      <input
-        :value="pad.name"
-        class="pad-name flex-1 min-w-0 bg-transparent text-[11px] leading-tight truncate outline-none focus:bg-surface-hover rounded px-0.5"
-        @change="(e) => $emit('rename-pad', pad.id, e.target.value)"
-      />
+      <div class="flex-1 min-w-0 flex flex-col justify-start gap-px pointer-events-none pt-px">
+        <span class="text-[11px] leading-none truncate px-0.5">{{ pad.name }}</span>
+        <span
+          v-if="pad.fileName"
+          class="text-[9px] leading-tight text-muted-dim truncate px-0.5"
+          :title="pad.fileName"
+        >{{ pad.fileName }}</span>
+      </div>
 
       <VolumeSlider
+        drum
+        class="pointer-events-auto self-center"
         :model-value="pad.volume ?? 1"
         :title="`${pad.name} volume`"
         @update:model-value="(v) => $emit('update-pad', pad.id, { volume: v })"
       />
 
       <button
-        class="px-1 py-0.5 rounded text-[9px] flex-shrink-0"
-        :class="pad.fileName ? 'bg-surface-hover text-muted hover:bg-surface-active' : 'bg-accent/80 text-white hover:bg-accent'"
-        :title="pad.fileName || 'Load or drop an audio sample'"
-        @click="browse(pad)"
+        type="button"
+        class="px-2 py-1 rounded text-[10px] min-w-[2.25rem] min-h-[1.375rem] flex-shrink-0 self-center pointer-events-auto bg-surface-hover text-muted hover:text-white hover:bg-surface-active"
+        title="Edit pad — name, color, sample"
+        @click="openEditor(pad.id)"
       >
-        {{ pad.fileName ? '···' : 'Load' }}
-      </button>
-
-      <button
-        v-if="pad.fileName"
-        class="opacity-0 group-hover:opacity-100 text-[10px] text-muted-dim hover:text-white flex-shrink-0"
-        title="Clear sample"
-        @click="$emit('clear-sample', pad.id)"
-      >
-        ✕
-      </button>
-
-      <button
-        v-if="pads.length > 1"
-        class="opacity-0 group-hover:opacity-100 text-[10px] text-muted-dim hover:text-red-400 flex-shrink-0"
-        title="Remove pad"
-        @click="$emit('remove-pad', pad.id)"
-      >
-        🗑
+        Edit
       </button>
     </div>
 
     <button
-      class="w-full text-[10px] text-muted hover:text-white hover:bg-surface-hover py-1"
+      class="w-full text-[10px] text-muted hover:text-white hover:bg-surface-hover py-1 pointer-events-auto"
       title="Add another pad row"
       @click="$emit('add-pad')"
     >
       + Pad
     </button>
 
-    <input ref="fileInput" type="file" accept="audio/*" class="hidden" @change="onFileChosen" />
+    <DrumPadEditorModal
+      v-if="editingPad"
+      :pad="editingPad"
+      :track-volume="trackVolume"
+      :can-remove="pads.length > 1"
+      @save="onEditorSave"
+      @load-sample="onEditorLoadSample"
+      @clear-sample="onEditorClearSample"
+      @remove="onEditorRemove"
+      @cancel="editingPadId = null"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { playSample, resumeSamplerAudio } from '../engine/sampler.js';
-import { audioFileFromDataTransfer } from '../utils/audioFile.js';
+import { audioFileFromDataTransfer, acceptFileDrag } from '../utils/audioFile.js';
 import VolumeSlider from './VolumeSlider.vue';
+import DrumPadEditorModal from './DrumPadEditorModal.vue';
 
 const PREVIEW_VELOCITY = 100;
 
@@ -87,38 +89,66 @@ const props = defineProps({
 
 const emit = defineEmits(['load-sample', 'clear-sample', 'add-pad', 'remove-pad', 'rename-pad', 'update-pad']);
 
-const fileInput = ref(null);
-const pendingPadId = ref(null);
+const listRef = ref(null);
 const dragOverPadId = ref(null);
+const editingPadId = ref(null);
 
-function acceptSampleDrag(e) {
-  if (!e.dataTransfer?.types?.includes('Files')) return false;
-  e.dataTransfer.dropEffect = 'copy';
-  return true;
+const editingPad = computed(() => props.pads.find((p) => p.id === editingPadId.value) ?? null);
+
+function padAtClientY(clientY) {
+  const el = listRef.value;
+  if (!el) return null;
+  const y = clientY - el.getBoundingClientRect().top;
+  const idx = Math.floor(y / props.rowHeight);
+  if (idx < 0 || idx >= props.pads.length) return null;
+  return props.pads[idx];
 }
 
-function onDragEnter(pad, e) {
-  if (!acceptSampleDrag(e)) return;
-  dragOverPadId.value = pad.id;
+function onListDragOver(e) {
+  if (!acceptFileDrag(e)) return;
+  dragOverPadId.value = padAtClientY(e.clientY)?.id ?? null;
 }
 
-function onDragOver(pad, e) {
-  if (!acceptSampleDrag(e)) return;
-  dragOverPadId.value = pad.id;
+function onListDragLeave(e) {
+  if (!listRef.value?.contains(e.relatedTarget)) dragOverPadId.value = null;
 }
 
-function onDragLeave(pad, e) {
-  if (dragOverPadId.value !== pad.id) return;
-  const row = e.currentTarget;
-  if (row.contains(e.relatedTarget)) return;
+function onListDrop(e) {
   dragOverPadId.value = null;
-}
-
-function onDrop(pad, e) {
-  dragOverPadId.value = null;
+  e.stopPropagation();
+  const pad = padAtClientY(e.clientY);
   const file = audioFileFromDataTransfer(e.dataTransfer);
-  if (!file) return;
+  if (!pad || !file) return;
   emit('load-sample', pad.id, file);
+}
+
+function openEditor(padId) {
+  editingPadId.value = padId;
+}
+
+function onEditorSave(changes) {
+  if (!editingPadId.value) return;
+  const padId = editingPadId.value;
+  emit('rename-pad', padId, changes.name);
+  emit('update-pad', padId, { color: changes.color, volume: changes.volume });
+  editingPadId.value = null;
+}
+
+function onEditorLoadSample(file) {
+  if (!editingPadId.value) return;
+  emit('load-sample', editingPadId.value, file);
+}
+
+function onEditorClearSample() {
+  if (!editingPadId.value) return;
+  emit('clear-sample', editingPadId.value);
+}
+
+function onEditorRemove() {
+  if (!editingPadId.value) return;
+  const padId = editingPadId.value;
+  editingPadId.value = null;
+  emit('remove-pad', padId);
 }
 
 function preview(pad) {
@@ -126,23 +156,4 @@ function preview(pad) {
   const gainMul = (pad.volume ?? 1) * (props.trackVolume ?? 1);
   playSample(pad.id, PREVIEW_VELOCITY, 0, gainMul);
 }
-
-function browse(pad) {
-  pendingPadId.value = pad.id;
-  fileInput.value.click();
-}
-
-function onFileChosen(e) {
-  const file = e.target.files?.[0];
-  e.target.value = '';
-  if (!file || !pendingPadId.value) return;
-  emit('load-sample', pendingPadId.value, file);
-  pendingPadId.value = null;
-}
 </script>
-
-<style scoped>
-.pad-name::-webkit-scrollbar {
-  display: none;
-}
-</style>

@@ -213,6 +213,22 @@ export const DEFAULT_DRUM_PADS = [
   ['Rim', '#d16fae'],
 ];
 
+/** Palette for drum pad step colors — defaults plus accents for custom pads. */
+export const DRUM_PAD_COLORS = [
+  ...new Set([
+    ...DEFAULT_DRUM_PADS.map(([, color]) => color),
+    ...TRACK_ACCENT_COLORS,
+    '#ff6b6b',
+    '#4ecdc4',
+    '#ffe66d',
+    '#ffffff',
+    '#8899aa',
+    '#6b7280',
+    '#f472b6',
+    '#60a5fa',
+  ]),
+];
+
 export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), patternSteps = 16) {
   const pattern = createPattern('Pattern 1', randomPatternColor(), patternSteps);
   return {

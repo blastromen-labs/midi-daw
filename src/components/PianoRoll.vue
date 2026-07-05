@@ -312,23 +312,38 @@
     <div v-show="!velocityCollapsed" class="flex-shrink-0 flex bg-panel" :style="{ height: velocityHeight + 'px' }">
       <div
         class="flex-shrink-0 bg-panel border-r border-t border-line flex items-center justify-center select-none"
+        :class="isDrumTrack ? 'px-2' : ''"
         :style="{ width: keysWidth + 'px' }"
-        @mousedown="clearSelection"
-        @touchstart="clearSelection"
+        @mousedown="onVelocityHeaderMouseDown"
+        @touchstart="onVelocityHeaderMouseDown"
       >
-        <span class="text-[10px] font-semibold text-accent tracking-widest vertical-label">VEL</span>
+        <select
+          v-if="isDrumTrack && velocityPadId"
+          v-model="velocityPadId"
+          class="w-full max-w-full text-[10px] font-semibold bg-surface border border-line-light rounded px-1 py-0.5 outline-none focus:border-accent truncate"
+          title="Drum pad velocity"
+          @mousedown.stop
+          @touchstart.stop
+          @click.stop
+        >
+          <option v-for="pad in activeTrack.pads" :key="pad.id" :value="pad.id">
+            {{ pad.name }}
+          </option>
+        </select>
+        <span v-else class="text-[10px] font-semibold text-accent tracking-widest vertical-label">VEL</span>
       </div>
       <VelocityLane
         v-if="activeTrack"
-        :notes="activePattern?.notes ?? []"
+        :notes="velocityLaneNotes"
         :selected-note-ids="selectedNoteIds"
         :beat-width="beatWidth"
         :grid-width="gridWidth"
         :height="velocityHeight"
-        :color-for-note="colorForNote"
-        :color-key="drumPadColorsKey"
+        :color="velocityLaneColor"
+        :color-for-note="isDrumTrack ? null : colorForNote"
+        :color-key="velocityLaneColorKey"
         :scroll-left="mainScrollLeft"
-        @update-notes="emitNotes"
+        @update-notes="onVelocityLaneUpdate"
       />
     </div>
   </div>
@@ -506,6 +521,44 @@ function colorForNote(note) {
 
 const drumPadColorsKey = computed(() =>
   isDrumTrack.value ? (activeTrack.value?.pads ?? []).map((p) => p.color).join('|') : ''
+);
+
+const velocityPadId = ref(null);
+
+watch(
+  () => [activeTrack.value?.id, (activeTrack.value?.pads ?? []).map((p) => p.id).join(',')],
+  () => {
+    if (!isDrumTrack.value) {
+      velocityPadId.value = null;
+      return;
+    }
+    const pads = activeTrack.value?.pads ?? [];
+    if (!pads.length) {
+      velocityPadId.value = null;
+      return;
+    }
+    if (!pads.some((p) => p.id === velocityPadId.value)) {
+      velocityPadId.value = pads[0].id;
+    }
+  },
+  { immediate: true }
+);
+
+const velocityLaneNotes = computed(() => {
+  const notes = activePattern.value?.notes ?? [];
+  if (!isDrumTrack.value || !velocityPadId.value) return notes;
+  return notes.filter((n) => n.pitch === velocityPadId.value);
+});
+
+const velocityLaneColor = computed(() => {
+  if (isDrumTrack.value && velocityPadId.value) {
+    return activeTrack.value?.pads?.find((p) => p.id === velocityPadId.value)?.color ?? DEFAULT_NOTE_COLOR;
+  }
+  return MIDI_NOTE_COLOR;
+});
+
+const velocityLaneColorKey = computed(() =>
+  isDrumTrack.value ? velocityLaneColor.value : drumPadColorsKey.value
 );
 const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
 const keysWidth = computed(() => (isDrumTrack.value ? DRUM_KEYS_WIDTH : KEY_WIDTH));
@@ -759,6 +812,21 @@ function getNotes() {
 function emitNotes(notes) {
   if (!activePattern.value) return;
   emit('update-notes', props.activeTrackId, activePattern.value.id, notes);
+}
+
+function onVelocityLaneUpdate(updatedNotes) {
+  if (!isDrumTrack.value || !velocityPadId.value) {
+    emitNotes(updatedNotes);
+    return;
+  }
+  const padId = velocityPadId.value;
+  const others = getNotes().filter((n) => n.pitch !== padId);
+  emitNotes([...others, ...updatedNotes]);
+}
+
+function onVelocityHeaderMouseDown(e) {
+  if (e.target?.tagName === 'SELECT' || e.target?.tagName === 'OPTION') return;
+  clearSelection();
 }
 
 async function onImportMidi(file) {

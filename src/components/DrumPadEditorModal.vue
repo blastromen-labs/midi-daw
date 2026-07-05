@@ -5,12 +5,12 @@
       @mousedown.self="emit('cancel')"
     >
       <div
-        class="w-full max-w-sm bg-panel border border-line rounded-lg shadow-xl overflow-hidden"
+        class="w-full max-w-md bg-panel border border-line rounded-lg shadow-xl overflow-hidden max-h-[90vh] flex flex-col"
         role="dialog"
         :aria-labelledby="titleId"
         @mousedown.stop
       >
-        <div class="flex items-center justify-between px-4 py-3 border-b border-line">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-line flex-shrink-0">
           <div class="flex items-center gap-2 min-w-0">
             <span class="w-3 h-3 rounded-sm flex-shrink-0 ring-1 ring-line/60" :style="{ background: draft.color }"></span>
             <h2 :id="titleId" class="text-sm font-semibold truncate">Edit pad</h2>
@@ -25,7 +25,7 @@
           </button>
         </div>
 
-        <div class="px-4 py-3 space-y-4">
+        <div class="px-4 py-3 space-y-4 overflow-y-auto flex-1 min-h-0">
           <section>
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Name</label>
             <input
@@ -67,14 +67,6 @@
                 Choose file…
               </button>
               <button
-                type="button"
-                class="px-2.5 py-1.5 rounded text-xs bg-surface-hover text-muted hover:text-white hover:bg-surface-active"
-                :disabled="!canPreview"
-                @click="preview"
-              >
-                Preview
-              </button>
-              <button
                 v-if="pad.fileName"
                 type="button"
                 class="px-2.5 py-1.5 rounded text-xs text-red-400 hover:text-red-300 hover:bg-surface-hover"
@@ -93,6 +85,79 @@
             />
           </section>
 
+          <section v-if="canPreview" class="border-t border-line pt-4 space-y-3">
+            <div>
+              <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
+                Pitch — {{ pitchLabel }}
+              </label>
+              <input
+                v-model.number="draft.pitch"
+                type="range"
+                min="-24"
+                max="24"
+                step="1"
+                class="w-full accent-accent"
+              />
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="text-[10px] uppercase tracking-wider text-muted-dim">Length &amp; fade</span>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-accent text-white hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Preview with current pitch, length, and fade"
+                  :disabled="!canPreview"
+                  @click="preview"
+                >
+                  <span aria-hidden="true">▶</span>
+                  Play
+                </button>
+              </div>
+              <p class="text-[10px] text-muted-dim mb-2">
+                Drag the end handle for length. Drag the fade slope to taper the tail.
+              </p>
+              <SampleWaveformEditor
+                :peaks="waveformPeaks"
+                :duration="waveformDuration"
+                :sample-length="draft.sampleLength"
+                :fade-out="draft.fadeOut"
+                :pitch="draft.pitch"
+                :color="draft.color"
+                @update:sample-length="draft.sampleLength = $event"
+                @update:fade-out="draft.fadeOut = $event"
+              />
+            </div>
+          </section>
+
+          <section class="border-t border-line pt-4">
+            <span class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Cut by</span>
+            <p class="text-[10px] text-muted-dim mb-2">
+              Long hits stop when a selected pad retriggers. Leave all off for no cutting.
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                class="px-2 py-1 rounded text-[11px] ring-1 transition-colors"
+                :class="draft.cutBySelf ? 'bg-accent/25 ring-accent text-white' : 'bg-surface-hover ring-line-light text-muted hover:text-white'"
+                @click="draft.cutBySelf = !draft.cutBySelf"
+              >
+                Self
+              </button>
+              <button
+                v-for="other in otherPads"
+                :key="other.id"
+                type="button"
+                class="px-2 py-1 rounded text-[11px] ring-1 transition-colors max-w-[7rem] truncate"
+                :class="draft.cutByPads.includes(other.id) ? 'bg-accent/25 ring-accent text-white' : 'bg-surface-hover ring-line-light text-muted hover:text-white'"
+                :title="other.name"
+                @click="toggleCutBy(other.id)"
+              >
+                {{ other.name }}
+              </button>
+            </div>
+          </section>
+
           <section class="border-t border-line pt-4">
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
               Pad volume — {{ Math.round(draft.volume * 100) }}%
@@ -101,7 +166,7 @@
           </section>
         </div>
 
-        <div class="flex items-center justify-between gap-2 px-4 py-3 border-t border-line bg-surface/40">
+        <div class="flex items-center justify-between gap-2 px-4 py-3 border-t border-line bg-surface/40 flex-shrink-0">
           <button
             v-if="canRemove"
             type="button"
@@ -137,13 +202,22 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { DRUM_PAD_COLORS } from '../models/project.js';
-import { playSample, resumeSamplerAudio, hasSample } from '../engine/sampler.js';
+import {
+  playSample,
+  resumeSamplerAudio,
+  hasSample,
+  getSampleWaveformPeaks,
+  getSampleDuration,
+} from '../engine/sampler.js';
+import { padPlaybackOpts } from '../engine/padPlayback.js';
 import VolumeSlider from './VolumeSlider.vue';
+import SampleWaveformEditor from './SampleWaveformEditor.vue';
 
 const PREVIEW_VELOCITY = 100;
 
 const props = defineProps({
   pad: { type: Object, required: true },
+  allPads: { type: Array, default: () => [] },
   trackVolume: { type: Number, default: 1 },
   canRemove: { type: Boolean, default: false },
 });
@@ -159,23 +233,65 @@ const draft = reactive({
   name: '',
   color: padColors[0],
   volume: 1,
+  cutBySelf: true,
+  cutByPads: [],
+  pitch: 0,
+  sampleLength: 1,
+  fadeOut: 0,
 });
 
 const sampleLabel = computed(() => props.pad.fileName || (hasSample(props.pad.id) ? 'Loaded sample' : 'No sample loaded'));
 const canPreview = computed(() => hasSample(props.pad.id));
+const otherPads = computed(() => props.allPads.filter((p) => p.id !== props.pad.id));
+const pitchLabel = computed(() => {
+  const p = draft.pitch ?? 0;
+  if (p === 0) return 'Original';
+  return p > 0 ? `+${p} st` : `${p} st`;
+});
+
+const waveformPeaks = ref([]);
+const waveformDuration = ref(0);
+
+function refreshWaveform() {
+  const data = getSampleWaveformPeaks(props.pad.id);
+  waveformPeaks.value = data?.peaks ?? [];
+  waveformDuration.value = data?.duration ?? getSampleDuration(props.pad.id);
+}
 
 function syncFromPad() {
   draft.name = props.pad.name ?? '';
   draft.color = props.pad.color ?? padColors[0];
   draft.volume = props.pad.volume ?? 1;
+  draft.cutBySelf = props.pad.cutBySelf !== false;
+  draft.cutByPads = [...(props.pad.cutByPads ?? [])];
+  draft.pitch = props.pad.pitch ?? 0;
+  draft.sampleLength = props.pad.sampleLength ?? 1;
+  draft.fadeOut = props.pad.fadeOut ?? 0;
+  refreshWaveform();
 }
 
 watch(() => props.pad, syncFromPad, { immediate: true, deep: true });
+watch(() => props.pad.fileName, refreshWaveform);
+
+function toggleCutBy(padId) {
+  const idx = draft.cutByPads.indexOf(padId);
+  if (idx === -1) draft.cutByPads.push(padId);
+  else draft.cutByPads.splice(idx, 1);
+}
 
 function submit() {
   const name = draft.name.trim();
   if (!name) return;
-  emit('save', { name, color: draft.color, volume: draft.volume });
+  emit('save', {
+    name,
+    color: draft.color,
+    volume: draft.volume,
+    cutBySelf: draft.cutBySelf,
+    cutByPads: [...draft.cutByPads],
+    pitch: draft.pitch,
+    sampleLength: draft.sampleLength,
+    fadeOut: draft.fadeOut,
+  });
 }
 
 function onFileChosen(e) {
@@ -188,7 +304,21 @@ function preview() {
   if (!canPreview.value) return;
   resumeSamplerAudio();
   const gainMul = (draft.volume ?? 1) * (props.trackVolume ?? 1);
-  playSample(props.pad.id, PREVIEW_VELOCITY, 0, gainMul);
+  const previewPad = {
+    id: props.pad.id,
+    cutBySelf: draft.cutBySelf,
+    cutByPads: draft.cutByPads,
+    pitch: draft.pitch,
+    sampleLength: draft.sampleLength,
+    fadeOut: draft.fadeOut,
+  };
+  playSample(
+    props.pad.id,
+    PREVIEW_VELOCITY,
+    0,
+    gainMul,
+    padPlaybackOpts(previewPad, props.allPads)
+  );
 }
 
 function onKeyDown(e) {

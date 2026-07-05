@@ -7,6 +7,7 @@ import {
   PPQN,
 } from './midi.js';
 import { playSample, resumeSamplerAudio } from './sampler.js';
+import { padPlaybackOpts } from './padPlayback.js';
 import { transport } from './clock.js';
 import { getActiveClock } from './activeClock.js';
 import { getPlayingPattern, patternLoopEndBeat, STOPPED_PATTERN } from '../models/project.js';
@@ -215,7 +216,7 @@ export class PlaybackEngine {
     const pad = track.pads.find((p) => p.id === note.pitch);
     if (!pad) return;
     const gainMul = (pad.volume ?? 1) * (track.volume ?? 1);
-    playSample(pad.id, note.velocity, onDelay, gainMul);
+    playSample(pad.id, note.velocity, onDelay, gainMul, padPlaybackOpts(pad, track.pads));
   }
 
   // Shared by both scheduling branches below: dedups by noteKey and checks

@@ -102,6 +102,8 @@ import {
   projectLoopEndBeat,
   reorderPatterns as reorderTrackPatterns,
   syncUidCounter,
+  defaultDrumSampleFile,
+  ensureDefaultDrumPads,
   LIVE_LAUNCH_MODES,
 } from './models/project.js';
 import {
@@ -123,7 +125,8 @@ import { transport } from './engine/clock.js';
 import { externalClock } from './engine/externalClock.js';
 import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
-import { clearSample } from './engine/sampler.js';
+import { clearSample, hasSample, loadSampleUrl } from './engine/sampler.js';
+import { normalizeDrumPad } from './models/project.js';
 import { hasFileDrag } from './utils/audioFile.js';
 import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately, holdPatternDown, holdPatternUp } from './engine/liveLauncher.js';
 
@@ -158,6 +161,27 @@ function clearDrumSamples() {
   for (const track of project.tracks) {
     if (track.kind === 'drum') {
       for (const pad of track.pads) clearSample(pad.id);
+    }
+  }
+}
+
+// Built-in samples in public/drums/ are engine-only buffers — reload them
+// whenever project state is swapped in (song switch, load) since the cache
+// was just cleared. Skips pads the user replaced with a custom fileName.
+async function hydrateDefaultDrumSamples() {
+  for (const track of project.tracks) {
+    if (track.kind !== 'drum') continue;
+    for (const pad of track.pads) {
+      const defaultFile = defaultDrumSampleFile(pad.name);
+      if (!defaultFile) continue;
+      if (pad.fileName && pad.fileName !== defaultFile) continue;
+      if (hasSample(pad.id)) continue;
+      try {
+        await loadSampleUrl(pad.id, `/drums/${defaultFile}`, defaultFile);
+        if (!pad.fileName) pad.fileName = defaultFile;
+      } catch (err) {
+        console.warn(`Failed to load default drum sample for "${pad.name}":`, err);
+      }
     }
   }
 }
@@ -212,6 +236,7 @@ function replaceProject(snapshot, { preserveSelection = false } = {}) {
   syncUidCounter(loaded);
   for (const key of Object.keys(project)) delete project[key];
   Object.assign(project, loaded);
+  ensureDefaultDrumPads(project.tracks);
 
   if (preserveSelection) {
     applySessionSelection(project.tracks, trackIndex, patternIndex);
@@ -224,6 +249,7 @@ function replaceProject(snapshot, { preserveSelection = false } = {}) {
   syncClockLoopFromTracks();
   playback.setProject(project);
   engageSyncMode();
+  void hydrateDefaultDrumSamples();
 }
 
 function persistSongs() {
@@ -604,6 +630,7 @@ function addTrack(kind, config = {}) {
   if (config.category) track.category = config.category;
   project.tracks.push(track);
   activeTrackId.value = track.id;
+  if (kind === 'drum') void hydrateDefaultDrumSamples();
 }
 
 function removeTrack(trackId) {
@@ -634,7 +661,10 @@ function updatePad(trackId, padId, changes) {
   const track = findTrack(trackId);
   if (track?.kind !== 'drum') return;
   const pad = track.pads.find((p) => p.id === padId);
-  if (pad) Object.assign(pad, changes);
+  if (pad) {
+    Object.assign(pad, changes);
+    normalizeDrumPad(pad);
+  }
 }
 
 function addPad(trackId) {
@@ -646,6 +676,10 @@ function addPad(trackId) {
 function removePad(trackId, padId) {
   const track = findTrack(trackId);
   if (track?.kind !== 'drum') return;
+  clearSample(padId);
+  for (const p of track.pads) {
+    if (Array.isArray(p.cutByPads)) p.cutByPads = p.cutByPads.filter((id) => id !== padId);
+  }
   track.pads = track.pads.filter((p) => p.id !== padId);
   // Notes that triggered the removed pad become orphaned (harmlessly
   // skipped by the scheduler — see _triggerDrumNote in scheduler.js) rather

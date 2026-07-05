@@ -343,6 +343,7 @@ import {
   readMidiFile,
 } from '../engine/midiFile.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
+import { padPlaybackOpts } from '../engine/padPlayback.js';
 import { audioFileFromDataTransfer, acceptFileDrag } from '../utils/audioFile.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
@@ -1248,7 +1249,7 @@ function startDrawPreview(pitch, velocity = PREVIEW_VELOCITY) {
     resumeSamplerAudio();
     const pad = track.pads.find((p) => p.id === pitch);
     const gainMul = (pad?.volume ?? 1) * (track.volume ?? 1);
-    playSample(pitch, velocity, 0, gainMul);
+    playSample(pitch, velocity, 0, gainMul, pad ? padPlaybackOpts(pad, track.pads) : {});
     return;
   }
 

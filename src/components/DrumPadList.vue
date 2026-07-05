@@ -19,8 +19,8 @@
         type="button"
         class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/60 pointer-events-auto"
         :style="{ background: pad.color }"
-        title="Double-click to preview sample"
-        @dblclick.stop.prevent="preview(pad)"
+        title="Click to preview sample"
+        @click.stop.prevent="preview(pad)"
       ></button>
 
       <div class="flex-1 min-w-0 flex flex-col justify-start gap-px pointer-events-none pt-px">
@@ -61,6 +61,7 @@
     <DrumPadEditorModal
       v-if="editingPad"
       :pad="editingPad"
+      :all-pads="pads"
       :track-volume="trackVolume"
       :can-remove="pads.length > 1"
       @save="onEditorSave"
@@ -75,6 +76,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { playSample, resumeSamplerAudio } from '../engine/sampler.js';
+import { padPlaybackOpts } from '../engine/padPlayback.js';
 import { audioFileFromDataTransfer, acceptFileDrag } from '../utils/audioFile.js';
 import VolumeSlider from './VolumeSlider.vue';
 import DrumPadEditorModal from './DrumPadEditorModal.vue';
@@ -130,7 +132,15 @@ function onEditorSave(changes) {
   if (!editingPadId.value) return;
   const padId = editingPadId.value;
   emit('rename-pad', padId, changes.name);
-  emit('update-pad', padId, { color: changes.color, volume: changes.volume });
+  emit('update-pad', padId, {
+    color: changes.color,
+    volume: changes.volume,
+    cutBySelf: changes.cutBySelf,
+    cutByPads: changes.cutByPads,
+    pitch: changes.pitch,
+    sampleLength: changes.sampleLength,
+    fadeOut: changes.fadeOut,
+  });
   editingPadId.value = null;
 }
 
@@ -154,6 +164,6 @@ function onEditorRemove() {
 function preview(pad) {
   resumeSamplerAudio();
   const gainMul = (pad.volume ?? 1) * (props.trackVolume ?? 1);
-  playSample(pad.id, PREVIEW_VELOCITY, 0, gainMul);
+  playSample(pad.id, PREVIEW_VELOCITY, 0, gainMul, padPlaybackOpts(pad, props.pads));
 }
 </script>

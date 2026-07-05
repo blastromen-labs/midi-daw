@@ -198,8 +198,56 @@ export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), pat
 // project state, for the same reason midi.js keeps its output cache outside
 // of any reactive object — decoded audio buffers are large and not something
 // Vue's reactivity should be wrapping/tracking.
+/** Built-in one-shots in public/drums/, keyed by default pad name. */
+export const DEFAULT_DRUM_SAMPLE_FILES = {
+  Kick: 'kick.wav',
+  Snare: 'snare.wav',
+  Clap: 'clap.wav',
+  'Closed Hat': 'hihat-cl.wav',
+  'Open Hat': 'hihat-op.wav',
+  'Low Tom': 'tom-low.wav',
+  'Hi Tom': 'tom-hi.wav',
+  Rim: 'rim.wav',
+  Zap: 'zap.wav',
+};
+
+export function defaultDrumSampleFile(padName) {
+  return DEFAULT_DRUM_SAMPLE_FILES[padName] ?? null;
+}
+
 export function createDrumPad(name, color) {
-  return { id: uid(), name, color, fileName: '', volume: 1 };
+  const fileName = defaultDrumSampleFile(name) ?? '';
+  return {
+    id: uid(),
+    name,
+    color,
+    fileName,
+    volume: 1,
+    // Retriggering this pad stops its own previous voice when true.
+    cutBySelf: true,
+    // Other pad ids whose hits choke this pad's playing voice.
+    cutByPads: [],
+    // Semitones relative to original pitch.
+    pitch: 0,
+    // Fraction of the source buffer to play (0–1).
+    sampleLength: 1,
+    // Fraction of the played region that fades out at the end (0 = hard cut).
+    fadeOut: 0,
+  };
+}
+
+/** Coerce legacy or missing pad fields when loading a song. */
+export function normalizeDrumPad(pad) {
+  if (!pad) return pad;
+  if (pad.cutBySelf === undefined) pad.cutBySelf = true;
+  if (!Array.isArray(pad.cutByPads)) pad.cutByPads = [];
+  if (pad.pitch == null) pad.pitch = 0;
+  if (pad.sampleLength == null) pad.sampleLength = 1;
+  if (pad.fadeOut == null) pad.fadeOut = 0;
+  pad.sampleLength = Math.max(0.01, Math.min(1, pad.sampleLength));
+  pad.fadeOut = Math.max(0, Math.min(1, pad.fadeOut));
+  pad.pitch = Math.max(-24, Math.min(24, pad.pitch));
+  return pad;
 }
 
 export const DEFAULT_DRUM_PADS = [
@@ -211,6 +259,7 @@ export const DEFAULT_DRUM_PADS = [
   ['Low Tom', '#c97b3d'],
   ['Hi Tom', '#e69a3d'],
   ['Rim', '#d16fae'],
+  ['Zap', '#7df9ff'],
 ];
 
 /** Palette for drum pad step colors — defaults plus accents for custom pads. */
@@ -249,6 +298,24 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
   };
+}
+
+/** Append default kit pads missing from saved drum tracks (e.g. Zap added after save). */
+export function ensureDefaultDrumPads(tracks) {
+  for (const track of tracks) {
+    if (track.kind !== 'drum' || !Array.isArray(track.pads)) continue;
+    const names = new Set(track.pads.map((p) => p.name));
+    for (const [padName, color] of DEFAULT_DRUM_PADS) {
+      if (names.has(padName)) continue;
+      track.pads.push(createDrumPad(padName, color));
+      names.add(padName);
+    }
+    for (const pad of track.pads) normalizeDrumPad(pad);
+    const padIds = new Set(track.pads.map((p) => p.id));
+    for (const pad of track.pads) {
+      pad.cutByPads = (pad.cutByPads ?? []).filter((id) => padIds.has(id));
+    }
+  }
 }
 
 // Step counts for 1–64 bars at 16 steps per bar (4 steps per beat).

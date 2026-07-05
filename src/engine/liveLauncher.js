@@ -14,7 +14,7 @@
 // (e.g. queuing a 2-bar pattern but committing on a 1-bar boundary lands on
 // beat 4 of an 8-beat pattern, which sounds like nothing changed). Since
 // every pattern length here is a whole number of bars from BAR_LENGTH_OPTIONS
-// (1/2/4/8 bars), each length evenly divides every larger one, so using
+// (powers of two up to 64 bars), each length evenly divides every larger one, so using
 // Math.max(currentLen, targetLen) as the quantize grid is always a valid
 // common multiple — it guarantees the current pattern finishes its own loop
 // *and* the new one starts from its own beat 0.

@@ -3,6 +3,16 @@
     <!-- Minimal transport bar — mirrors the piano roll's toolbar just enough
          to jam without switching views (see ToolbarField usage there). -->
     <div class="flex items-end gap-2 px-2 py-1 bg-surface border-b border-line flex-shrink-0 overflow-x-auto">
+      <SongMenu
+        :songs="songs"
+        :active-song-id="activeSongId"
+        @select="(id) => $emit('select-song', id)"
+        @rename="(id, name) => $emit('rename-song', id, name)"
+        @create="(name) => $emit('create-song', name)"
+      />
+
+      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+
       <ToolbarField v-if="syncMode !== 'external'">
         <button
           class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
@@ -144,9 +154,12 @@ import {
 import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import ToolbarField from './ToolbarField.vue';
+import SongMenu from './SongMenu.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
 
 const props = defineProps({
+  songs: { type: Array, default: () => [] },
+  activeSongId: String,
   tracks: { type: Array, required: true },
   playing: Boolean,
   bpm: Number,
@@ -163,6 +176,9 @@ const emit = defineEmits([
   'trigger-pattern',
   'edit-pattern',
   'reorder-patterns',
+  'select-song',
+  'rename-song',
+  'create-song',
 ]);
 
 const absBeat = useAbsolutePlayheadBeat();

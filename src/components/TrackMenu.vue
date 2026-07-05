@@ -2,12 +2,12 @@
   <div class="track-menu flex-shrink-0 flex flex-col items-center gap-px" ref="rootRef">
     <button
       ref="triggerRef"
-      class="flex items-center gap-1.5 pl-1.5 pr-1.5 py-0.5 rounded text-sm font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0"
+      class="flex items-center gap-1.5 pl-1.5 pr-1.5 py-0.5 rounded text-sm font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[7.5rem]"
       @click="toggleOpen"
     >
       <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: activeTrack?.color }"></span>
-      <span class="truncate max-w-28">{{ activeTrack?.name ?? 'No tracks' }}</span>
-      <span class="text-[9px] text-muted-dim">▾</span>
+      <span class="truncate flex-1 min-w-0 text-left">{{ activeTrack?.name ?? 'No tracks' }}</span>
+      <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
     </button>
     <span class="text-[7px] leading-none text-muted-dim uppercase tracking-wider select-none">Track</span>
 

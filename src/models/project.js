@@ -3,6 +3,26 @@ export function uid() {
   return `id-${nextId++}`;
 }
 
+/** Bump the uid counter past every `id-N` already present in a loaded project. */
+export function syncUidCounter(root) {
+  let max = nextId - 1;
+  function walk(value) {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (typeof value.id === 'string' && value.id.startsWith('id-')) {
+      const n = Number.parseInt(value.id.slice(3), 10);
+      if (!Number.isNaN(n)) max = Math.max(max, n);
+    }
+    for (const v of Object.values(value)) walk(v);
+  }
+  walk(root);
+  nextId = max + 1;
+}
+
 export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity = 100) {
   return { id: uid(), pitch, startBeat, duration, velocity };
 }

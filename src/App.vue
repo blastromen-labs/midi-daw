@@ -4,6 +4,8 @@
       <div class="flex-1 min-h-0">
         <PianoRoll
           v-show="viewMode === 'roll'"
+          :songs="songs"
+          :active-song-id="currentSongId"
           :tracks="project.tracks"
           :active-track-id="activeTrackId"
           :playing="playing"
@@ -41,9 +43,14 @@
           @sync-mode-change="project.syncMode = $event"
           @clock-input-change="project.clockInputId = $event"
           @view-mode-change="viewMode = $event"
+          @select-song="selectSong"
+          @rename-song="renameSong"
+          @create-song="createSong"
         />
         <LiveView
           v-show="viewMode === 'live'"
+          :songs="songs"
+          :active-song-id="currentSongId"
           :tracks="project.tracks"
           :playing="playing"
           :bpm="project.bpm"
@@ -57,6 +64,9 @@
           @trigger-pattern="queueOrLaunchPattern"
           @edit-pattern="editPattern"
           @reorder-patterns="reorderPatterns"
+          @select-song="selectSong"
+          @rename-song="renameSong"
+          @create-song="createSong"
         />
       </div>
     </div>
@@ -83,7 +93,15 @@ import {
   isPatternPlaying,
   projectLoopEndBeat,
   reorderPatterns as reorderTrackPatterns,
+  syncUidCounter,
 } from './models/project.js';
+import {
+  loadSongLibrary,
+  persistSongLibrary,
+  serializeProject,
+  deserializeProject,
+  createSongEntry,
+} from './engine/songStorage.js';
 import {
   initMidi,
   listOutputs,
@@ -100,6 +118,8 @@ import { clearSample } from './engine/sampler.js';
 import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately } from './engine/liveLauncher.js';
 
 const project = reactive(createProject());
+const songs = ref([]);
+const currentSongId = ref(null);
 const playing = ref(false);
 // 'roll': piano roll editor (default). 'live': session-style launch grid —
 // toggled via Tab or the View control in either view's toolbar.
@@ -115,6 +135,128 @@ let playingUnsub = null; // tracks 'start'/'stop' on whichever clock is currentl
 let outputsUnsub = null;
 let inputsUnsub = null;
 let clockInputUnsub = null; // subscription to the selected external MIDI clock input
+let saveTimer = null;
+
+function clearDrumSamples() {
+  for (const track of project.tracks) {
+    if (track.kind === 'drum') {
+      for (const pad of track.pads) clearSample(pad.id);
+    }
+  }
+}
+
+function getTrackIndex(tracks, trackId) {
+  const idx = tracks.findIndex((t) => t.id === trackId);
+  return idx === -1 ? 0 : idx;
+}
+
+function getPatternIndex(track) {
+  if (!track?.patterns?.length) return 0;
+  const idx = track.patterns.findIndex((p) => p.id === track.activePatternId);
+  return idx === -1 ? 0 : idx;
+}
+
+function applySessionSelection(tracks, trackIndex, patternIndex) {
+  if (!tracks.length) {
+    activeTrackId.value = null;
+    return;
+  }
+  const ti = Math.min(Math.max(0, trackIndex), tracks.length - 1);
+  const track = tracks[ti];
+  activeTrackId.value = track.id;
+  if (track.patterns?.length) {
+    const pi = Math.min(Math.max(0, patternIndex), track.patterns.length - 1);
+    track.activePatternId = track.patterns[pi].id;
+  }
+}
+
+function replaceProject(snapshot, { preserveSelection = false } = {}) {
+  let trackIndex = 0;
+  let patternIndex = 0;
+  if (preserveSelection && activeTrackId.value) {
+    trackIndex = getTrackIndex(project.tracks, activeTrackId.value);
+    patternIndex = getPatternIndex(project.tracks[trackIndex]);
+  }
+
+  clearDrumSamples();
+  stopPlayback();
+  const loaded = deserializeProject(snapshot);
+  syncUidCounter(loaded);
+  for (const key of Object.keys(project)) delete project[key];
+  Object.assign(project, loaded);
+
+  if (preserveSelection) {
+    applySessionSelection(project.tracks, trackIndex, patternIndex);
+  } else {
+    activeTrackId.value =
+      (project.tracks.find((t) => t.kind === 'midi') ?? project.tracks[0])?.id ?? null;
+  }
+  viewMode.value = project.sessionView === 'live' ? 'live' : 'roll';
+  syncClockLoopFromTracks();
+  playback.setProject(project);
+  engageSyncMode();
+}
+
+function persistSongs() {
+  persistSongLibrary(songs.value, currentSongId.value);
+}
+
+function saveCurrentSong() {
+  if (!currentSongId.value) return;
+  const song = songs.value.find((s) => s.id === currentSongId.value);
+  if (!song) return;
+  song.project = serializeProject(project);
+  song.updatedAt = new Date().toISOString();
+  persistSongs();
+}
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveCurrentSong, 400);
+}
+
+function initSongLibrary() {
+  const { songs: stored, currentSongId: storedId } = loadSongLibrary();
+  if (stored.length === 0) {
+    const entry = createSongEntry('Untitled', createProject());
+    songs.value = [entry];
+    currentSongId.value = entry.id;
+    replaceProject(entry.project);
+    persistSongs();
+    return;
+  }
+  songs.value = stored;
+  const id = stored.some((s) => s.id === storedId) ? storedId : stored[0].id;
+  currentSongId.value = id;
+  const song = stored.find((s) => s.id === id);
+  replaceProject(song.project);
+}
+
+function selectSong(songId) {
+  if (songId === currentSongId.value) return;
+  saveCurrentSong();
+  currentSongId.value = songId;
+  const song = songs.value.find((s) => s.id === songId);
+  if (song) replaceProject(song.project, { preserveSelection: true });
+  persistSongs();
+}
+
+function createSong(name) {
+  saveCurrentSong();
+  const entry = createSongEntry(name, createProject());
+  songs.value.push(entry);
+  currentSongId.value = entry.id;
+  replaceProject(entry.project, { preserveSelection: true });
+  persistSongs();
+}
+
+function renameSong(songId, name) {
+  const song = songs.value.find((s) => s.id === songId);
+  if (!song) return;
+  song.name = name.trim() || song.name;
+  song.updatedAt = new Date().toISOString();
+  persistSongs();
+}
 
 // Transport loop spans the longest track pattern (or a user-drawn loop region)
 // so shorter patterns can repeat independently inside the scheduler.
@@ -193,11 +335,12 @@ onMounted(async () => {
     midiError.value = 'MIDI not available — use Chrome/Edge for external synth control';
   }
 
-  playback.setProject(project);
-  engageSyncMode();
+  initSongLibrary();
 });
 
 onUnmounted(() => {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveCurrentSong();
   playback.stop();
   if (playingUnsub) playingUnsub();
   if (outputsUnsub) outputsUnsub();
@@ -238,6 +381,12 @@ watch(
 watch(viewMode, (mode) => {
   project.sessionView = mode;
 }, { immediate: true });
+
+watch(
+  project,
+  () => scheduleSave(),
+  { deep: true }
+);
 
 function togglePlay(fromBeat) {
   if (project.syncMode === 'external') return; // controlled by the incoming MIDI clock

@@ -1,7 +1,7 @@
 <template>
   <div class="flex items-end gap-2">
     <ToolbarField label="OUT">
-      <select :value="outputId" @change="onOutputChange" class="text-xs max-w-28 min-w-0 py-0.5">
+      <select :value="outputId" @change="onOutputChange" class="text-xs w-28 flex-shrink-0 py-0.5">
         <option value="">—</option>
         <option v-for="d in outputs" :key="d.id" :value="d.id">{{ d.name }}</option>
       </select>

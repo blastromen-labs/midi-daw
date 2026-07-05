@@ -9,6 +9,16 @@
       @mousedown="onToolbarMouseDown"
       @touchstart="onToolbarMouseDown"
     >
+      <SongMenu
+        :songs="songs"
+        :active-song-id="activeSongId"
+        @select="(id) => $emit('select-song', id)"
+        @rename="(id, name) => $emit('rename-song', id, name)"
+        @create="(name) => $emit('create-song', name)"
+      />
+
+      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+
       <!-- Transport -->
       <ToolbarField v-if="syncMode !== 'external'">
         <button
@@ -97,12 +107,17 @@
         </button>
       </ToolbarField>
 
-      <ToolbarField v-if="sendMidiClock" label="Out">
+      <ToolbarField
+        label="Out"
+        class="flex-shrink-0"
+        :class="sendMidiClock ? '' : 'invisible pointer-events-none'"
+      >
         <select
           :value="clockOutputId"
           @change="(e) => $emit('clock-output-change', e.target.value)"
-          class="text-xs max-w-24 flex-shrink-0 py-0.5"
+          class="text-xs w-24 flex-shrink-0 py-0.5"
           title="MIDI clock output"
+          :tabindex="sendMidiClock ? 0 : -1"
         >
           <option value="">All</option>
           <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
@@ -125,26 +140,28 @@
 
       <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
-      <MidiRouteSelect
-        v-if="activeTrack && activeTrack.kind !== 'drum'"
-        :output-id="activeTrack.midiOutputId"
-        :channel="activeTrack.midiChannel"
-        :outputs="midiOutputs"
-        @output-change="(id) => updateRoute({ midiOutputId: id })"
-        @channel-change="(ch) => updateRoute({ midiChannel: ch })"
-      />
-      <ToolbarField
-        v-else-if="activeTrack"
-        label="Vol"
-        :title="`Track volume — ${Math.round((activeTrack.volume ?? 1) * 100)}%`"
-      >
-        <VolumeSlider
-          wide
-          class="w-24"
-          :model-value="activeTrack.volume ?? 1"
-          @update:model-value="(v) => emit('update-track', activeTrackId, { volume: v })"
+      <div class="flex-shrink-0 w-[10.5rem]">
+        <MidiRouteSelect
+          v-if="activeTrack && activeTrack.kind !== 'drum'"
+          :output-id="activeTrack.midiOutputId"
+          :channel="activeTrack.midiChannel"
+          :outputs="midiOutputs"
+          @output-change="(id) => updateRoute({ midiOutputId: id })"
+          @channel-change="(ch) => updateRoute({ midiChannel: ch })"
         />
-      </ToolbarField>
+        <ToolbarField
+          v-else-if="activeTrack"
+          label="Vol"
+          :title="`Track volume — ${Math.round((activeTrack.volume ?? 1) * 100)}%`"
+        >
+          <VolumeSlider
+            wide
+            class="w-full"
+            :model-value="activeTrack.volume ?? 1"
+            @update:model-value="(v) => emit('update-track', activeTrackId, { volume: v })"
+          />
+        </ToolbarField>
+      </div>
 
       <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
@@ -390,6 +407,7 @@ import MidiRouteSelect from './MidiRouteSelect.vue';
 import VelocityLane from './VelocityLane.vue';
 import DrumPadList from './DrumPadList.vue';
 import TrackMenu from './TrackMenu.vue';
+import SongMenu from './SongMenu.vue';
 import ToolbarField from './ToolbarField.vue';
 import VolumeSlider from './VolumeSlider.vue';
 import EditToolBar from './EditToolBar.vue';
@@ -410,6 +428,8 @@ const NOTE_CORNER_RADIUS = THEME.note.cornerRadius;
 const PASTE_MARKER_COLOR = '#b794f6';
 
 const props = defineProps({
+  songs: { type: Array, default: () => [] },
+  activeSongId: String,
   tracks: { type: Array, required: true },
   activeTrackId: String,
   playing: Boolean,
@@ -459,6 +479,9 @@ const emit = defineEmits([
   'sync-mode-change',
   'clock-input-change',
   'view-mode-change',
+  'select-song',
+  'rename-song',
+  'create-song',
 ]);
 
 const ROW_HEIGHT = 20;

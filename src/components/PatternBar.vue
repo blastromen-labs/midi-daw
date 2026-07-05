@@ -218,10 +218,21 @@ const ghostSourceTrack = computed(() =>
 const ghostPatternOptions = computed(() => {
   const source = ghostSourceTrack.value;
   if (!source?.patterns?.length) return [];
+  let options;
   if (source.id === props.track?.id) {
-    return source.patterns.filter((p) => p.id !== props.track.activePatternId);
+    options = source.patterns.filter((p) => p.id !== props.track.activePatternId);
+  } else {
+    options = source.patterns;
   }
-  return source.patterns;
+  // Keep the stored ghost pattern in the list even when it matches the active
+  // pattern (overlay is suppressed in getGhostSource) so the dropdown doesn't
+  // look cleared after switching patterns on the same track.
+  const ghostId = props.track?.ghostPatternId;
+  if (ghostId && !options.some((p) => p.id === ghostId)) {
+    const selected = source.patterns.find((p) => p.id === ghostId);
+    if (selected) options = [selected, ...options];
+  }
+  return options;
 });
 
 function firstGhostPatternId(sourceTrack) {
@@ -230,10 +241,18 @@ function firstGhostPatternId(sourceTrack) {
 
 function ghostPatternOptionsForTrack(sourceTrack, viewingTrack) {
   if (!sourceTrack?.patterns?.length) return [];
+  let options;
   if (sourceTrack.id === viewingTrack?.id) {
-    return sourceTrack.patterns.filter((p) => p.id !== viewingTrack.activePatternId);
+    options = sourceTrack.patterns.filter((p) => p.id !== viewingTrack.activePatternId);
+  } else {
+    options = sourceTrack.patterns;
   }
-  return sourceTrack.patterns;
+  const ghostId = viewingTrack?.ghostPatternId;
+  if (ghostId && !options.some((p) => p.id === ghostId)) {
+    const selected = sourceTrack.patterns.find((p) => p.id === ghostId);
+    if (selected) options = [selected, ...options];
+  }
+  return options;
 }
 
 function onGhostTrackChange(e) {
@@ -377,12 +396,6 @@ watch(
   () => {
     renamingId.value = null;
     confirmDeleteId.value = null;
-    if (
-      props.track?.ghostTrackId === props.track?.id &&
-      props.track?.ghostPatternId === props.track.activePatternId
-    ) {
-      emit('ghost-source-change', { ghostTrackId: null, ghostPatternId: null });
-    }
   }
 );
 

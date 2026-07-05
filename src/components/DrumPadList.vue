@@ -10,7 +10,7 @@
     <div
       v-for="pad in pads"
       :key="pad.id"
-      class="pad-row flex items-start gap-1 px-1 py-1 border-b border-line/60 group transition-colors pointer-events-none"
+      class="pad-row flex items-center gap-1 px-1 py-1 border-b border-line/60 group transition-colors pointer-events-none"
       :class="dragOverPadId === pad.id ? 'bg-accent/15 ring-1 ring-inset ring-accent/50' : ''"
       :style="{ height: rowHeight + 'px' }"
       :data-pad-id="pad.id"
@@ -34,15 +34,20 @@
 
       <button
         type="button"
-        class="w-2 h-2 rounded-full flex-shrink-0 self-center pointer-events-auto ring-1 transition-all"
-        :class="
-          pad.muted
-            ? 'bg-[#1a2420] ring-line/50'
-            : 'bg-[#4ade80] ring-[#4ade80]/50 shadow-[0_0_5px_rgba(74,222,128,0.55)]'
-        "
+        class="mute-lamp-btn flex items-center justify-center flex-shrink-0 self-center pointer-events-auto w-7 h-7 -my-1 relative z-10"
         :title="pad.muted ? 'Unmute pad' : 'Mute pad'"
         @click.stop="toggleMute(pad)"
-      ></button>
+      >
+        <span
+          class="w-2 h-2 rounded-full ring-1 transition-all pointer-events-none"
+          :class="
+            pad.muted
+              ? 'bg-[#1a2420] ring-line/50'
+              : 'bg-[#4ade80] ring-[#4ade80]/50 shadow-[0_0_5px_rgba(74,222,128,0.55)]'
+          "
+          aria-hidden="true"
+        ></span>
+      </button>
 
       <VolumeSlider
         drum

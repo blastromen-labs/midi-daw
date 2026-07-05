@@ -214,7 +214,7 @@ export class PlaybackEngine {
   // silently skipped rather than throwing.
   _triggerDrumNote(track, note, onDelay) {
     const pad = track.pads.find((p) => p.id === note.pitch);
-    if (!pad) return;
+    if (!pad || pad.muted) return;
     const gainMul = (pad.volume ?? 1) * (track.volume ?? 1);
     playSample(pad.id, note.velocity, onDelay, gainMul, padPlaybackOpts(pad, track));
   }

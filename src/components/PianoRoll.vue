@@ -1246,10 +1246,11 @@ function startDrawPreview(pitch, velocity = PREVIEW_VELOCITY) {
   if (!track) return;
 
   if (track.kind === 'drum') {
-    resumeSamplerAudio();
     const pad = track.pads.find((p) => p.id === pitch);
-    const gainMul = (pad?.volume ?? 1) * (track.volume ?? 1);
-    playSample(pitch, velocity, 0, gainMul, pad ? padPlaybackOpts(pad, track) : {});
+    if (!pad || pad.muted) return;
+    resumeSamplerAudio();
+    const gainMul = (pad.volume ?? 1) * (track.volume ?? 1);
+    playSample(pitch, velocity, 0, gainMul, padPlaybackOpts(pad, track));
     return;
   }
 

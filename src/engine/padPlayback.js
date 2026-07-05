@@ -12,6 +12,8 @@ export function padPlaybackOpts(pad, track) {
     trackPads,
     reverb: pad.reverb ?? 0,
     reverbDecay: pad.reverbDecay ?? REVERB_DECAY_DEFAULT,
+    gain: pad.gain ?? 1,
+    distortion: pad.distortion ?? 0,
   };
 }
 

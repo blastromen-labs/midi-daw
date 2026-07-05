@@ -8,6 +8,7 @@
 
 import { getSharedAudioContext, resumeSharedAudioContext } from './audioContext.js';
 import { getReverbInput } from './reverb.js';
+import { getDistortionCurve } from './padDistortion.js';
 import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
 
 export async function resumeSamplerAudio() {
@@ -94,8 +95,10 @@ function playbackSettings(opts = {}) {
   const pitch = Math.max(-24, Math.min(24, Number(opts.pitch) || 0));
   const sampleLength = Math.max(0.01, Math.min(1, Number(opts.sampleLength) || 1));
   const fadeOut = Math.max(0, Math.min(1, Number(opts.fadeOut) || 0));
+  const gain = Math.max(0.25, Math.min(2, Number(opts.gain) || 1));
+  const distortion = Math.max(0, Math.min(1, Number(opts.distortion) || 0));
   const rate = Math.pow(2, pitch / 12);
-  return { pitch, sampleLength, fadeOut, rate };
+  return { pitch, sampleLength, fadeOut, rate, gain, distortion };
 }
 
 // Decodes the given File/Blob and caches it under padId, replacing whatever
@@ -168,7 +171,7 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   const trackPads = opts.trackPads ?? [];
   if (trackPads.length) applyCut(padId, trackPads, when);
 
-  const { sampleLength, fadeOut, rate } = playbackSettings(opts);
+  const { sampleLength, fadeOut, rate, gain: padGain, distortion } = playbackSettings(opts);
   const playDurationSec = (buffer.duration * sampleLength) / rate;
   const fadeDurationSec = playDurationSec * fadeOut;
   const fadeStartSec = when + playDurationSec - fadeDurationSec;
@@ -183,12 +186,25 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   src.playbackRate.setValueAtTime(rate, when);
   src.detune.setValueAtTime(0, when);
 
+  const drive = c.createGain();
+  drive.gain.setValueAtTime(padGain, when);
+  src.connect(drive);
+
+  let tail = drive;
+  if (distortion > 0.001) {
+    const shaper = c.createWaveShaper();
+    shaper.curve = getDistortionCurve(distortion);
+    shaper.oversample = '2x';
+    drive.connect(shaper);
+    tail = shaper;
+  }
+
   const gain = c.createGain();
   const velGain = Math.max(0, Math.min(1, velocity / 127));
   const peakGain = Math.max(0, Math.min(1, velGain * gainMul));
   const reverbSend = Math.max(0, Math.min(1, opts.reverb ?? 0));
 
-  src.connect(gain);
+  tail.connect(gain);
 
   if (reverbSend > 0.001) {
     const dryGain = c.createGain();

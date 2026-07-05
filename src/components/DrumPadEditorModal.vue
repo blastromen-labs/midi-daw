@@ -101,6 +101,34 @@
             </div>
 
             <div>
+              <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
+                Gain — {{ Math.round(draft.gain * 100) }}%
+              </label>
+              <input
+                v-model.number="draft.gain"
+                type="range"
+                :min="PAD_GAIN_MIN"
+                :max="PAD_GAIN_MAX"
+                step="0.01"
+                class="w-full accent-accent"
+              />
+            </div>
+
+            <div>
+              <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
+                Distortion — {{ Math.round(draft.distortion * 100) }}%
+              </label>
+              <input
+                v-model.number="draft.distortion"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                class="w-full accent-accent"
+              />
+            </div>
+
+            <div>
               <span class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Length &amp; fade</span>
               <p class="text-[10px] text-muted-dim mb-2">
                 Drag the end handle for length. Drag the fade slope to taper the tail.
@@ -235,7 +263,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { DRUM_PAD_COLORS, REVERB_DECAY_MIN, REVERB_DECAY_MAX, REVERB_DECAY_DEFAULT } from '../models/project.js';
+import { DRUM_PAD_COLORS, REVERB_DECAY_MIN, REVERB_DECAY_MAX, REVERB_DECAY_DEFAULT, PAD_GAIN_MIN, PAD_GAIN_MAX, PAD_GAIN_DEFAULT } from '../models/project.js';
 import {
   playSample,
   resumeSamplerAudio,
@@ -274,6 +302,8 @@ const draft = reactive({
   fadeOut: 0,
   reverb: 0,
   reverbDecay: REVERB_DECAY_DEFAULT,
+  gain: PAD_GAIN_DEFAULT,
+  distortion: 0,
 });
 
 const sampleLabel = computed(() => props.pad.fileName || (hasSample(props.pad.id) ? 'Loaded sample' : 'No sample loaded'));
@@ -309,6 +339,8 @@ function syncFromPad() {
   draft.fadeOut = props.pad.fadeOut ?? 0;
   draft.reverb = props.pad.reverb ?? 0;
   draft.reverbDecay = props.pad.reverbDecay ?? REVERB_DECAY_DEFAULT;
+  draft.gain = props.pad.gain ?? PAD_GAIN_DEFAULT;
+  draft.distortion = props.pad.distortion ?? 0;
   refreshWaveform();
 }
 
@@ -335,6 +367,8 @@ function submit() {
     fadeOut: draft.fadeOut,
     reverb: draft.reverb,
     reverbDecay: draft.reverbDecay,
+    gain: draft.gain,
+    distortion: draft.distortion,
   });
 }
 
@@ -357,6 +391,8 @@ function preview() {
     fadeOut: draft.fadeOut,
     reverb: draft.reverb,
     reverbDecay: draft.reverbDecay,
+    gain: draft.gain,
+    distortion: draft.distortion,
   };
   const track = previewTrackOpts({ pads: props.allPads });
   playSample(props.pad.id, PREVIEW_VELOCITY, 0, gainMul, padPlaybackOpts(previewPad, track));

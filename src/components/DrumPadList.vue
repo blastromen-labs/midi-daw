@@ -32,6 +32,18 @@
         >{{ pad.fileName }}</span>
       </div>
 
+      <button
+        type="button"
+        class="w-2 h-2 rounded-full flex-shrink-0 self-center pointer-events-auto ring-1 transition-all"
+        :class="
+          pad.muted
+            ? 'bg-[#1a2420] ring-line/50'
+            : 'bg-[#4ade80] ring-[#4ade80]/50 shadow-[0_0_5px_rgba(74,222,128,0.55)]'
+        "
+        :title="pad.muted ? 'Unmute pad' : 'Mute pad'"
+        @click.stop="toggleMute(pad)"
+      ></button>
+
       <VolumeSlider
         drum
         class="pointer-events-auto self-center"
@@ -142,6 +154,8 @@ function onEditorSave(changes) {
     fadeOut: changes.fadeOut,
     reverb: changes.reverb,
     reverbDecay: changes.reverbDecay,
+    gain: changes.gain,
+    distortion: changes.distortion,
   });
   editingPadId.value = null;
 }
@@ -163,7 +177,12 @@ function onEditorRemove() {
   emit('remove-pad', padId);
 }
 
+function toggleMute(pad) {
+  emit('update-pad', pad.id, { muted: !pad.muted });
+}
+
 function preview(pad) {
+  if (pad.muted) return;
   resumeSamplerAudio();
   const gainMul = (pad.volume ?? 1) * (props.trackVolume ?? 1);
   const track = previewTrackOpts({ pads: props.pads });

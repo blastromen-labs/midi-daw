@@ -219,6 +219,10 @@ export const REVERB_DECAY_MIN = 0.15;
 export const REVERB_DECAY_MAX = 5;
 export const REVERB_DECAY_DEFAULT = 1.2;
 
+export const PAD_GAIN_MIN = 0.25;
+export const PAD_GAIN_MAX = 2;
+export const PAD_GAIN_DEFAULT = 1;
+
 export function createDrumPad(name, color) {
   const fileName = defaultDrumSampleFile(name) ?? '';
   return {
@@ -227,6 +231,7 @@ export function createDrumPad(name, color) {
     color,
     fileName,
     volume: 1,
+    muted: false,
     // Retriggering this pad stops its own previous voice when true.
     cutBySelf: true,
     // Other pad ids whose hits choke this pad's playing voice.
@@ -241,6 +246,10 @@ export function createDrumPad(name, color) {
     reverb: 0,
     // Reverb tail length in seconds for this pad.
     reverbDecay: REVERB_DECAY_DEFAULT,
+    // Pre-fx drive into the distortion stage (1 = unity).
+    gain: PAD_GAIN_DEFAULT,
+    // Saturation amount (0 = clean).
+    distortion: 0,
   };
 }
 
@@ -253,11 +262,16 @@ export function normalizeDrumPad(pad) {
   if (pad.sampleLength == null) pad.sampleLength = 1;
   if (pad.fadeOut == null) pad.fadeOut = 0;
   if (pad.reverb == null) pad.reverb = 0;
+  if (pad.muted === undefined) pad.muted = false;
   if (pad.reverbDecay == null) pad.reverbDecay = REVERB_DECAY_DEFAULT;
+  if (pad.gain == null) pad.gain = PAD_GAIN_DEFAULT;
+  if (pad.distortion == null) pad.distortion = 0;
   pad.sampleLength = Math.max(0.01, Math.min(1, pad.sampleLength));
   pad.fadeOut = Math.max(0, Math.min(1, pad.fadeOut));
   pad.reverb = Math.max(0, Math.min(1, pad.reverb));
   pad.reverbDecay = Math.max(REVERB_DECAY_MIN, Math.min(REVERB_DECAY_MAX, pad.reverbDecay));
+  pad.gain = Math.max(PAD_GAIN_MIN, Math.min(PAD_GAIN_MAX, pad.gain));
+  pad.distortion = Math.max(0, Math.min(1, pad.distortion));
   pad.pitch = Math.max(-24, Math.min(24, pad.pitch));
   return pad;
 }

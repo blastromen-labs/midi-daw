@@ -138,6 +138,10 @@ export function getPlayingPattern(track, { useLiveLaunch = true } = {}) {
   if (!track?.patterns?.length) return null;
   if (!useLiveLaunch) return getActivePattern(track);
   if (track.playingPatternId === STOPPED_PATTERN) return null;
+  // Hold-mode clips only sound while pointer-down (holdActive). Unlike toggle
+  // clips, null playingPatternId must not fall back to activePatternId or
+  // pressing Play in Live mode would trigger the edited pattern with no hold.
+  if (track.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD && !track.holdActive) return null;
   const id = track.playingPatternId ?? track.activePatternId;
   return track.patterns.find((p) => p.id === id) ?? track.patterns[0];
 }

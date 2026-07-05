@@ -462,6 +462,7 @@ function togglePlay(fromBeat) {
 
 function startPlayback(fromBeat) {
   if (project.syncMode === 'external') return;
+  if (viewMode.value === 'live') engageLivePlayback();
   playback.setProject(project);
   transport.bpm = project.bpm;
   syncClockLoopFromTracks();

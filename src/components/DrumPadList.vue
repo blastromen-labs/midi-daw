@@ -3,8 +3,13 @@
     <div
       v-for="pad in pads"
       :key="pad.id"
-      class="pad-row flex items-center gap-0.5 px-1 border-b border-line/60 group"
+      class="pad-row flex items-center gap-0.5 px-1 border-b border-line/60 group transition-colors"
+      :class="dragOverPadId === pad.id ? 'bg-accent/15 ring-1 ring-inset ring-accent/50' : ''"
       :style="{ height: rowHeight + 'px' }"
+      @dragenter.prevent="onDragEnter(pad, $event)"
+      @dragover.prevent="onDragOver(pad, $event)"
+      @dragleave="onDragLeave(pad, $event)"
+      @drop.prevent="onDrop(pad, $event)"
     >
       <button
         class="w-2.5 h-2.5 rounded-sm flex-shrink-0"
@@ -29,7 +34,7 @@
       <button
         class="px-1 py-0.5 rounded text-[9px] flex-shrink-0"
         :class="pad.fileName ? 'bg-surface-hover text-muted hover:bg-surface-active' : 'bg-accent/80 text-white hover:bg-accent'"
-        :title="pad.fileName || 'Load a sample from your computer'"
+        :title="pad.fileName || 'Load or drop an audio sample'"
         @click="browse(pad)"
       >
         {{ pad.fileName ? '···' : 'Load' }}
@@ -69,6 +74,7 @@
 <script setup>
 import { ref } from 'vue';
 import { playSample, resumeSamplerAudio } from '../engine/sampler.js';
+import { audioFileFromDataTransfer } from '../utils/audioFile.js';
 import VolumeSlider from './VolumeSlider.vue';
 
 const PREVIEW_VELOCITY = 100;
@@ -83,6 +89,37 @@ const emit = defineEmits(['load-sample', 'clear-sample', 'add-pad', 'remove-pad'
 
 const fileInput = ref(null);
 const pendingPadId = ref(null);
+const dragOverPadId = ref(null);
+
+function acceptSampleDrag(e) {
+  if (!e.dataTransfer?.types?.includes('Files')) return false;
+  e.dataTransfer.dropEffect = 'copy';
+  return true;
+}
+
+function onDragEnter(pad, e) {
+  if (!acceptSampleDrag(e)) return;
+  dragOverPadId.value = pad.id;
+}
+
+function onDragOver(pad, e) {
+  if (!acceptSampleDrag(e)) return;
+  dragOverPadId.value = pad.id;
+}
+
+function onDragLeave(pad, e) {
+  if (dragOverPadId.value !== pad.id) return;
+  const row = e.currentTarget;
+  if (row.contains(e.relatedTarget)) return;
+  dragOverPadId.value = null;
+}
+
+function onDrop(pad, e) {
+  dragOverPadId.value = null;
+  const file = audioFileFromDataTransfer(e.dataTransfer);
+  if (!file) return;
+  emit('load-sample', pad.id, file);
+}
 
 function preview(pad) {
   resumeSamplerAudio();

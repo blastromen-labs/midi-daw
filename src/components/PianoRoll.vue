@@ -240,7 +240,15 @@
         @mousedown="onScrollAreaPointerDown"
         @touchstart="onScrollAreaPointerDown"
       >
-        <div ref="gridContentRef" class="relative" :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }">
+        <div
+          ref="gridContentRef"
+          class="relative"
+          :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }"
+          @dragenter="onSampleDragEnter"
+          @dragover="onSampleDragOver"
+          @dragleave="onSampleDragLeave"
+          @drop="onSampleDrop"
+        >
           <canvas
             ref="gridCanvas"
             :width="gridWidth"
@@ -267,6 +275,11 @@
             v-if="marqueeRect"
             class="absolute border border-accent bg-accent/20 pointer-events-none"
             :style="marqueeStyle"
+          ></div>
+          <div
+            v-if="sampleDropPadId && isDrumTrack"
+            class="absolute left-0 right-0 pointer-events-none bg-accent/15 border-y border-accent/40"
+            :style="{ top: pitchToY(sampleDropPadId) + 'px', height: rowHeight + 'px' }"
           ></div>
         </div>
       </div>
@@ -329,6 +342,7 @@ import {
   readMidiFile,
 } from '../engine/midiFile.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
+import { audioFileFromDataTransfer } from '../utils/audioFile.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import VelocityLane from './VelocityLane.vue';
@@ -507,6 +521,7 @@ const drag = ref(null);
 const pinchState = ref(null);
 const selectedNoteIds = ref(new Set());
 const marqueeRect = ref(null);
+const sampleDropPadId = ref(null);
 const previewingPitch = ref(null);
 const PREVIEW_MIN_MS = 80;
 let previewStartedAt = 0;
@@ -1243,6 +1258,38 @@ async function onLoadSample(padId, file) {
   } catch (err) {
     console.error('Failed to load sample:', err);
   }
+}
+
+function acceptSampleDrag(e) {
+  if (!isDrumTrack.value || !e.dataTransfer?.types?.includes('Files')) return false;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  return true;
+}
+
+function onSampleDragEnter(e) {
+  if (!acceptSampleDrag(e)) return;
+  sampleDropPadId.value = eventToGridPos(e).pitch ?? null;
+}
+
+function onSampleDragOver(e) {
+  if (!acceptSampleDrag(e)) return;
+  sampleDropPadId.value = eventToGridPos(e).pitch ?? null;
+}
+
+function onSampleDragLeave(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) sampleDropPadId.value = null;
+}
+
+async function onSampleDrop(e) {
+  sampleDropPadId.value = null;
+  if (!isDrumTrack.value) return;
+  const file = audioFileFromDataTransfer(e.dataTransfer);
+  if (!file) return;
+  e.preventDefault();
+  const padId = eventToGridPos(e).pitch;
+  if (!padId) return;
+  await onLoadSample(padId, file);
 }
 
 function onClearSample(padId) {

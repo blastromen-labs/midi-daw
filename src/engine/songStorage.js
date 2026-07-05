@@ -5,7 +5,14 @@ const CURRENT_SONG_KEY = 'midi-daw:currentSongId';
 const STORAGE_VERSION = 1;
 
 /** Fields stripped before persisting — Live-mode runtime only. */
-const EPHEMERAL_TRACK_FIELDS = ['playingPatternId', 'pendingPatternId', 'pendingLaunchBeat'];
+const EPHEMERAL_TRACK_FIELDS = [
+  'playingPatternId',
+  'pendingPatternId',
+  'pendingLaunchBeat',
+  'holdActive',
+  'holdMuted',
+  'pendingUnmuteBeat',
+];
 
 function stripEphemeralTrackFields(track) {
   const copy = { ...track };
@@ -32,6 +39,11 @@ export function deserializeProject(data) {
     track.playingPatternId = null;
     track.pendingPatternId = null;
     track.pendingLaunchBeat = null;
+    track.holdActive = false;
+    track.holdMuted = false;
+    track.pendingUnmuteBeat = null;
+    track.liveLaunchMode = track.liveLaunchMode ?? 'toggle';
+    track.liveSyncGrid = track.liveSyncGrid ?? '1/16';
     track.category = normalizeTrackCategory(track);
   }
   return project;

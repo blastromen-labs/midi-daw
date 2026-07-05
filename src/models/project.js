@@ -182,6 +182,8 @@ export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), pat
     // pattern actually sounding right now (null = follow activePatternId);
     // pendingPatternId/pendingLaunchBeat describe a queued-but-not-yet-live
     // launch waiting for the current pattern's loop to complete.
+    liveLaunchMode: LIVE_LAUNCH_MODES.TOGGLE,
+    liveSyncGrid: '1/16',
     playingPatternId: null,
     pendingPatternId: null,
     pendingLaunchBeat: null,
@@ -223,6 +225,8 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     activePatternId: pattern.id,
     ghostTrackId: null,
     ghostPatternId: null,
+    liveLaunchMode: LIVE_LAUNCH_MODES.TOGGLE,
+    liveSyncGrid: '1/16',
     playingPatternId: null,
     pendingPatternId: null,
     pendingLaunchBeat: null,
@@ -293,6 +297,30 @@ export const SNAP_VALUES = [
   { label: '1/16', value: 0.25 },
   { label: '1/32', value: 0.125 },
 ];
+
+/** How a pattern is triggered in Live mode — configured per track in the piano roll. */
+export const LIVE_LAUNCH_MODES = {
+  /** One click toggles loop on/off (default Live clip behavior). */
+  TOGGLE: 'toggle',
+  /** Hold to hear: loops muted in sync until the next grid line, then audibly while held. */
+  HOLD: 'hold',
+};
+
+/** Grid the hold-to-play unmute aligns to when you press a clip. */
+export const LIVE_SYNC_GRID_OPTIONS = [
+  { label: '1/16', value: '1/16', beats: 0.25 },
+  { label: '1/8', value: '1/8', beats: 0.5 },
+  { label: '1/4', value: '1/4', beats: 1 },
+  { label: '1 bar', value: '1bar', beats: BEATS_PER_BAR },
+  { label: 'Track', value: 'track', beats: null },
+];
+
+export function liveSyncGridBeats(track, pattern) {
+  const grid = track?.liveSyncGrid ?? '1/16';
+  const opt = LIVE_SYNC_GRID_OPTIONS.find((o) => o.value === grid);
+  if (opt?.beats != null) return opt.beats;
+  return patternLoopEndBeat(pattern);
+}
 
 export function snapBeat(beat, snap) {
   if (!snap || snap <= 0) return beat;

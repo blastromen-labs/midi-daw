@@ -99,15 +99,17 @@
               :title="clipTitle(track, pattern)"
               :data-track-id="track.id"
               :data-clip-index="index"
-              @pointerdown="onClipPointerDown($event, track.id, index)"
-              @click="onClipClick(track.id, pattern.id)"
+              @pointerdown="onClipPointerDown($event, track, index, pattern.id)"
+              @pointerup="onClipPointerUp($event, track)"
+              @pointercancel="onClipPointerUp($event, track)"
+              @click="onClipClick(track.id, pattern.id, track.liveLaunchMode)"
               @dblclick="$emit('edit-pattern', track.id, pattern.id)"
             >
               <span class="block text-[11px] font-medium truncate">{{ pattern.name }}</span>
               <span class="block text-[9px] opacity-70">{{ barsLabel(pattern.patternSteps) }}</span>
 
               <span
-                v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping'"
+                v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping' || clipStatus(track, pattern) === 'arming'"
                 class="absolute left-0 bottom-0 h-0.5 bg-white/80"
                 :style="{ width: clipProgress(pattern) * 100 + '%' }"
               ></span>
@@ -122,6 +124,10 @@
               <span
                 v-else-if="clipStatus(track, pattern) === 'queued'"
                 class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+              ></span>
+              <span
+                v-else-if="clipStatus(track, pattern) === 'arming'"
+                class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
               ></span>
               <span
                 v-else-if="clipStatus(track, pattern) === 'armed'"
@@ -148,11 +154,13 @@
 import { ref, onUnmounted } from 'vue';
 import {
   BAR_LENGTH_OPTIONS,
+  LIVE_LAUNCH_MODES,
   isPatternPlaying,
   isPatternQueued,
   isTrackStopQueued,
   patternLoopEndBeat,
 } from '../models/project.js';
+import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import ToolbarField from './ToolbarField.vue';
@@ -183,6 +191,8 @@ const emit = defineEmits([
   'clock-output-change',
   'view-mode-change',
   'trigger-pattern',
+  'hold-pattern-down',
+  'hold-pattern-up',
   'edit-pattern',
   'reorder-patterns',
   'select-song',
@@ -195,12 +205,26 @@ const absBeat = useAbsolutePlayheadBeat();
 const CLICK_DRAG_THRESHOLD_PX = 5;
 const drag = ref(null);
 let suppressNextClick = false;
+let holdPointerId = null;
 
-function onClipPointerDown(e, trackId, fromIndex) {
+function isHoldTrack(track) {
+  return track?.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD;
+}
+
+function onClipPointerDown(e, track, fromIndex, patternId) {
   if (e.button !== 0) return;
+
+  if (isHoldTrack(track)) {
+    holdPointerId = e.pointerId;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    suppressNextClick = true;
+    emit('hold-pattern-down', track.id, patternId);
+    return;
+  }
+
   e.currentTarget.setPointerCapture(e.pointerId);
   drag.value = {
-    trackId,
+    trackId: track.id,
     fromIndex,
     dropIndex: fromIndex,
     startX: e.clientX,
@@ -211,6 +235,13 @@ function onClipPointerDown(e, trackId, fromIndex) {
   window.addEventListener('pointermove', onDragMove);
   window.addEventListener('pointerup', onDragEnd);
   window.addEventListener('pointercancel', onDragEnd);
+}
+
+function onClipPointerUp(e, track) {
+  if (!isHoldTrack(track)) return;
+  if (e?.pointerId != null && holdPointerId != null && e.pointerId !== holdPointerId) return;
+  holdPointerId = null;
+  emit('hold-pattern-up', track.id);
 }
 
 function dropIndexFromPoint(clientX, clientY, trackId) {
@@ -269,7 +300,11 @@ function onDragEnd(e) {
   if (fromIndex !== toIndex) emit('reorder-patterns', trackId, fromIndex, toIndex);
 }
 
-function onClipClick(trackId, patternId) {
+function onClipClick(trackId, patternId, launchMode) {
+  if (launchMode === LIVE_LAUNCH_MODES.HOLD) {
+    suppressNextClick = false;
+    return;
+  }
   if (suppressNextClick) {
     suppressNextClick = false;
     return;
@@ -317,6 +352,12 @@ function clipProgress(pattern) {
 // (rather than scattering these same checks across class/style/title) so a
 // clip's visual state can never drift out of sync with itself.
 function clipStatus(track, pattern) {
+  if (isHoldTrack(track)) {
+    if (isTrackHoldAudible(track, pattern.id)) return 'playing';
+    if (isTrackHoldMuted(track) && track.playingPatternId === pattern.id && track.holdActive) return 'arming';
+    return 'idle';
+  }
+
   const isCurrent = isPatternPlaying(track, pattern.id);
   if (isCurrent && props.playing) return isTrackStopQueued(track) ? 'stopping' : 'playing';
   if (isPatternQueued(track, pattern.id)) return 'queued';
@@ -327,6 +368,7 @@ function clipStatus(track, pattern) {
 function clipStateClass(track, pattern) {
   const status = clipStatus(track, pattern);
   if (status === 'playing') return 'ring-2 ring-white/90 shadow-lg';
+  if (status === 'arming') return 'ring-2 ring-white/50 animate-pulse';
   if (status === 'stopping') return 'ring-2 ring-red-300/80 animate-pulse';
   if (status === 'queued') return 'ring-2 ring-white/60 animate-pulse';
   if (status === 'armed') return 'ring-2 ring-white/40';
@@ -335,7 +377,7 @@ function clipStateClass(track, pattern) {
 
 function clipStyle(track, pattern) {
   const status = clipStatus(track, pattern);
-  const isLit = status === 'playing' || status === 'stopping' || status === 'armed';
+  const isLit = status === 'playing' || status === 'stopping' || status === 'armed' || status === 'arming';
   const base = pattern.color;
   return {
     background: isLit
@@ -347,6 +389,12 @@ function clipStyle(track, pattern) {
 
 function clipTitle(track, pattern) {
   const status = clipStatus(track, pattern);
+  if (isHoldTrack(track)) {
+    const grid = track.liveSyncGrid ?? '1/16';
+    if (status === 'playing') return `${pattern.name} — playing (release to stop)`;
+    if (status === 'arming') return `${pattern.name} — syncing to ${grid} grid…`;
+    return `${pattern.name} — hold to play in sync (${grid} grid), double-click to edit`;
+  }
   if (status === 'playing') return `${pattern.name} — playing (click to stop when it loops)`;
   if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)`;
   if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)`;

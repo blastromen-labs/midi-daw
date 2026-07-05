@@ -126,15 +126,19 @@
     <PatternBar
       :tracks="tracks"
       :track="activeTrack"
+      :playing="playing"
       :midi-io-enabled="activeTrack?.kind === 'midi'"
       @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
       @add-pattern="emit('add-pattern', activeTrackId)"
       @rename-pattern="(id, name) => emit('rename-pattern', activeTrackId, id, name)"
       @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
       @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
+      @update-track="(changes) => emit('update-track', activeTrackId, changes)"
       @import-midi="onImportMidi"
       @export-midi="onExportMidi"
       @ghost-source-change="(changes) => emit('update-track', activeTrackId, changes)"
+      @hold-pattern-down="(id) => emit('hold-pattern-down', activeTrackId, id)"
+      @hold-pattern-up="() => emit('hold-pattern-up', activeTrackId)"
     />
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -400,6 +404,8 @@ const emit = defineEmits([
   'sync-mode-change',
   'clock-input-change',
   'view-mode-change',
+  'hold-pattern-down',
+  'hold-pattern-up',
   'select-song',
   'rename-song',
   'create-song',

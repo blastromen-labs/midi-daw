@@ -18,7 +18,13 @@
 // Math.max(currentLen, targetLen) as the quantize grid is always a valid
 // common multiple — it guarantees the current pattern finishes its own loop
 // *and* the new one starts from its own beat 0.
-import { BEATS_PER_BAR, getPlayingPattern, patternLoopEndBeat, STOPPED_PATTERN } from '../models/project.js';
+import {
+  BEATS_PER_BAR,
+  getPlayingPattern,
+  liveSyncGridBeats,
+  patternLoopEndBeat,
+  STOPPED_PATTERN,
+} from '../models/project.js';
 
 // The next grid line strictly after `currentAbsBeat` — "strictly after" so
 // clicking a clip right on a grid line still waits for the *next* one rather
@@ -92,6 +98,66 @@ export function stopTrackImmediately(track) {
   track.playingPatternId = STOPPED_PATTERN;
   track.pendingPatternId = null;
   track.pendingLaunchBeat = null;
+  clearTrackHoldState(track);
+}
+
+// Hold-to-play: the pattern loops phase-locked to the transport but stays
+// muted until the next sync grid line, then audibly while the clip is held.
+// Releasing stops the track outright — the muted loop does not linger.
+export function holdPatternDown(track, patternId, currentAbsBeat) {
+  if (!track) return;
+
+  const pattern = track.patterns?.find((p) => p.id === patternId);
+  if (!pattern) return;
+
+  const syncBeats = liveSyncGridBeats(track, pattern);
+  track.playingPatternId = patternId;
+  track.holdActive = true;
+  track.holdMuted = true;
+  const boundary = nextBoundaryBeat(currentAbsBeat, syncBeats);
+  // If we're already past the boundary (e.g. abs beat read after transport
+  // start landed slightly late), unmute on the very next scheduler tick.
+  track.pendingUnmuteBeat = boundary;
+  track.pendingPatternId = null;
+  track.pendingLaunchBeat = null;
+}
+
+export function holdPatternUp(track) {
+  if (!track) return;
+  clearTrackHoldState(track);
+  track.playingPatternId = STOPPED_PATTERN;
+}
+
+export function commitDueUnmutes(tracks, currentAbsBeat) {
+  const EPSILON = 1e-6;
+  for (const track of tracks) {
+    if (!track.holdMuted || track.pendingUnmuteBeat == null || !track.holdActive) continue;
+    if (currentAbsBeat + EPSILON >= track.pendingUnmuteBeat) {
+      track.holdMuted = false;
+      track.pendingUnmuteBeat = null;
+    }
+  }
+}
+
+export function clearTrackHoldState(track) {
+  if (!track) return;
+  track.holdActive = false;
+  track.holdMuted = false;
+  track.pendingUnmuteBeat = null;
+}
+
+export function clearHoldState(tracks) {
+  for (const track of tracks) clearTrackHoldState(track);
+}
+
+export function isTrackHoldMuted(track) {
+  return !!track?.holdMuted;
+}
+
+export function isTrackHoldAudible(track, patternId) {
+  if (!track?.holdActive) return false;
+  if (track.holdMuted) return false;
+  return track.playingPatternId === patternId;
 }
 
 // Called every scheduler tick with the current absolute (unwrapped) beat —
@@ -118,4 +184,5 @@ export function clearPendingLaunches(tracks) {
     track.pendingPatternId = null;
     track.pendingLaunchBeat = null;
   }
+  clearHoldState(tracks);
 }

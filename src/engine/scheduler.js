@@ -10,7 +10,7 @@ import { playSample, resumeSamplerAudio } from './sampler.js';
 import { transport } from './clock.js';
 import { getActiveClock } from './activeClock.js';
 import { getPlayingPattern, patternLoopEndBeat, STOPPED_PATTERN } from '../models/project.js';
-import { commitDuePatternLaunches, clearPendingLaunches } from './liveLauncher.js';
+import { commitDuePatternLaunches, commitDueUnmutes, clearPendingLaunches } from './liveLauncher.js';
 
 // When notes are placed back-to-back (e.g. repeated 16th notes on the same
 // pitch), the previous note's Off and the next note's On land on almost the
@@ -242,7 +242,10 @@ export class PlaybackEngine {
     // scheduling below doesn't depend on this having run yet — it reaches
     // across a pending boundary itself via trackSchedulingSegments — this is
     // purely about keeping the track's state/UI in sync with the transport.
-    if (useLiveLaunch) commitDuePatternLaunches(this.project.tracks, absBeat);
+    if (useLiveLaunch) {
+      commitDuePatternLaunches(this.project.tracks, absBeat);
+      commitDueUnmutes(this.project.tracks, absBeat);
+    }
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
     const useTransportLoop = !!this.project.loopRegion;
     const loopStart = clock.loopStartBeat;
@@ -251,6 +254,7 @@ export class PlaybackEngine {
 
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
+      if (useLiveLaunch && track.holdMuted) continue;
 
       for (const { pattern, rangeStart, rangeEnd } of trackSchedulingSegments(
         track,

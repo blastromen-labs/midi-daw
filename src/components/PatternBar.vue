@@ -22,6 +22,19 @@
         @click="selectPattern(pattern.id)"
       >
         <button
+          v-if="isHoldMode"
+          type="button"
+          class="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center text-[9px] leading-none transition-colors"
+          :class="launchButtonClass(pattern)"
+          :title="launchButtonTitle(pattern)"
+          @pointerdown.stop="onLaunchPointerDown($event, pattern.id)"
+          @pointerup.stop="onLaunchPointerUp($event)"
+          @pointercancel.stop="onLaunchPointerUp($event)"
+        >
+          ▶
+        </button>
+
+        <button
           type="button"
           class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/60 hover:ring-line-light transition-shadow"
           :style="{ background: pattern.color }"
@@ -71,6 +84,34 @@
       >
         +
       </button>
+    </div>
+
+    <div class="flex items-center gap-1 flex-shrink-0 border-l border-line/60 pl-1.5 ml-0.5">
+      <span class="text-[7px] leading-none text-muted-dim uppercase tracking-wider select-none">Live</span>
+      <select
+        :value="track.liveLaunchMode ?? 'toggle'"
+        class="text-[11px] max-w-[4.5rem] py-0.5 bg-surface border border-line-light rounded"
+        title="Pattern launch mode in Live view"
+        @change="onLaunchModeChange"
+        @mousedown.stop
+        @click.stop
+      >
+        <option value="toggle">Loop</option>
+        <option value="hold">Hold</option>
+      </select>
+      <select
+        :value="track.liveSyncGrid ?? '1/16'"
+        class="text-[11px] max-w-[4rem] py-0.5 bg-surface border border-line-light rounded"
+        :disabled="(track.liveLaunchMode ?? 'toggle') !== 'hold'"
+        title="Grid the pattern unmute aligns to when you press (Hold mode)"
+        @change="onSyncGridChange"
+        @mousedown.stop
+        @click.stop
+      >
+        <option v-for="opt in liveSyncGridOptions" :key="opt.value" :value="opt.value">
+          {{ opt.label }}
+        </option>
+      </select>
     </div>
 
     <div class="flex items-center gap-1 flex-shrink-0 border-l border-line/60 pl-1.5 ml-0.5">
@@ -175,11 +216,21 @@
 
 <script setup>
 import { ref, computed, nextTick, onUnmounted, watch } from 'vue';
-import { TRACK_ACCENT_COLORS, BAR_LENGTH_OPTIONS } from '../models/project.js';
+import {
+  TRACK_ACCENT_COLORS,
+  BAR_LENGTH_OPTIONS,
+  LIVE_LAUNCH_MODES,
+  LIVE_SYNC_GRID_OPTIONS,
+  isPatternPlaying,
+  isPatternQueued,
+  isTrackStopQueued,
+} from '../models/project.js';
+import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 
 const props = defineProps({
   tracks: { type: Array, default: () => [] },
   track: { type: Object, default: null },
+  playing: { type: Boolean, default: false },
   /** Show Load/Save MIDI controls (MIDI synth tracks only). */
   midiIoEnabled: { type: Boolean, default: false },
 });
@@ -189,11 +240,18 @@ const emit = defineEmits([
   'add-pattern',
   'rename-pattern',
   'update-pattern',
+  'update-track',
   'delete-pattern',
   'import-midi',
   'export-midi',
   'ghost-source-change',
+  'hold-pattern-down',
+  'hold-pattern-up',
 ]);
+
+const liveSyncGridOptions = LIVE_SYNC_GRID_OPTIONS;
+const isHoldMode = computed(() => props.track?.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD);
+let holdPointerId = null;
 
 const midiFileInputRef = ref(null);
 
@@ -276,6 +334,56 @@ function onGhostPatternChange(e) {
     ghostTrackId: props.track.ghostTrackId,
     ghostPatternId: patternId,
   });
+}
+
+function onLaunchModeChange(e) {
+  emit('update-track', { liveLaunchMode: e.target.value });
+}
+
+function onSyncGridChange(e) {
+  emit('update-track', { liveSyncGrid: e.target.value });
+}
+
+function patternLaunchStatus(pattern) {
+  const track = props.track;
+  if (!track) return 'idle';
+  if (isHoldMode.value) {
+    if (isTrackHoldAudible(track, pattern.id)) return 'playing';
+    if (isTrackHoldMuted(track) && track.playingPatternId === pattern.id && track.holdActive) return 'arming';
+    return 'idle';
+  }
+  const isCurrent = isPatternPlaying(track, pattern.id);
+  if (isCurrent && props.playing) return isTrackStopQueued(track) ? 'stopping' : 'playing';
+  if (isPatternQueued(track, pattern.id)) return 'queued';
+  if (isCurrent) return 'armed';
+  return 'idle';
+}
+
+function launchButtonClass(pattern) {
+  const status = patternLaunchStatus(pattern);
+  if (status === 'playing') return 'bg-white/90 text-black';
+  if (status === 'arming' || status === 'queued') return 'bg-white/50 text-black animate-pulse';
+  if (status === 'stopping') return 'bg-red-400/80 text-white animate-pulse';
+  if (status === 'armed') return 'bg-white/30 text-white';
+  return 'bg-surface-hover hover:bg-surface-active text-muted hover:text-white';
+}
+
+function launchButtonTitle(pattern) {
+  return `${pattern.name} — hold to play in sync (${props.track?.liveSyncGrid ?? '1/16'} grid)`;
+}
+
+function onLaunchPointerDown(e, patternId) {
+  if (!isHoldMode.value || e.button !== 0) return;
+  holdPointerId = e.pointerId;
+  e.currentTarget.setPointerCapture(e.pointerId);
+  emit('hold-pattern-down', patternId);
+}
+
+function onLaunchPointerUp(e) {
+  if (!isHoldMode.value) return;
+  if (e?.pointerId != null && holdPointerId != null && e.pointerId !== holdPointerId) return;
+  holdPointerId = null;
+  emit('hold-pattern-up');
 }
 
 function barsLabel(steps) {

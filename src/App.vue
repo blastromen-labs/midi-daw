@@ -41,6 +41,8 @@
           @sync-mode-change="syncSettings.syncMode = $event"
           @clock-input-change="syncSettings.clockInputId = $event"
           @view-mode-change="viewMode = $event"
+          @hold-pattern-down="onHoldPatternDown"
+          @hold-pattern-up="onHoldPatternUp"
           @select-song="selectSong"
           @rename-song="renameSong"
           @create-song="createSong"
@@ -66,6 +68,8 @@
           @clock-output-change="syncSettings.clockOutputId = $event"
           @view-mode-change="viewMode = $event"
           @trigger-pattern="queueOrLaunchPattern"
+          @hold-pattern-down="onHoldPatternDown"
+          @hold-pattern-up="onHoldPatternUp"
           @edit-pattern="editPattern"
           @reorder-patterns="reorderPatterns"
           @select-song="selectSong"
@@ -98,6 +102,7 @@ import {
   projectLoopEndBeat,
   reorderPatterns as reorderTrackPatterns,
   syncUidCounter,
+  LIVE_LAUNCH_MODES,
 } from './models/project.js';
 import {
   loadSongLibrary,
@@ -119,7 +124,7 @@ import { externalClock } from './engine/externalClock.js';
 import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
 import { clearSample } from './engine/sampler.js';
-import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately } from './engine/liveLauncher.js';
+import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately, holdPatternDown, holdPatternUp } from './engine/liveLauncher.js';
 
 const project = reactive(createProject());
 const songs = ref([]);
@@ -182,11 +187,14 @@ function applySessionSelection(tracks, trackIndex, patternIndex) {
 }
 
 function applyGlobalSettingsToProject() {
-  project.sessionView = viewMode.value;
   project.syncMode = syncSettings.syncMode;
   project.clockInputId = syncSettings.clockInputId;
   project.sendMidiClock = syncSettings.sendMidiClock;
   project.clockOutputId = syncSettings.clockOutputId;
+}
+
+function engageLivePlayback() {
+  project.sessionView = 'live';
 }
 
 function replaceProject(snapshot, { preserveSelection = false } = {}) {
@@ -368,8 +376,7 @@ onUnmounted(() => {
   if (clockInputUnsub) clockInputUnsub();
 });
 
-watch(viewMode, applyGlobalSettingsToProject, { immediate: true });
-watch(syncSettings, applyGlobalSettingsToProject, { deep: true });
+watch(syncSettings, applyGlobalSettingsToProject, { deep: true, immediate: true });
 watch(() => [syncSettings.syncMode, syncSettings.clockInputId], engageSyncMode);
 
 watch(
@@ -431,6 +438,7 @@ function stopPlayback() {
   if (project.syncMode === 'external') return; // Stop is driven by the incoming clock
   playback.stop();
   playing.value = false;
+  project.sessionView = 'roll';
 }
 
 function setBpm(bpm) {
@@ -520,6 +528,8 @@ function queueOrLaunchPattern(trackId, patternId) {
   const track = findTrack(trackId);
   if (!track) return;
 
+  engageLivePlayback();
+
   if (!playing.value) {
     if (isPatternPlaying(track, patternId)) {
       stopTrackImmediately(track);
@@ -531,6 +541,26 @@ function queueOrLaunchPattern(trackId, patternId) {
   }
 
   queuePatternToggle(track, patternId, getActiveClock().getAbsoluteBeat());
+}
+
+function onHoldPatternDown(trackId, patternId) {
+  const track = findTrack(trackId);
+  if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.HOLD) return;
+
+  engageLivePlayback();
+  if (!playing.value) {
+    startPlayback();
+  }
+  // Read abs beat only after the transport is running — otherwise
+  // getAbsoluteBeat() returns a stale wrapped position and the unmute
+  // boundary may never arrive (silence forever while the playhead moves).
+  holdPatternDown(track, patternId, getActiveClock().getAbsoluteBeat());
+}
+
+function onHoldPatternUp(trackId) {
+  const track = findTrack(trackId);
+  if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.HOLD) return;
+  holdPatternUp(track);
 }
 
 function editPattern(trackId, patternId) {

@@ -220,16 +220,13 @@
           v-else-if="activeTrack"
           :pads="activeTrack.pads"
           :row-height="rowHeight"
-          :track-id="activeTrack.id"
           :track-volume="activeTrack.volume ?? 1"
-          :reverb-decay="activeTrack.reverbDecay ?? 1.2"
           @load-sample="onLoadSample"
           @clear-sample="onClearSample"
           @add-pad="onAddPad"
           @remove-pad="onRemovePad"
           @rename-pad="onRenamePad"
           @update-pad="onUpdatePad"
-          @update-reverb-decay="(v) => emit('update-track', activeTrackId, { reverbDecay: v })"
         />
       </div>
 

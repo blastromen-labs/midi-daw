@@ -215,6 +215,10 @@ export function defaultDrumSampleFile(padName) {
   return DEFAULT_DRUM_SAMPLE_FILES[padName] ?? null;
 }
 
+export const REVERB_DECAY_MIN = 0.15;
+export const REVERB_DECAY_MAX = 5;
+export const REVERB_DECAY_DEFAULT = 1.2;
+
 export function createDrumPad(name, color) {
   const fileName = defaultDrumSampleFile(name) ?? '';
   return {
@@ -233,8 +237,10 @@ export function createDrumPad(name, color) {
     sampleLength: 1,
     // Fraction of the played region that fades out at the end (0 = hard cut).
     fadeOut: 0,
-    // Dry/wet send to the shared drum reverb bus (0 = off).
+    // Dry/wet send to this pad's reverb bus (0 = off).
     reverb: 0,
+    // Reverb tail length in seconds for this pad.
+    reverbDecay: REVERB_DECAY_DEFAULT,
   };
 }
 
@@ -247,9 +253,11 @@ export function normalizeDrumPad(pad) {
   if (pad.sampleLength == null) pad.sampleLength = 1;
   if (pad.fadeOut == null) pad.fadeOut = 0;
   if (pad.reverb == null) pad.reverb = 0;
+  if (pad.reverbDecay == null) pad.reverbDecay = REVERB_DECAY_DEFAULT;
   pad.sampleLength = Math.max(0.01, Math.min(1, pad.sampleLength));
   pad.fadeOut = Math.max(0, Math.min(1, pad.fadeOut));
   pad.reverb = Math.max(0, Math.min(1, pad.reverb));
+  pad.reverbDecay = Math.max(REVERB_DECAY_MIN, Math.min(REVERB_DECAY_MAX, pad.reverbDecay));
   pad.pitch = Math.max(-24, Math.min(24, pad.pitch));
   return pad;
 }
@@ -300,20 +308,20 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     pendingPatternId: null,
     pendingLaunchBeat: null,
     volume: 1,
-    // Room reverb tail length in seconds (track-wide shared bus).
-    reverbDecay: REVERB_DECAY_DEFAULT,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
   };
 }
 
-export const REVERB_DECAY_MIN = 0.15;
-export const REVERB_DECAY_MAX = 5;
-export const REVERB_DECAY_DEFAULT = 1.2;
-
+/** Migrate legacy track-level reverbDecay onto pads when loading old songs. */
 export function normalizeDrumTrack(track) {
   if (track?.kind !== 'drum') return track;
-  if (track.reverbDecay == null) track.reverbDecay = REVERB_DECAY_DEFAULT;
-  track.reverbDecay = Math.max(REVERB_DECAY_MIN, Math.min(REVERB_DECAY_MAX, track.reverbDecay));
+  const legacyDecay = track.reverbDecay;
+  if (legacyDecay != null) {
+    for (const pad of track.pads ?? []) {
+      if (pad.reverbDecay == null) pad.reverbDecay = legacyDecay;
+    }
+    delete track.reverbDecay;
+  }
   return track;
 }
 

@@ -1,5 +1,5 @@
-// Per-track algorithmic room reverb for drum one-shots. Each drum track owns one
-// convolver bus; decay is regenerated when the track's reverbDecay changes.
+// Per-pad algorithmic room reverb for drum one-shots. Each pad with reverb owns
+// one convolver bus; decay is regenerated when that pad's reverbDecay changes.
 
 import { getSharedAudioContext } from './audioContext.js';
 import { REVERB_DECAY_DEFAULT } from '../models/project.js';
@@ -23,8 +23,8 @@ function createImpulseResponse(ctx, durationSec) {
   return impulse;
 }
 
-function ensureBus(trackId, decaySec) {
-  const id = trackId || 'default';
+function ensureBus(padId, decaySec) {
+  const id = padId || 'default';
   const c = getSharedAudioContext();
   let bus = buses.get(id);
   if (!bus) {
@@ -45,11 +45,11 @@ function ensureBus(trackId, decaySec) {
   return bus;
 }
 
-/** Send bus for a drum track's shared convolver reverb. */
-export function getReverbInput(trackId, decaySec = REVERB_DECAY_DEFAULT) {
-  return ensureBus(trackId, decaySec).input;
+/** Send bus for a pad's convolver reverb. */
+export function getReverbInput(padId, decaySec = REVERB_DECAY_DEFAULT) {
+  return ensureBus(padId, decaySec).input;
 }
 
-export function removeReverbBus(trackId) {
-  buses.delete(trackId);
+export function removeReverbBus(padId) {
+  buses.delete(padId);
 }

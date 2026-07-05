@@ -172,13 +172,12 @@
               Decay — {{ decayLabel }}
             </label>
             <input
-              v-model.number="draftReverbDecay"
+              v-model.number="draft.reverbDecay"
               type="range"
               :min="REVERB_DECAY_MIN"
               :max="REVERB_DECAY_MAX"
               step="0.05"
               class="w-full accent-accent"
-              @input="onReverbDecayInput"
             />
           </section>
 
@@ -253,13 +252,11 @@ const PREVIEW_VELOCITY = 100;
 const props = defineProps({
   pad: { type: Object, required: true },
   allPads: { type: Array, default: () => [] },
-  trackId: { type: String, required: true },
   trackVolume: { type: Number, default: 1 },
-  reverbDecay: { type: Number, default: REVERB_DECAY_DEFAULT },
   canRemove: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['save', 'load-sample', 'clear-sample', 'remove', 'cancel', 'update-reverb-decay']);
+const emit = defineEmits(['save', 'load-sample', 'clear-sample', 'remove', 'cancel']);
 
 const padColors = DRUM_PAD_COLORS;
 const nameInputRef = ref(null);
@@ -276,15 +273,14 @@ const draft = reactive({
   sampleLength: 1,
   fadeOut: 0,
   reverb: 0,
+  reverbDecay: REVERB_DECAY_DEFAULT,
 });
-
-const draftReverbDecay = ref(REVERB_DECAY_DEFAULT);
 
 const sampleLabel = computed(() => props.pad.fileName || (hasSample(props.pad.id) ? 'Loaded sample' : 'No sample loaded'));
 const canPreview = computed(() => hasSample(props.pad.id));
 const otherPads = computed(() => props.allPads.filter((p) => p.id !== props.pad.id));
 const decayLabel = computed(() => {
-  const sec = draftReverbDecay.value ?? REVERB_DECAY_DEFAULT;
+  const sec = draft.reverbDecay ?? REVERB_DECAY_DEFAULT;
   return sec >= 1 ? `${sec.toFixed(1)}s` : `${Math.round(sec * 1000)}ms`;
 });
 const pitchLabel = computed(() => {
@@ -312,13 +308,9 @@ function syncFromPad() {
   draft.sampleLength = props.pad.sampleLength ?? 1;
   draft.fadeOut = props.pad.fadeOut ?? 0;
   draft.reverb = props.pad.reverb ?? 0;
-  draftReverbDecay.value = props.reverbDecay ?? REVERB_DECAY_DEFAULT;
+  draft.reverbDecay = props.pad.reverbDecay ?? REVERB_DECAY_DEFAULT;
   refreshWaveform();
 }
-
-watch(() => props.reverbDecay, (v) => {
-  draftReverbDecay.value = v ?? REVERB_DECAY_DEFAULT;
-});
 
 watch(() => props.pad, syncFromPad, { immediate: true, deep: true });
 watch(() => props.pad.fileName, refreshWaveform);
@@ -327,12 +319,6 @@ function toggleCutBy(padId) {
   const idx = draft.cutByPads.indexOf(padId);
   if (idx === -1) draft.cutByPads.push(padId);
   else draft.cutByPads.splice(idx, 1);
-}
-
-function onReverbDecayInput() {
-  const v = Math.max(REVERB_DECAY_MIN, Math.min(REVERB_DECAY_MAX, draftReverbDecay.value));
-  draftReverbDecay.value = v;
-  emit('update-reverb-decay', v);
 }
 
 function submit() {
@@ -348,6 +334,7 @@ function submit() {
     sampleLength: draft.sampleLength,
     fadeOut: draft.fadeOut,
     reverb: draft.reverb,
+    reverbDecay: draft.reverbDecay,
   });
 }
 
@@ -369,13 +356,9 @@ function preview() {
     sampleLength: draft.sampleLength,
     fadeOut: draft.fadeOut,
     reverb: draft.reverb,
+    reverbDecay: draft.reverbDecay,
   };
-  const track = previewTrackOpts({
-    id: props.trackId,
-    pads: props.allPads,
-    reverbDecay: draftReverbDecay.value,
-    volume: props.trackVolume,
-  });
+  const track = previewTrackOpts({ pads: props.allPads });
   playSample(props.pad.id, PREVIEW_VELOCITY, 0, gainMul, padPlaybackOpts(previewPad, track));
 }
 

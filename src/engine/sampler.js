@@ -198,7 +198,7 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
     gain.connect(dryGain);
     gain.connect(wetGain);
     dryGain.connect(c.destination);
-    wetGain.connect(getReverbInput(opts.trackId, opts.reverbDecay));
+    wetGain.connect(getReverbInput(padId, opts.reverbDecay));
   } else {
     gain.connect(c.destination);
   }

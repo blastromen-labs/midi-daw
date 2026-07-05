@@ -62,15 +62,12 @@
       v-if="editingPad"
       :pad="editingPad"
       :all-pads="pads"
-      :track-id="trackId"
       :track-volume="trackVolume"
-      :reverb-decay="reverbDecay"
       :can-remove="pads.length > 1"
       @save="onEditorSave"
       @load-sample="onEditorLoadSample"
       @clear-sample="onEditorClearSample"
       @remove="onEditorRemove"
-      @update-reverb-decay="(v) => emit('update-reverb-decay', v)"
       @cancel="editingPadId = null"
     />
   </div>
@@ -89,20 +86,10 @@ const PREVIEW_VELOCITY = 100;
 const props = defineProps({
   pads: { type: Array, required: true },
   rowHeight: { type: Number, required: true },
-  trackId: { type: String, required: true },
   trackVolume: { type: Number, default: 1 },
-  reverbDecay: { type: Number, default: 1.2 },
 });
 
-const emit = defineEmits([
-  'load-sample',
-  'clear-sample',
-  'add-pad',
-  'remove-pad',
-  'rename-pad',
-  'update-pad',
-  'update-reverb-decay',
-]);
+const emit = defineEmits(['load-sample', 'clear-sample', 'add-pad', 'remove-pad', 'rename-pad', 'update-pad']);
 
 const listRef = ref(null);
 const dragOverPadId = ref(null);
@@ -154,6 +141,7 @@ function onEditorSave(changes) {
     sampleLength: changes.sampleLength,
     fadeOut: changes.fadeOut,
     reverb: changes.reverb,
+    reverbDecay: changes.reverbDecay,
   });
   editingPadId.value = null;
 }
@@ -178,12 +166,7 @@ function onEditorRemove() {
 function preview(pad) {
   resumeSamplerAudio();
   const gainMul = (pad.volume ?? 1) * (props.trackVolume ?? 1);
-  const track = previewTrackOpts({
-    id: props.trackId,
-    pads: props.pads,
-    reverbDecay: props.reverbDecay,
-    volume: props.trackVolume,
-  });
+  const track = previewTrackOpts({ pads: props.pads });
   playSample(pad.id, PREVIEW_VELOCITY, 0, gainMul, padPlaybackOpts(pad, track));
 }
 </script>

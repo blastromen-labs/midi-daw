@@ -644,8 +644,10 @@ function removeTrack(trackId) {
 
   const track = project.tracks[idx];
   if (track.kind === 'drum') {
-    for (const pad of track.pads) clearSample(pad.id);
-    removeReverbBus(trackId);
+    for (const pad of track.pads) {
+      clearSample(pad.id);
+      removeReverbBus(pad.id);
+    }
   }
 
   project.tracks.splice(idx, 1);
@@ -683,6 +685,7 @@ function removePad(trackId, padId) {
   const track = findTrack(trackId);
   if (track?.kind !== 'drum') return;
   clearSample(padId);
+  removeReverbBus(padId);
   for (const p of track.pads) {
     if (Array.isArray(p.cutByPads)) p.cutByPads = p.cutByPads.filter((id) => id !== padId);
   }

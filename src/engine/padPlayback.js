@@ -10,18 +10,12 @@ export function padPlaybackOpts(pad, track) {
     cutBySelf: pad.cutBySelf !== false,
     cutByPads: pad.cutByPads ?? [],
     trackPads,
-    trackId: track?.id ?? 'default',
-    reverbDecay: track?.reverbDecay ?? REVERB_DECAY_DEFAULT,
     reverb: pad.reverb ?? 0,
+    reverbDecay: pad.reverbDecay ?? REVERB_DECAY_DEFAULT,
   };
 }
 
-/** Minimal track shape for preview when only id/pads/decay are available. */
-export function previewTrackOpts({ id, pads, reverbDecay, volume }) {
-  return {
-    id: id ?? 'default',
-    pads: pads ?? [],
-    reverbDecay: reverbDecay ?? REVERB_DECAY_DEFAULT,
-    volume: volume ?? 1,
-  };
+/** Minimal track shape for preview when only pads are available. */
+export function previewTrackOpts({ pads }) {
+  return { pads: pads ?? [] };
 }

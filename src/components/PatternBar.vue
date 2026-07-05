@@ -22,7 +22,6 @@
         @click="selectPattern(pattern.id)"
       >
         <button
-          v-if="isHoldMode"
           type="button"
           class="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center text-[9px] leading-none transition-colors"
           :class="launchButtonClass(pattern)"
@@ -30,6 +29,7 @@
           @pointerdown.stop="onLaunchPointerDown($event, pattern.id)"
           @pointerup.stop="onLaunchPointerUp($event)"
           @pointercancel.stop="onLaunchPointerUp($event)"
+          @click.stop="onPreviewClick(pattern.id)"
         >
           ▶
         </button>
@@ -221,9 +221,6 @@ import {
   BAR_LENGTH_OPTIONS,
   LIVE_LAUNCH_MODES,
   LIVE_SYNC_GRID_OPTIONS,
-  isPatternPlaying,
-  isPatternQueued,
-  isTrackStopQueued,
 } from '../models/project.js';
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 
@@ -231,6 +228,7 @@ const props = defineProps({
   tracks: { type: Array, default: () => [] },
   track: { type: Object, default: null },
   playing: { type: Boolean, default: false },
+  soloPreview: { type: Object, default: null },
   /** Show Load/Save MIDI controls (MIDI synth tracks only). */
   midiIoEnabled: { type: Boolean, default: false },
 });
@@ -247,6 +245,7 @@ const emit = defineEmits([
   'ghost-source-change',
   'hold-pattern-down',
   'hold-pattern-up',
+  'preview-pattern',
 ]);
 
 const liveSyncGridOptions = LIVE_SYNC_GRID_OPTIONS;
@@ -352,10 +351,9 @@ function patternLaunchStatus(pattern) {
     if (isTrackHoldMuted(track) && track.playingPatternId === pattern.id && track.holdActive) return 'arming';
     return 'idle';
   }
-  const isCurrent = isPatternPlaying(track, pattern.id);
-  if (isCurrent && props.playing) return isTrackStopQueued(track) ? 'stopping' : 'playing';
-  if (isPatternQueued(track, pattern.id)) return 'queued';
-  if (isCurrent) return 'armed';
+  if (props.soloPreview?.trackId === track.id && props.soloPreview?.patternId === pattern.id) {
+    return props.playing ? 'playing' : 'armed';
+  }
   return 'idle';
 }
 
@@ -369,7 +367,15 @@ function launchButtonClass(pattern) {
 }
 
 function launchButtonTitle(pattern) {
-  return `${pattern.name} — hold to play in sync (${props.track?.liveSyncGrid ?? '1/16'} grid)`;
+  if (isHoldMode.value) {
+    return `${pattern.name} — hold to play in sync (${props.track?.liveSyncGrid ?? '1/16'} grid)`;
+  }
+  return `${pattern.name} — play this pattern only`;
+}
+
+function onPreviewClick(patternId) {
+  if (isHoldMode.value) return;
+  emit('preview-pattern', patternId);
 }
 
 function onLaunchPointerDown(e, patternId) {

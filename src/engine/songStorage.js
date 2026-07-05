@@ -9,7 +9,6 @@ export const SONG_FILE_VERSION = 1;
 /** Project fields persisted to localStorage and song files (Live-mode runtime excluded). */
 const PERSISTED_PROJECT_SCALAR_KEYS = [
   'bpm',
-  'sessionView',
   'sendMidiClock',
   'clockOutputId',
   'syncMode',
@@ -56,6 +55,7 @@ export function deserializeProject(data) {
   project.clockOutputId = project.clockOutputId ?? '';
   project.markerBeat = project.markerBeat ?? null;
   project.loopRegion = project.loopRegion ?? null;
+  project.soloPreview = null;
   project.tracks = project.tracks ?? [];
   for (const track of project.tracks) {
     track.playingPatternId = null;

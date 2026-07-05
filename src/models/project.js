@@ -130,18 +130,30 @@ export function getGhostSource(viewingTrack, tracks = []) {
 export const STOPPED_PATTERN = '__stopped__';
 
 // Which pattern a track plays during transport.
-// Piano-roll mode always follows activePatternId (the tab selected in PatternBar).
+// Piano-roll mode follows activePatternId (the tab selected in PatternBar),
+// except Hold-mode tracks stay silent until their ▶ button is held.
 // Live mode uses playingPatternId independently so you can edit one pattern
 // while another loops; null there means "same as active", and STOPPED_PATTERN
 // silences the track entirely.
-export function getPlayingPattern(track, { useLiveLaunch = true } = {}) {
+export function getPlayingPattern(track, { useLiveLaunch = true, soloPreview = null } = {}) {
   if (!track?.patterns?.length) return null;
-  if (!useLiveLaunch) return getActivePattern(track);
-  if (track.playingPatternId === STOPPED_PATTERN) return null;
+  if (!useLiveLaunch) {
+    if (soloPreview) {
+      if (soloPreview.trackId !== track.id) return null;
+      return track.patterns.find((p) => p.id === soloPreview.patternId) ?? null;
+    }
+    // Hold-mode clips only sound while pointer-down (holdActive). Unlike toggle
+    // clips, null playingPatternId must not fall back to activePatternId or
+    // pressing Play would trigger the pattern with no hold — use the ▶ button.
+    if (track.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD && !track.holdActive) return null;
+    return getActivePattern(track);
+  }
   // Hold-mode clips only sound while pointer-down (holdActive). Unlike toggle
   // clips, null playingPatternId must not fall back to activePatternId or
-  // pressing Play in Live mode would trigger the edited pattern with no hold.
+  // pressing Play would trigger the pattern with no hold — in Live mode and in
+  // the piano-roll editor alike (use the ▶ hold button to preview those clips).
   if (track.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD && !track.holdActive) return null;
+  if (track.playingPatternId === STOPPED_PATTERN) return null;
   const id = track.playingPatternId ?? track.activePatternId;
   return track.patterns.find((p) => p.id === id) ?? track.patterns[0];
 }
@@ -380,14 +392,21 @@ export function trackLoopEndBeat(track) {
   return patternLoopEndBeat(getActivePattern(track));
 }
 
-export function trackPlayingLoopEndBeat(track, { useLiveLaunch = true } = {}) {
-  return patternLoopEndBeat(getPlayingPattern(track, { useLiveLaunch }));
+export function trackPlayingLoopEndBeat(track, { useLiveLaunch = true, soloPreview = null } = {}) {
+  return patternLoopEndBeat(getPlayingPattern(track, { useLiveLaunch, soloPreview }));
 }
 
-export function projectLoopEndBeat(tracks, { forPlayback = false, useLiveLaunch = true } = {}) {
+export function projectLoopEndBeat(tracks, { forPlayback = false, useLiveLaunch = true, soloPreview = null } = {}) {
   if (!tracks?.length) return 4;
+  if (forPlayback && soloPreview && !useLiveLaunch) {
+    const track = tracks.find((t) => t.id === soloPreview.trackId);
+    const pattern = track?.patterns?.find((p) => p.id === soloPreview.patternId);
+    return patternLoopEndBeat(pattern) || 4;
+  }
   const endBeat =
-    forPlayback && useLiveLaunch ? (t) => trackPlayingLoopEndBeat(t, { useLiveLaunch }) : trackLoopEndBeat;
+    forPlayback && useLiveLaunch
+      ? (t) => trackPlayingLoopEndBeat(t, { useLiveLaunch, soloPreview })
+      : trackLoopEndBeat;
   return Math.max(...tracks.map(endBeat));
 }
 
@@ -407,6 +426,8 @@ export function createProject() {
     markerBeat: null,
     // User-drawn loop region on the timeline; null falls back to the full pattern length.
     loopRegion: null,
+    // Roll-view ▶ preview — { trackId, patternId } or null; not persisted.
+    soloPreview: null,
     tracks: [
       createDrumTrack('Drums 1', TRACK_ACCENT_COLORS[3], 16),
       createMidiTrack('Synth 1', TRACK_ACCENT_COLORS[1], 32),

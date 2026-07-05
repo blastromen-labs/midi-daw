@@ -18,6 +18,7 @@
           :midi-inputs="midiInputs"
           :marker-beat="project.markerBeat"
           :loop-region="project.loopRegion"
+          :solo-preview="project.soloPreview"
           @update-notes="updateNotes"
           @select-track="activeTrackId = $event"
           @select-pattern="selectPattern"
@@ -43,6 +44,7 @@
           @view-mode-change="viewMode = $event"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
+          @preview-pattern="onPreviewPattern"
           @select-song="selectSong"
           @rename-song="renameSong"
           @create-song="createSong"
@@ -374,9 +376,11 @@ function onLoadSongFileError(message) {
 // Transport loop spans the longest track pattern (or a user-drawn loop region)
 // so shorter patterns can repeat independently inside the scheduler.
 function syncClockLoopFromTracks() {
+  const useLiveLaunch = project.sessionView === 'live';
   const patternEndBeat = projectLoopEndBeat(project.tracks, {
     forPlayback: playing.value,
-    useLiveLaunch: project.sessionView === 'live',
+    useLiveLaunch,
+    soloPreview: useLiveLaunch ? null : project.soloPreview,
   });
   const region = project.loopRegion;
   const loopStartBeat = region ? region.startBeat : 0;
@@ -490,9 +494,11 @@ watch(
     projectLoopEndBeat(project.tracks, {
       forPlayback: playing.value,
       useLiveLaunch: project.sessionView === 'live',
+      soloPreview: project.sessionView === 'live' ? null : project.soloPreview,
     }),
     playing.value,
     project.sessionView,
+    project.soloPreview,
   ],
   () => syncClockLoopFromTracks(),
   { immediate: true }
@@ -516,9 +522,17 @@ function togglePlay(fromBeat) {
   }
 }
 
-function startPlayback(fromBeat) {
+function startPlayback(fromBeat, { keepSoloPreview = false } = {}) {
   if (project.syncMode === 'external') return;
-  if (viewMode.value === 'live') engageLivePlayback();
+  if (!keepSoloPreview) project.soloPreview = null;
+  if (viewMode.value === 'live') {
+    engageLivePlayback();
+  } else {
+    // Roll-view transport play must not inherit a stale sessionView === 'live'
+    // from an earlier Live session or hold preview — that would re-arm Live
+    // launch semantics and can sound Hold-mode tracks without a hold press.
+    project.sessionView = 'roll';
+  }
   playback.setProject(project);
   transport.bpm = project.bpm;
   syncClockLoopFromTracks();
@@ -530,6 +544,7 @@ function stopPlayback() {
   if (project.syncMode === 'external') return; // Stop is driven by the incoming clock
   playback.stop();
   playing.value = false;
+  project.soloPreview = null;
   project.sessionView = 'roll';
 }
 
@@ -599,6 +614,9 @@ function deletePattern(trackId, patternId) {
     track.pendingPatternId = null;
     track.pendingLaunchBeat = null;
   }
+  if (project.soloPreview?.trackId === trackId && project.soloPreview?.patternId === patternId) {
+    project.soloPreview = null;
+  }
   for (const t of project.tracks) {
     if (t.ghostTrackId === trackId && t.ghostPatternId === patternId) {
       t.ghostTrackId = null;
@@ -639,6 +657,7 @@ function onHoldPatternDown(trackId, patternId) {
   const track = findTrack(trackId);
   if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.HOLD) return;
 
+  project.soloPreview = null;
   engageLivePlayback();
   if (!playing.value) {
     startPlayback();
@@ -653,6 +672,26 @@ function onHoldPatternUp(trackId) {
   const track = findTrack(trackId);
   if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.HOLD) return;
   holdPatternUp(track);
+}
+
+// Roll-view ▶ on Loop-mode patterns — solo preview for one pattern without
+// sounding every track from the main transport Play button.
+function onPreviewPattern(trackId, patternId) {
+  const track = findTrack(trackId);
+  if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.TOGGLE) return;
+
+  const current = project.soloPreview;
+  if (current?.trackId === trackId && current?.patternId === patternId) {
+    project.soloPreview = null;
+    if (playing.value) stopPlayback();
+    return;
+  }
+
+  project.soloPreview = { trackId, patternId };
+  syncClockLoopFromTracks();
+  if (!playing.value) {
+    startPlayback(undefined, { keepSoloPreview: true });
+  }
 }
 
 function editPattern(trackId, patternId) {

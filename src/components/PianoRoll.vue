@@ -130,6 +130,7 @@
       :tracks="tracks"
       :track="activeTrack"
       :playing="playing"
+      :solo-preview="soloPreview"
       :midi-io-enabled="activeTrack?.kind === 'midi'"
       @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
       @add-pattern="emit('add-pattern', activeTrackId)"
@@ -142,6 +143,7 @@
       @ghost-source-change="(changes) => emit('update-track', activeTrackId, changes)"
       @hold-pattern-down="(id) => emit('hold-pattern-down', activeTrackId, id)"
       @hold-pattern-up="() => emit('hold-pattern-up', activeTrackId)"
+      @preview-pattern="(id) => emit('preview-pattern', activeTrackId, id)"
     />
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -404,6 +406,7 @@ const props = defineProps({
   midiInputs: { type: Array, default: () => [] },
   markerBeat: { type: Number, default: null },
   loopRegion: { type: Object, default: null },
+  soloPreview: { type: Object, default: null },
 });
 
 const liveBeat = usePlayheadBeat();
@@ -440,6 +443,7 @@ const emit = defineEmits([
   'view-mode-change',
   'hold-pattern-down',
   'hold-pattern-up',
+  'preview-pattern',
   'select-song',
   'rename-song',
   'create-song',

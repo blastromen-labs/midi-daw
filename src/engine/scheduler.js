@@ -58,8 +58,8 @@ const MAX_LATE_NOTE_GRACE_SEC = 0.15;
 // Splitting the window lets the incoming pattern be scheduled ahead of time,
 // exactly like the outgoing one, so both sides of the switch get the same
 // timing guarantees.
-function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch) {
-  const currentPattern = getPlayingPattern(track, { useLiveLaunch });
+function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, soloPreview) {
+  const currentPattern = getPlayingPattern(track, { useLiveLaunch, soloPreview });
   const launchBeat = track.pendingLaunchBeat;
 
   if (
@@ -246,6 +246,7 @@ export class PlaybackEngine {
     const clock = this._clock;
     const absBeat = clock.getAbsoluteBeat();
     const useLiveLaunch = this.project.sessionView === 'live';
+    const soloPreview = useLiveLaunch ? null : this.project.soloPreview ?? null;
     // Promote any Live-mode launches whose bar has arrived before scheduling
     // this pass's notes, so playingPatternId/pendingPatternId (and the Live
     // view's queued/playing indicators) flip at the right time. The note
@@ -270,7 +271,8 @@ export class PlaybackEngine {
         track,
         absBeat,
         endAbsBeat,
-        useLiveLaunch
+        useLiveLaunch,
+        soloPreview
       )) {
         if (!pattern || rangeEnd < rangeStart) continue;
 

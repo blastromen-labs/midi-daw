@@ -184,11 +184,14 @@
     <!-- Pattern selector — one row of patterns for the active track. -->
     <PatternBar
       :track="activeTrack"
+      :midi-io-enabled="activeTrack?.kind === 'midi'"
       @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
       @add-pattern="emit('add-pattern', activeTrackId)"
       @rename-pattern="(id, name) => emit('rename-pattern', activeTrackId, id, name)"
       @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
       @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
+      @import-midi="onImportMidi"
+      @export-midi="onExportMidi"
     />
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -372,6 +375,12 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, BEATS_PER_BAR, getActivePattern, patternLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
+import {
+  downloadMidiFile,
+  exportPatternToMidi,
+  importPatternFromMidi,
+  readMidiFile,
+} from '../engine/midiFile.js';
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
@@ -468,8 +477,8 @@ const PINCH_ZOOM_SENSITIVITY = 0.4;
 // either track kind without a second set of min/max pixel constants.
 const MIN_ROW_ZOOM = 0.25;
 const MAX_ROW_ZOOM = 3;
-const LOW_PITCH = 36;
-const HIGH_PITCH = 84;
+const LOW_PITCH = 0;
+const HIGH_PITCH = 127;
 
 const snapValues = SNAP_VALUES;
 const snap = ref(0.25);
@@ -770,6 +779,42 @@ function getNotes() {
 function emitNotes(notes) {
   if (!activePattern.value) return;
   emit('update-notes', props.activeTrackId, activePattern.value.id, notes);
+}
+
+async function onImportMidi(file) {
+  if (!activePattern.value || activeTrack.value?.kind !== 'midi') return;
+
+  const existing = getNotes();
+  if (existing.length && !window.confirm('Replace notes in the active pattern with the imported MIDI file?')) {
+    return;
+  }
+
+  try {
+    const buffer = await readMidiFile(file);
+    const { notes, patternSteps, bpm } = importPatternFromMidi(buffer);
+
+    emit('update-pattern', props.activeTrackId, activePattern.value.id, { patternSteps });
+    emitNotes(notes);
+    selectedNoteIds.value = new Set();
+
+    if (bpm != null && Number.isFinite(bpm)) {
+      emit('bpm-change', Math.round(bpm));
+    }
+  } catch (err) {
+    console.error('MIDI import failed:', err);
+    window.alert('Could not read that MIDI file.');
+  }
+}
+
+function onExportMidi() {
+  if (!activePattern.value || !activeTrack.value || activeTrack.value.kind !== 'midi') return;
+
+  const data = exportPatternToMidi(activePattern.value, {
+    bpm: props.bpm ?? 120,
+    trackName: activeTrack.value.name,
+  });
+  const filename = `${activeTrack.value.name}-${activePattern.value.name}`;
+  downloadMidiFile(data, filename);
 }
 
 function rowIndexOf(key) {

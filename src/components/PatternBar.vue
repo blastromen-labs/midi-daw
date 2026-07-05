@@ -73,6 +73,32 @@
       </button>
     </div>
 
+    <div v-if="midiIoEnabled" class="flex items-center gap-0.5 flex-shrink-0 border-l border-line/60 pl-1.5 ml-0.5">
+      <input
+        ref="midiFileInputRef"
+        type="file"
+        accept=".mid,.midi,audio/midi,audio/x-midi"
+        class="hidden"
+        @change="onMidiFileSelected"
+      />
+      <button
+        type="button"
+        class="px-1.5 py-0.5 rounded text-[10px] leading-none bg-surface-hover hover:bg-surface-active text-muted hover:text-white"
+        title="Load MIDI file into the active pattern"
+        @click="triggerMidiImport"
+      >
+        Load
+      </button>
+      <button
+        type="button"
+        class="px-1.5 py-0.5 rounded text-[10px] leading-none bg-surface-hover hover:bg-surface-active text-muted hover:text-white"
+        title="Save the active pattern as a MIDI file"
+        @click="emit('export-midi')"
+      >
+        Save
+      </button>
+    </div>
+
     <Teleport to="body">
       <div
         v-if="colorPickerId && colorPickerAnchor"
@@ -120,6 +146,8 @@ import { TRACK_ACCENT_COLORS, BAR_LENGTH_OPTIONS } from '../models/project.js';
 
 const props = defineProps({
   track: { type: Object, default: null },
+  /** Show Load/Save MIDI controls (MIDI synth tracks only). */
+  midiIoEnabled: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -128,7 +156,11 @@ const emit = defineEmits([
   'rename-pattern',
   'update-pattern',
   'delete-pattern',
+  'import-midi',
+  'export-midi',
 ]);
+
+const midiFileInputRef = ref(null);
 
 const accentColors = TRACK_ACCENT_COLORS;
 const renamingId = ref(null);
@@ -159,6 +191,16 @@ function selectPattern(patternId) {
 
 function addPattern() {
   emit('add-pattern');
+}
+
+function triggerMidiImport() {
+  midiFileInputRef.value?.click();
+}
+
+function onMidiFileSelected(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (file) emit('import-midi', file);
 }
 
 function startRename(patternId) {

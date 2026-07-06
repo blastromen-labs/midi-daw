@@ -786,8 +786,11 @@ function blocksGridNativeScroll() {
   return editTool.value !== 'zoom';
 }
 
-function isGridContentTouchTarget(target) {
-  return !!target && !!gridContentRef.value?.contains(target);
+// Only the note grid canvas needs scroll suppression during edit touches — the
+// drum velocity strip (pad selector, lane, resize handle) lives in the same
+// scroll content but must keep native tap/click behavior on tablet.
+function isGridCanvasTouchTarget(target) {
+  return !!target && !!gridCanvas.value?.contains(target);
 }
 
 function isGridEditDrag() {
@@ -806,7 +809,7 @@ function isGridEditDrag() {
 function onScrollRefTouchStartCapture(e) {
   if (!blocksGridNativeScroll()) return;
   if (e.touches.length !== 1) return;
-  if (!isGridContentTouchTarget(e.target)) return;
+  if (!isGridCanvasTouchTarget(e.target)) return;
 
   activeGridTouchId = e.touches[0].identifier;
   const container = scrollRef.value;

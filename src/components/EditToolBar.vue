@@ -18,6 +18,7 @@
         <div
           v-if="open"
           ref="panelRef"
+          data-piano-roll-toolbar-popover
           class="fixed z-50 w-56 bg-panel border border-line rounded-md shadow-lg overflow-hidden py-1"
           :style="panelStyle"
         >

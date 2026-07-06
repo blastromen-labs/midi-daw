@@ -2866,11 +2866,17 @@ window.addEventListener('keydown', onKeyDown);
 
 // Clicking anywhere outside the piano roll (another panel, the transport bar,
 // blank page background) clears the current note selection. Clicks inside —
-// including the toolbar, so changing Snap/Length doesn't deselect — are left
-// to the piano roll's own handlers.
+// including the toolbar and the teleported tool picker — are left to the
+// piano roll's own handlers.
+function isPianoRollChromeTarget(target) {
+  if (!target) return false;
+  if (rootRef.value?.contains(target)) return true;
+  return !!target.closest?.('[data-piano-roll-toolbar-popover]');
+}
+
 function onDocumentMouseDown(e) {
   if (selectedNoteIds.value.size === 0) return;
-  if (rootRef.value && !rootRef.value.contains(e.target)) {
+  if (!isPianoRollChromeTarget(e.target)) {
     clearSelection();
   }
 }

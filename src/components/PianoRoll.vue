@@ -227,7 +227,6 @@
     <div class="flex flex-1 min-h-0 overflow-hidden relative" ref="containerRef">
       <!-- Piano keys (MIDI tracks) / pad list (drum tracks) -->
       <div
-        v-show="!isDrumTrack || drumControlsVisible"
         class="flex-shrink-0 bg-panel border-r border-line"
         :class="isDrumTrack ? 'overflow-x-hidden overflow-y-hidden' : 'overflow-hidden'"
         :style="{ width: keysWidth + 'px' }"
@@ -248,7 +247,7 @@
           @touchend="onPreviewTouchEnd"
           @touchcancel="onPreviewTouchEnd"
         ></canvas>
-        <div v-else-if="activeTrack" :style="{ height: scrollContentHeight + 'px' }">
+        <div v-else-if="activeTrack && drumControlsVisible" :style="{ height: scrollContentHeight + 'px' }">
           <DrumPadList
             :pads="activeTrack.pads"
             :row-height="rowHeight"
@@ -270,6 +269,26 @@
               v-if="velocityPadId"
               v-model="velocityPadId"
               :pads="activeTrack.pads"
+            />
+          </div>
+        </div>
+        <div
+          v-else-if="activeTrack && isDrumTrack"
+          class="flex flex-col"
+          :style="{ height: scrollContentHeight + 'px' }"
+        >
+          <div class="flex-1 min-h-0"></div>
+          <div
+            class="border-t border-line bg-panel flex items-center justify-center select-none px-0.5"
+            :style="{ height: drumVelocityBlockHeight + 'px' }"
+            @mousedown="onVelocityHeaderMouseDown"
+            @touchstart="onVelocityHeaderMouseDown"
+          >
+            <DrumVelocityPadSelect
+              v-if="velocityPadId"
+              v-model="velocityPadId"
+              :pads="activeTrack.pads"
+              compact
             />
           </div>
         </div>
@@ -336,20 +355,6 @@
               :style="{ height: drumVelocityBlockHeight + 'px' }"
             >
               <div class="flex h-full w-full">
-                <div
-                  v-if="!drumControlsVisible"
-                  class="flex-shrink-0 border-r border-line bg-panel flex items-center justify-center select-none px-0.5"
-                  :style="{ width: DRUM_TOGGLE_STRIP_WIDTH + 'px' }"
-                  @mousedown="onVelocityHeaderMouseDown"
-                  @touchstart="onVelocityHeaderMouseDown"
-                >
-                  <DrumVelocityPadSelect
-                    v-if="velocityPadId && activeTrack"
-                    v-model="velocityPadId"
-                    :pads="activeTrack.pads"
-                    compact
-                  />
-                </div>
                 <div class="flex flex-col flex-1 min-w-0 h-full">
                   <div
                     class="flex-shrink-0 h-2 bg-line hover:bg-line-light cursor-row-resize flex items-center justify-center transition-colors"
@@ -654,16 +659,14 @@ const velocityLaneColorKey = computed(() =>
   isDrumTrack.value ? velocityLaneColor.value : drumPadColorsKey.value
 );
 const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
-const keysWidth = computed(() => {
-  if (isDrumTrack.value) return drumControlsVisible.value ? DRUM_KEYS_WIDTH : 0;
-  return KEY_WIDTH;
-});
 const leftGutterWidth = computed(() => {
   if (isDrumTrack.value) {
     return drumControlsVisible.value ? DRUM_KEYS_WIDTH : DRUM_TOGGLE_STRIP_WIDTH;
   }
   return KEY_WIDTH;
 });
+// Must match leftGutterWidth so the marker timeline and grid share the same horizontal origin.
+const keysWidth = computed(() => leftGutterWidth.value);
 const VELOCITY_RESIZE_HANDLE_HEIGHT = 8;
 const DRUM_VELOCITY_PAD_SELECTOR_HEIGHT = 28;
 // Resize handle + lane (when expanded). Drum velocity scrolls with the grid so

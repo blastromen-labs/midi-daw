@@ -19,7 +19,7 @@
         <span class="flex-1 min-w-0 truncate text-left text-[10px] font-semibold">
           {{ activePad?.name ?? 'Pad' }}
         </span>
-        <span class="text-[8px] text-muted-dim flex-shrink-0" aria-hidden="true">▾</span>
+        <span class="text-[8px] text-muted-dim flex-shrink-0" aria-hidden="true">{{ opensUpward ? '▴' : '▾' }}</span>
       </template>
     </button>
 
@@ -27,8 +27,10 @@
       <div
         v-if="open"
         ref="panelRef"
-        class="fixed z-50 min-w-[9rem] max-w-[14rem] bg-panel border border-line rounded-md shadow-lg overflow-hidden py-1"
+        class="fixed z-50 min-w-[9rem] max-w-[14rem] bg-panel border border-line rounded-md shadow-lg py-1 overflow-y-auto overscroll-contain touch-pan-y"
         :style="panelStyle"
+        @mousedown.stop
+        @touchstart.stop
       >
         <button
           v-for="pad in pads"
@@ -52,6 +54,12 @@
 <script setup>
 import { ref, computed, nextTick, onUnmounted } from 'vue';
 
+const DROPDOWN_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+const ESTIMATED_ITEM_HEIGHT = 28;
+const MIN_PANEL_HEIGHT = 56;
+const MAX_PANEL_HEIGHT = 280;
+
 const props = defineProps({
   pads: { type: Array, default: () => [] },
   modelValue: { type: String, default: null },
@@ -61,6 +69,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue']);
 
 const open = ref(false);
+const opensUpward = ref(false);
 const rootRef = ref(null);
 const triggerRef = ref(null);
 const panelRef = ref(null);
@@ -68,16 +77,65 @@ const panelStyle = ref({});
 
 const activePad = computed(() => props.pads.find((p) => p.id === props.modelValue) ?? null);
 
+function estimatePanelHeight() {
+  return Math.min(props.pads.length * ESTIMATED_ITEM_HEIGHT + 8, MAX_PANEL_HEIGHT);
+}
+
 function updatePosition() {
-  const el = triggerRef.value;
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  panelStyle.value = { top: `${rect.bottom + 4}px`, left: `${rect.left}px` };
+  const trigger = triggerRef.value;
+  if (!trigger) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const viewportH = window.innerHeight;
+  const viewportW = window.innerWidth;
+  const panel = panelRef.value;
+  const measuredHeight = panel?.offsetHeight || estimatePanelHeight();
+  const preferredHeight = Math.min(measuredHeight, MAX_PANEL_HEIGHT);
+
+  const spaceBelow = Math.max(0, viewportH - rect.bottom - VIEWPORT_MARGIN);
+  const spaceAbove = Math.max(0, rect.top - VIEWPORT_MARGIN);
+
+  // Open upward when there isn't room below and there's more space above.
+  opensUpward.value =
+    spaceBelow < preferredHeight && spaceAbove > spaceBelow;
+
+  const maxHeight = Math.max(
+    MIN_PANEL_HEIGHT,
+    Math.min(MAX_PANEL_HEIGHT, opensUpward.value ? spaceAbove - DROPDOWN_GAP : spaceBelow - DROPDOWN_GAP)
+  );
+
+  const panelWidth = panel?.offsetWidth ?? 144;
+  let left = rect.left;
+  left = Math.min(left, viewportW - VIEWPORT_MARGIN - panelWidth);
+  left = Math.max(VIEWPORT_MARGIN, left);
+
+  if (opensUpward.value) {
+    panelStyle.value = {
+      left: `${left}px`,
+      bottom: `${viewportH - rect.top + DROPDOWN_GAP}px`,
+      top: 'auto',
+      maxHeight: `${maxHeight}px`,
+      WebkitOverflowScrolling: 'touch',
+    };
+    return;
+  }
+
+  panelStyle.value = {
+    left: `${left}px`,
+    top: `${rect.bottom + DROPDOWN_GAP}px`,
+    bottom: 'auto',
+    maxHeight: `${maxHeight}px`,
+    WebkitOverflowScrolling: 'touch',
+  };
 }
 
 function toggleOpen() {
   open.value = !open.value;
-  if (open.value) nextTick(updatePosition);
+  if (!open.value) return;
+  nextTick(() => {
+    updatePosition();
+    nextTick(updatePosition);
+  });
 }
 
 function selectPad(padId) {

@@ -87,17 +87,17 @@
       </ToolbarField>
 
       <ToolbarField label="Fit" title="Fit pattern width to screen">
-        <button
-          type="button"
-          class="daw-toolbar-icon-btn bg-surface-hover hover:bg-surface-active text-muted transition-colors"
+        <select
+          v-model="fitViewMode"
+          class="flex-shrink-0"
+          :class="compactNavbar ? 'toolbar-compact toolbar-compact--dense w-[2.5rem] min-w-[2.5rem]' : 'text-xs py-0.5'"
           title="Fit pattern width to screen"
-          @click="fitBeatWidthToViewport"
+          @change="fitBeatWidthToViewport"
         >
-          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M4 9V5H8M20 9V5h-4M4 15v4h4M20 15v4h-4" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M9 12h6" stroke-linecap="round" />
-          </svg>
-        </button>
+          <option v-for="opt in FIT_VIEW_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ fitViewOptionLabel(opt, compactNavbar) }}
+          </option>
+        </select>
       </ToolbarField>
 
       <div class="daw-toolbar-divider"></div>
@@ -601,7 +601,14 @@ const LOW_PITCH = 0;
 const HIGH_PITCH = 127;
 
 const snapValues = SNAP_VALUES;
+const FIT_VIEW_OPTIONS = [
+  { value: '1bar', label: '1st bar' },
+  { value: '2bars', label: '2 bars' },
+  { value: 'lastbar', label: 'Last bar' },
+  { value: 'all', label: 'All' },
+];
 const snap = ref(0.25);
+const fitViewMode = ref('all');
 // Independent from `snap` (grid/placement resolution) so you can e.g. place
 // 1/32-length notes while snapping their position to a 1/16 grid.
 const noteLength = ref(0.25);
@@ -2162,16 +2169,45 @@ function setHorizontalScrollLeft(left) {
   }
 }
 
+function fitViewOptionLabel(opt, compact) {
+  if (!compact) return opt.label;
+  if (opt.value === '1bar') return '1st';
+  if (opt.value === '2bars') return '2';
+  if (opt.value === 'lastbar') return 'Last';
+  return 'All';
+}
+
+function getFitViewRange(mode, loopBeats) {
+  if (loopBeats <= 0) return { startBeat: 0, fitBeats: 0 };
+  switch (mode) {
+    case '1bar':
+      return { startBeat: 0, fitBeats: Math.min(BEATS_PER_BAR, loopBeats) };
+    case '2bars':
+      return { startBeat: 0, fitBeats: Math.min(2 * BEATS_PER_BAR, loopBeats) };
+    case 'lastbar': {
+      const lastBarIndex = Math.floor((loopBeats - 1) / BEATS_PER_BAR);
+      const startBeat = lastBarIndex * BEATS_PER_BAR;
+      return { startBeat, fitBeats: Math.min(BEATS_PER_BAR, loopBeats - startBeat) };
+    }
+    case 'all':
+    default:
+      return { startBeat: 0, fitBeats: loopBeats };
+  }
+}
+
 function fitBeatWidthToViewport() {
   const container = scrollRef.value;
   const loopBeats = activeLoopEndBeat.value;
   const viewportWidth = container?.clientWidth ?? 0;
   if (!container || loopBeats <= 0 || viewportWidth <= 0) return;
 
-  const idealWidth = viewportWidth / loopBeats;
+  const { startBeat, fitBeats } = getFitViewRange(fitViewMode.value, loopBeats);
+  if (fitBeats <= 0) return;
+
+  const idealWidth = viewportWidth / fitBeats;
   const newWidth = Math.min(MAX_BEAT_WIDTH, Math.max(MIN_BEAT_WIDTH, idealWidth));
   beatWidth.value = newWidth;
-  nextTick(() => setHorizontalScrollLeft(0));
+  nextTick(() => setHorizontalScrollLeft(startBeat * newWidth));
 }
 
 function maybeAutoFitBeatWidth() {

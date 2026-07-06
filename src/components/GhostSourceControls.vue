@@ -1,6 +1,6 @@
 <template>
   <ToolbarField label="Ghost">
-    <div class="flex items-center gap-1">
+    <div class="flex items-center gap-0.5">
       <select
         :value="track?.ghostTrackId ?? ''"
         class="text-[11px] max-w-24 py-0.5 bg-surface border border-line-light rounded"

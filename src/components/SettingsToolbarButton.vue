@@ -2,7 +2,7 @@
   <div class="settings-toolbar-button flex-shrink-0 flex flex-col items-center gap-px">
     <button
       type="button"
-      class="w-7 h-7 rounded flex items-center justify-center text-muted hover:text-white bg-surface-hover hover:bg-surface-active flex-shrink-0"
+      class="daw-toolbar-icon-btn text-muted hover:text-white bg-surface-hover hover:bg-surface-active"
       title="Settings"
       @click="open = true"
     >

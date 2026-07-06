@@ -3,7 +3,7 @@
     <div class="flex items-center gap-0.5">
       <button
         type="button"
-        class="w-7 h-7 rounded flex items-center justify-center text-[9px] leading-none flex-shrink-0 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+        class="daw-toolbar-icon-btn text-[9px] leading-none transition-colors disabled:opacity-30 disabled:pointer-events-none"
         :class="activePattern ? launchButtonClass(activePattern) : 'bg-surface-hover text-muted'"
         :title="activePattern ? launchButtonTitle(activePattern) : 'No pattern'"
         :disabled="!activePattern"
@@ -17,7 +17,7 @@
 
       <button
         ref="triggerRef"
-        class="flex items-center gap-1.5 pl-1.5 pr-1.5 py-0.5 rounded text-sm font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[7.5rem]"
+        class="daw-toolbar-menu-btn"
         @click="toggleOpen"
       >
         <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: activePattern?.color }"></span>
@@ -27,7 +27,7 @@
 
       <button
         type="button"
-        class="w-7 h-7 rounded flex items-center justify-center text-base leading-none text-muted hover:text-white hover:bg-surface-hover disabled:opacity-30 disabled:pointer-events-none flex-shrink-0"
+        class="daw-toolbar-icon-btn text-base leading-none text-muted hover:text-white hover:bg-surface-hover disabled:opacity-30 disabled:pointer-events-none"
         title="Edit pattern"
         :disabled="!activePattern"
         @click="startEditActive"

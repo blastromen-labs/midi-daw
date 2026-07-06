@@ -2,36 +2,10 @@
   <div class="live-view flex flex-col h-full bg-panel rounded-lg border border-line overflow-hidden">
     <!-- Minimal transport bar — mirrors the piano roll's toolbar just enough
          to jam without switching views (see ToolbarField usage there). -->
-    <div class="flex items-end gap-2 px-2 py-1 bg-surface border-b border-line flex-shrink-0 overflow-x-auto">
-      <SettingsToolbarButton
-        :sync-mode="syncMode"
-        :clock-input-id="clockInputId"
-        :send-midi-clock="sendMidiClock"
-        :clock-output-id="clockOutputId"
-        :midi-inputs="midiInputs"
-        :midi-outputs="midiOutputs"
-        @sync-mode-change="(v) => $emit('sync-mode-change', v)"
-        @clock-input-change="(v) => $emit('clock-input-change', v)"
-        @toggle-clock="$emit('toggle-clock')"
-        @clock-output-change="(v) => $emit('clock-output-change', v)"
-      />
-
-      <SongMenu
-        :songs="songs"
-        :active-song-id="activeSongId"
-        @select="(id) => $emit('select-song', id)"
-        @rename="(id, name) => $emit('rename-song', id, name)"
-        @create="(name) => $emit('create-song', name)"
-        @save-file="$emit('save-song-file')"
-        @load-file="(text) => $emit('load-song-file', text)"
-        @load-file-error="(msg) => $emit('load-song-file-error', msg)"
-      />
-
-      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
-
+    <div class="daw-toolbar">
       <ToolbarField v-if="syncMode !== 'external'">
         <button
-          class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+          class="daw-toolbar-icon-btn rounded-full text-xs font-bold transition-all"
           :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
           :title="playing ? 'Stop' : 'Play'"
           @click="$emit('toggle-play')"
@@ -45,7 +19,7 @@
           :value="bpm"
           min="40"
           max="300"
-          class="toolbar-compact w-[2.75rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
+          class="toolbar-compact w-[2.5rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
           title="BPM"
           @change="(e) => $emit('bpm-change', Number(e.target.value))"
         />
@@ -64,6 +38,30 @@
         label="Roll"
         title="Switch to the Piano Roll (Tab)"
         @click="$emit('view-mode-change', 'roll')"
+      />
+
+      <SongMenu
+        :songs="songs"
+        :active-song-id="activeSongId"
+        @select="(id) => $emit('select-song', id)"
+        @rename="(id, name) => $emit('rename-song', id, name)"
+        @create="(name) => $emit('create-song', name)"
+        @save-file="$emit('save-song-file')"
+        @load-file="(text) => $emit('load-song-file', text)"
+        @load-file-error="(msg) => $emit('load-song-file-error', msg)"
+      />
+
+      <SettingsToolbarButton
+        :sync-mode="syncMode"
+        :clock-input-id="clockInputId"
+        :send-midi-clock="sendMidiClock"
+        :clock-output-id="clockOutputId"
+        :midi-inputs="midiInputs"
+        :midi-outputs="midiOutputs"
+        @sync-mode-change="(v) => $emit('sync-mode-change', v)"
+        @clock-input-change="(v) => $emit('clock-input-change', v)"
+        @toggle-clock="$emit('toggle-clock')"
+        @clock-output-change="(v) => $emit('clock-output-change', v)"
       />
     </div>
 

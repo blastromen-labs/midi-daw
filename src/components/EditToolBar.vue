@@ -4,7 +4,7 @@
       <button
         ref="triggerRef"
         type="button"
-        class="flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[5.5rem]"
+        class="flex items-center gap-1 pl-1 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[4.75rem]"
         :title="activeTool.label"
         @click="toggleOpen"
       >
@@ -39,7 +39,7 @@
 
       <button
         type="button"
-        class="w-7 h-7 rounded flex items-center justify-center bg-surface-hover hover:bg-surface-active text-muted transition-colors"
+        class="daw-toolbar-icon-btn bg-surface-hover hover:bg-surface-active text-muted transition-colors"
         title="Select all notes (⌘A)"
         @click="$emit('select-all')"
       >
@@ -52,7 +52,7 @@
       </button>
       <button
         type="button"
-        class="w-7 h-7 rounded flex items-center justify-center transition-colors"
+        class="daw-toolbar-icon-btn transition-colors"
         :class="hasSelection
           ? 'bg-surface-hover hover:bg-surface-active text-muted'
           : 'bg-surface-hover/40 text-muted/30 cursor-not-allowed'"
@@ -67,7 +67,7 @@
       </button>
       <button
         type="button"
-        class="w-7 h-7 rounded flex items-center justify-center transition-colors"
+        class="daw-toolbar-icon-btn transition-colors"
         :class="hasClipboard
           ? 'bg-surface-hover hover:bg-surface-active text-muted'
           : 'bg-surface-hover/40 text-muted/30 cursor-not-allowed'"
@@ -84,7 +84,7 @@
       <button
         v-if="hasSelection"
         type="button"
-        class="w-7 h-7 rounded flex items-center justify-center bg-surface-hover hover:bg-surface-active text-red-400 transition-colors"
+        class="daw-toolbar-icon-btn bg-surface-hover hover:bg-surface-active text-red-400 transition-colors"
         title="Delete selection"
         @click="$emit('delete-selection')"
       >

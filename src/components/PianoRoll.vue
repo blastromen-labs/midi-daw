@@ -2,40 +2,14 @@
   <div ref="rootRef" class="piano-roll flex flex-col bg-panel rounded-lg border border-line overflow-hidden h-full">
     <!-- Toolbar — transport, song/track/pattern controls, snap/tools, and view toggle. -->
     <div
-      class="flex items-end gap-2 px-2 py-1 bg-surface border-b border-line flex-shrink-0 overflow-x-auto"
+      class="daw-toolbar"
       @mousedown="onToolbarMouseDown"
       @touchstart="onToolbarMouseDown"
     >
-      <SettingsToolbarButton
-        :sync-mode="syncMode"
-        :clock-input-id="clockInputId"
-        :send-midi-clock="sendMidiClock"
-        :clock-output-id="clockOutputId"
-        :midi-inputs="midiInputs"
-        :midi-outputs="midiOutputs"
-        @sync-mode-change="(v) => $emit('sync-mode-change', v)"
-        @clock-input-change="(v) => $emit('clock-input-change', v)"
-        @toggle-clock="$emit('toggle-clock')"
-        @clock-output-change="(v) => $emit('clock-output-change', v)"
-      />
-
-      <SongMenu
-        :songs="songs"
-        :active-song-id="activeSongId"
-        @select="(id) => $emit('select-song', id)"
-        @rename="(id, name) => $emit('rename-song', id, name)"
-        @create="(name) => $emit('create-song', name)"
-        @save-file="$emit('save-song-file')"
-        @load-file="(text) => $emit('load-song-file', text)"
-        @load-file-error="(msg) => $emit('load-song-file-error', msg)"
-      />
-
-      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
-
       <!-- Transport -->
       <ToolbarField v-if="syncMode !== 'external'">
         <button
-          class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+          class="daw-toolbar-icon-btn rounded-full text-xs font-bold transition-all"
           :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
           :title="playing ? 'Stop' : 'Play'"
           @click="onTogglePlay"
@@ -49,7 +23,7 @@
           :value="bpm"
           min="40"
           max="300"
-          class="toolbar-compact w-[2.75rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
+          class="toolbar-compact w-[2.5rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
           title="BPM"
           @change="(e) => $emit('bpm-change', Number(e.target.value))"
         />
@@ -62,7 +36,7 @@
         ></span>
       </ToolbarField>
 
-      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+      <div class="daw-toolbar-divider"></div>
 
       <!-- Track: selection dropdown, dedicated edit button, and add-new actions (TrackMenu.vue). -->
       <TrackMenu
@@ -76,7 +50,7 @@
       />
 
       <template v-if="activeTrack">
-        <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+        <div class="daw-toolbar-divider"></div>
 
         <PatternMenu
           :track="activeTrack"
@@ -102,7 +76,7 @@
         />
       </template>
 
-      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+      <div class="daw-toolbar-divider"></div>
 
       <!-- Note placement -->
       <ToolbarField label="Snap">
@@ -116,7 +90,7 @@
         </select>
       </ToolbarField>
 
-      <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+      <div class="daw-toolbar-divider"></div>
 
       <EditToolBar
         v-model="editTool"
@@ -134,6 +108,30 @@
         label="Live"
         title="Switch to the Live launch grid (Tab)"
         @click="$emit('view-mode-change', 'live')"
+      />
+
+      <SongMenu
+        :songs="songs"
+        :active-song-id="activeSongId"
+        @select="(id) => $emit('select-song', id)"
+        @rename="(id, name) => $emit('rename-song', id, name)"
+        @create="(name) => $emit('create-song', name)"
+        @save-file="$emit('save-song-file')"
+        @load-file="(text) => $emit('load-song-file', text)"
+        @load-file-error="(msg) => $emit('load-song-file-error', msg)"
+      />
+
+      <SettingsToolbarButton
+        :sync-mode="syncMode"
+        :clock-input-id="clockInputId"
+        :send-midi-clock="sendMidiClock"
+        :clock-output-id="clockOutputId"
+        :midi-inputs="midiInputs"
+        :midi-outputs="midiOutputs"
+        @sync-mode-change="(v) => $emit('sync-mode-change', v)"
+        @clock-input-change="(v) => $emit('clock-input-change', v)"
+        @toggle-clock="$emit('toggle-clock')"
+        @clock-output-change="(v) => $emit('clock-output-change', v)"
       />
     </div>
 
@@ -2273,19 +2271,26 @@ function drawKeys() {
   }
 }
 
+// Short pad label for note blocks — full names are shown in the pad list.
+function drumPadNoteLabel(name) {
+  return (name ?? '').slice(0, 2);
+}
+
 // Returns the label drawn inside a note: a MIDI note name for MIDI tracks,
-// the assigned pad's name for drum tracks (falling back to blank if the pad
-// was since removed).
+// the assigned pad's first two letters for drum tracks (falling back to blank
+// if the pad was since removed).
 function noteLabel(note) {
   if (!isDrumTrack.value) return noteName(note.pitch);
-  return activeTrack.value?.pads?.find((p) => p.id === note.pitch)?.name ?? '';
+  const name = activeTrack.value?.pads?.find((p) => p.id === note.pitch)?.name ?? '';
+  return drumPadNoteLabel(name);
 }
 
 function ghostNoteLabel(note) {
   const sourceTrack = ghostSource.value?.track;
   if (!sourceTrack) return '';
   if (sourceTrack.kind === 'drum') {
-    return sourceTrack.pads?.find((p) => p.id === note.pitch)?.name ?? '';
+    const name = sourceTrack.pads?.find((p) => p.id === note.pitch)?.name ?? '';
+    return drumPadNoteLabel(name);
   }
   return noteName(note.pitch);
 }

@@ -2,7 +2,7 @@
   <div class="song-menu flex-shrink-0 flex flex-col items-center gap-px" ref="rootRef">
     <button
       ref="triggerRef"
-      class="flex items-center gap-1.5 pl-1.5 pr-1.5 py-0.5 rounded text-sm font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[7.5rem]"
+      class="daw-toolbar-menu-btn"
       @click="toggleOpen"
     >
       <span class="truncate flex-1 min-w-0 text-left">{{ activeSong?.name ?? 'No song' }}</span>
@@ -132,7 +132,12 @@ function updatePosition() {
   const el = triggerRef.value;
   if (!el) return;
   const rect = el.getBoundingClientRect();
-  panelStyle.value = { top: rect.bottom + 4 + 'px', left: rect.left + 'px' };
+  const panelWidth = panelRef.value?.offsetWidth ?? 224;
+  const margin = 8;
+  // Anchor to the trigger's right edge so the menu stays on-screen in the toolbar.
+  let left = rect.right - panelWidth;
+  left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
+  panelStyle.value = { top: rect.bottom + 4 + 'px', left: left + 'px' };
 }
 
 function toggleOpen() {

@@ -88,6 +88,8 @@
       :initial="editorInitial"
       :midi-outputs="midiOutputs"
       @save="commitEditor"
+      @live-update="onEditorLiveUpdate"
+      @revert="onEditorRevert"
       @delete="confirmDelete"
       @cancel="closeEditor"
     />
@@ -197,6 +199,14 @@ function commitEditor(values) {
     emit('update-track', editorTrackId.value, values);
   }
   closeEditor();
+}
+
+function onEditorLiveUpdate(changes) {
+  if (editorTrackId.value) emit('update-track', editorTrackId.value, changes);
+}
+
+function onEditorRevert(changes) {
+  if (editorTrackId.value) emit('update-track', editorTrackId.value, changes);
 }
 
 function confirmDelete() {

@@ -139,10 +139,20 @@
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
     <div class="flex flex-shrink-0 border-b border-line bg-surface/90">
       <div
-        class="flex-shrink-0 border-r border-line/60 flex items-center"
-        :class="isDrumTrack && drumControlsVisible ? 'justify-end px-1' : 'justify-center'"
+        class="flex-shrink-0 border-r border-line/60 flex items-center gap-0.5 px-1 w-full justify-end"
         :style="{ width: leftGutterWidth + 'px' }"
       >
+        <div
+          v-if="isDrumTrack && activeTrack"
+          class="flex-1 min-w-0"
+        >
+          <VolumeSlider
+            wide
+            :model-value="activeTrack.volume ?? 1"
+            title="Drum track volume"
+            @update:model-value="onDrumTrackVolumeChange"
+          />
+        </div>
         <button
           v-if="isDrumTrack"
           type="button"
@@ -469,6 +479,7 @@ import GhostSourceControls from './GhostSourceControls.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
 import TransportToolbar from './TransportToolbar.vue';
 import TouchScrollbar from './TouchScrollbar.vue';
+import VolumeSlider from './VolumeSlider.vue';
 
 const PREVIEW_VELOCITY = 100;
 const RESIZE_HANDLE_PX = 6;
@@ -551,8 +562,8 @@ const ROW_HEIGHT = 20;
 const DRUM_ROW_HEIGHT = 36;
 const KEY_WIDTH = 48;
 const DRUM_KEYS_WIDTH = 288;
-// Narrow strip kept visible when pad controls are collapsed — holds the show/hide toggle.
-const DRUM_TOGGLE_STRIP_WIDTH = 32;
+// Narrow strip kept visible when pad controls are collapsed — track volume + show/hide toggle.
+const DRUM_TOGGLE_STRIP_WIDTH = 120;
 const DEFAULT_BEAT_WIDTH = 140;
 const MIN_BEAT_WIDTH = 20;
 const MAX_BEAT_WIDTH = 400;
@@ -1771,6 +1782,11 @@ function onRenamePad(padId, name) {
 
 function onUpdatePad(padId, changes) {
   emit('update-pad', props.activeTrackId, padId, changes);
+}
+
+function onDrumTrackVolumeChange(volume) {
+  if (!props.activeTrackId) return;
+  emit('update-track', props.activeTrackId, { volume });
 }
 
 // Actual deletion happens on mousedown/mousemove (see eraseNoteAt) so right-drag

@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div
       class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
-      @mousedown.self="emit('cancel')"
+      @mousedown.self="cancelEdit"
     >
       <div
         class="w-full max-w-sm bg-panel border border-line rounded-lg shadow-xl overflow-hidden"
@@ -16,7 +16,7 @@
             type="button"
             class="w-7 h-7 rounded flex items-center justify-center text-muted hover:text-white hover:bg-surface-hover"
             title="Close"
-            @click="emit('cancel')"
+            @click="cancelEdit"
           >
             ×
           </button>
@@ -82,7 +82,7 @@
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
               Volume — {{ Math.round(draft.volume * 100) }}%
             </label>
-            <VolumeSlider wide class="w-full" v-model="draft.volume" />
+            <VolumeSlider wide class="w-full" v-model="draft.volume" title="Drum track volume" />
           </section>
         </div>
 
@@ -120,7 +120,7 @@
             <button
               type="button"
               class="px-3 py-1.5 rounded text-xs text-muted hover:text-white hover:bg-surface-hover"
-              @click="emit('cancel')"
+              @click="cancelEdit"
             >
               Cancel
             </button>
@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { TRACK_ACCENT_COLORS, TRACK_CATEGORIES } from '../models/project.js';
 import VolumeSlider from './VolumeSlider.vue';
 
@@ -154,11 +154,13 @@ const props = defineProps({
   midiOutputs: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(['save', 'cancel', 'delete']);
+const emit = defineEmits(['save', 'cancel', 'delete', 'live-update', 'revert']);
 
 const accentColors = TRACK_ACCENT_COLORS;
 const trackCategories = TRACK_CATEGORIES;
 const confirmDelete = ref(false);
+const editorReady = ref(false);
+const initialSnapshot = ref(null);
 const titleId = `track-editor-${Math.random().toString(36).slice(2, 9)}`;
 
 const draft = reactive({
@@ -178,15 +180,29 @@ const heading = computed(() => {
 });
 
 function syncFromInitial() {
+  editorReady.value = false;
   draft.name = props.initial.name ?? '';
   draft.color = props.initial.color ?? accentColors[0];
   draft.category = props.initial.category ?? trackCategories[0];
   draft.midiOutputId = props.initial.midiOutputId ?? '';
   draft.midiChannel = props.initial.midiChannel ?? 0;
   draft.volume = props.initial.volume ?? 1;
+  initialSnapshot.value = { volume: draft.volume };
+  nextTick(() => {
+    editorReady.value = true;
+  });
 }
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
+
+// Push drum track volume to the project immediately so pattern playback hears it.
+watch(
+  () => draft.volume,
+  (volume) => {
+    if (!editorReady.value || props.kind !== 'drum') return;
+    emit('live-update', { volume });
+  },
+);
 
 function submit() {
   const name = draft.name.trim();
@@ -201,13 +217,20 @@ function submit() {
   });
 }
 
+function cancelEdit() {
+  if (props.kind === 'drum' && initialSnapshot.value) {
+    emit('revert', { ...initialSnapshot.value });
+  }
+  emit('cancel');
+}
+
 function onKeyDown(e) {
   if (e.key !== 'Escape') return;
   if (confirmDelete.value) {
     confirmDelete.value = false;
     return;
   }
-  emit('cancel');
+  cancelEdit();
 }
 
 onMounted(() => window.addEventListener('keydown', onKeyDown));

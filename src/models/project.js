@@ -519,9 +519,21 @@ export const SNAP_VALUES = [
   { label: '1/64', value: 0.0625 },
 ];
 
+/** Len menu — whole/half/quarter notes through 1/64, ordered 1, 2, 4, 8, … */
+export const NOTE_LENGTH_VALUES = [
+  { label: '1/1', value: BEATS_PER_BAR },
+  { label: '1/2', value: 2 },
+  { label: '1/4', value: 1 },
+  { label: '1/8', value: 0.5 },
+  { label: '1/16', value: 0.25 },
+  { label: '1/32', value: 0.125 },
+  { label: '1/64', value: 0.0625 },
+];
+
 /** Toolbar label for a snap option — compact mode drops the redundant "1/" prefix. */
 export function snapOptionLabel(entry, compact = false) {
   if (!compact) return entry.label;
+  if (!entry.label.startsWith('1/')) return entry.label;
   return entry.label.slice(2);
 }
 

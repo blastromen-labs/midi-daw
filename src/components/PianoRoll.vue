@@ -80,7 +80,7 @@
           :class="compactNavbar ? 'toolbar-compact toolbar-compact--dense w-[2.375rem] min-w-[2.375rem]' : 'text-xs py-0.5'"
           title="Note length — independent of Snap"
         >
-          <option v-for="s in snapValues" :key="s.value" :value="s.value">
+          <option v-for="s in noteLengthValues" :key="s.value" :value="s.value">
             {{ snapOptionLabel(s, compactNavbar) }}
           </option>
         </select>
@@ -478,7 +478,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapOptionLabel, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
+import { noteName, SNAP_VALUES, NOTE_LENGTH_VALUES, snapOptionLabel, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import {
@@ -611,6 +611,7 @@ const LOW_PITCH = 0;
 const HIGH_PITCH = 127;
 
 const snapValues = SNAP_VALUES;
+const noteLengthValues = NOTE_LENGTH_VALUES;
 const FIT_VIEW_OPTIONS = [
   { value: '1bar', label: '1st bar' },
   { value: '2bars', label: '2 bars' },
@@ -624,6 +625,9 @@ const fitViewMode = ref('all');
 const noteLength = ref(0.25);
 // Click-to-stamp duration for new notes only — does not change the Len control.
 const stampDuration = ref(null);
+watch(noteLength, () => {
+  stampDuration.value = null;
+});
 const beatWidth = ref(DEFAULT_BEAT_WIDTH);
 const rowZoom = ref(1);
 

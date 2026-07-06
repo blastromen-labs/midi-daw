@@ -459,7 +459,6 @@ const PINCH_ZOOM_SENSITIVITY = 0.4;
 const MOBILE_MULTI_PINCH_SENSITIVITY = 0.28;
 const LONG_PRESS_MS = 450;
 const DOUBLE_TAP_MS = 280;
-const DOUBLE_TAP_DISTANCE_PX = 24;
 // Vertical zoom is a multiplier on top of the base row height (20px MIDI /
 // 36px drum) rather than its own pixel range, so it scales sensibly for
 // either track kind without a second set of min/max pixel constants.
@@ -1155,6 +1154,7 @@ function onMobileMultiMouseDown(e) {
 
   if (existing) {
     eraseNoteAt(rawBeat, pitch);
+    drag.value = { type: 'erasePaint' };
     return;
   }
 
@@ -1173,6 +1173,7 @@ function onMobileMultiMouseDown(e) {
   emitNotes([...getNotes(), note]);
   clearSelection();
   startDrawPreview(note.pitch, note.velocity);
+  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
 }
 
 function onToolModeDown(e) {
@@ -1255,15 +1256,11 @@ function activePinchSensitivity() {
 }
 
 // Deferred empty-cell tap so a fast second tap can start marquee without placing two notes.
-let mobileTapDeferTimer = null;
 let mobileLastEmptyTap = null;
 let mobileTouchSession = null;
 
-function clearMobileTapDefer() {
-  if (mobileTapDeferTimer) {
-    clearTimeout(mobileTapDeferTimer);
-    mobileTapDeferTimer = null;
-  }
+function clearMobileLastEmptyTap() {
+  mobileLastEmptyTap = null;
 }
 
 function clearMobileTouchSession() {
@@ -1280,34 +1277,11 @@ function mobileTouchMoved(session, clientX, clientY) {
   return Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX;
 }
 
-function scheduleMobileEmptyTap(session) {
-  clearMobileTapDefer();
-  mobileLastEmptyTap = {
-    clientX: session.startClientX,
-    clientY: session.startClientY,
-    cellBeat: session.cellBeat,
-    pitch: session.pitch,
-    time: performance.now(),
-  };
-  mobileTapDeferTimer = setTimeout(() => {
-    mobileTapDeferTimer = null;
-    mobileLastEmptyTap = null;
-    const note = createNote(session.pitch, session.cellBeat, placementDuration(), 100);
-    emitNotes([...getNotes(), note]);
-    clearSelection();
-    startDrawPreview(note.pitch, note.velocity);
-  }, DOUBLE_TAP_MS);
-}
-
-function isMobileDoubleTapEmpty(point, cellBeat, pitch) {
+function isMobileDoubleTapNote(existing) {
   const prev = mobileLastEmptyTap;
-  if (!prev) return false;
-  const now = performance.now();
-  if (now - prev.time > DOUBLE_TAP_MS) return false;
-  if (prev.cellBeat !== cellBeat || prev.pitch !== pitch) return false;
-  const dx = point.clientX - prev.clientX;
-  const dy = point.clientY - prev.clientY;
-  return Math.hypot(dx, dy) <= DOUBLE_TAP_DISTANCE_PX;
+  if (!prev || !existing) return false;
+  if (existing.id !== prev.noteId) return false;
+  return performance.now() - prev.time <= DOUBLE_TAP_MS;
 }
 
 function startMobileLengthDraw(note) {
@@ -1319,13 +1293,13 @@ function startMobileLengthDraw(note) {
     anchorOrigDuration: note.duration,
     origDurations: new Map([[note.id, note.duration]]),
   };
-  mobileTouchSession = { ...mobileTouchSession, kind: 'lengthDraw', noteId: note.id };
+  if (mobileTouchSession) mobileTouchSession.kind = 'lengthDraw';
 }
 
 function onMobileMultiTouchStart(e) {
   if (e.touches.length >= 2) {
     e.preventDefault();
-    clearMobileTapDefer();
+    clearMobileLastEmptyTap();
     clearMobileTouchSession();
     drag.value = null;
     startPinch(e.touches);
@@ -1342,9 +1316,9 @@ function onMobileMultiTouchStart(e) {
   const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(toSyntheticMouseEvent(e, point));
   const existing = findNoteAt(rawBeat, pitch);
 
-  if (!existing && isMobileDoubleTapEmpty(point, cellBeat, pitch)) {
-    clearMobileTapDefer();
-    mobileLastEmptyTap = null;
+  if (existing && isMobileDoubleTapNote(existing)) {
+    clearMobileLastEmptyTap();
+    emitNotes(getNotes().filter((n) => n.id !== existing.id));
     mobileTouchSession = {
       kind: 'marquee',
       startClientX: point.clientX,
@@ -1361,6 +1335,7 @@ function onMobileMultiTouchStart(e) {
   }
 
   if (existing && selectedNoteIds.value.has(existing.id)) {
+    clearMobileLastEmptyTap();
     stampNoteDuration(existing);
     mobileTouchSession = {
       kind: 'moveSelected',
@@ -1378,64 +1353,61 @@ function onMobileMultiTouchStart(e) {
   }
 
   if (existing) {
+    clearMobileLastEmptyTap();
+    eraseNoteAt(rawBeat, pitch);
     mobileTouchSession = {
-      kind: 'noteTap',
+      kind: 'noteErase',
       startClientX: point.clientX,
       startClientY: point.clientY,
-      rawBeat,
-      pitch,
-      noteId: existing.id,
     };
+    drag.value = { type: 'erasePaint' };
     return;
   }
 
-  mobileTouchSession = {
-    kind: 'emptyTap',
-    startClientX: point.clientX,
-    startClientY: point.clientY,
+  // Empty cell — place immediately and paint-drag like the pen tool; hold still
+  // to switch into length draw after LONG_PRESS_MS.
+  clearMobileLastEmptyTap();
+  const note = createNote(pitch, cellBeat, placementDuration(), 100);
+  emitNotes([...getNotes(), note]);
+  clearSelection();
+  startDrawPreview(note.pitch, note.velocity);
+  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
+
+  mobileLastEmptyTap = {
     cellBeat,
     pitch,
-    x,
-    y,
-    longPressFired: false,
+    noteId: note.id,
+    time: performance.now(),
+  };
+
+  const anchorCell = `${cellBeat}:${pitch}`;
+  mobileTouchSession = {
+    kind: 'emptyDraw',
+    startClientX: point.clientX,
+    startClientY: point.clientY,
+    anchorNoteId: note.id,
+    anchorCell,
   };
   mobileTouchSession.longPressTimer = setTimeout(() => {
-    if (!mobileTouchSession || mobileTouchSession.kind !== 'emptyTap' || mobileTouchSession.longPressFired) return;
-    clearMobileTapDefer();
-    mobileLastEmptyTap = null;
-    mobileTouchSession.longPressFired = true;
-    const note = createNote(pitch, cellBeat, noteLength.value || 0.125, 100);
-    emitNotes([...getNotes(), note]);
-    clearSelection();
-    startDrawPreview(note.pitch, note.velocity);
-    startMobileLengthDraw(note);
+    if (!mobileTouchSession || mobileTouchSession.kind !== 'emptyDraw') return;
+    if (drag.value?.type !== 'paintAdd' || drag.value.lastCell !== anchorCell) return;
+    const anchor = getNotes().find((n) => n.id === mobileTouchSession.anchorNoteId);
+    if (!anchor) return;
+    startMobileLengthDraw(anchor);
   }, LONG_PRESS_MS);
 }
 
 function onMobileMultiTouchMove(e) {
   const point = touchPoint(e);
-  if (!point || !mobileTouchSession) return;
+  if (!point) return;
 
-  if (mobileTouchSession.longPressTimer && mobileTouchMoved(mobileTouchSession, point.clientX, point.clientY)) {
+  if (mobileTouchSession?.longPressTimer && mobileTouchMoved(mobileTouchSession, point.clientX, point.clientY)) {
     clearTimeout(mobileTouchSession.longPressTimer);
     mobileTouchSession.longPressTimer = null;
   }
 
-  if (mobileTouchSession.kind === 'noteTap' && !drag.value) {
-    if (mobileTouchMoved(mobileTouchSession, point.clientX, point.clientY)) {
-      const existing = getNotes().find((n) => n.id === mobileTouchSession.noteId);
-      if (existing) {
-        selectedNoteIds.value = new Set([existing.id]);
-        startMoveDrag(existing, mobileTouchSession.startClientX, mobileTouchSession.startClientY);
-        mobileTouchSession.kind = 'moveSelected';
-      }
-    }
-    return;
-  }
-
-  if (drag.value) {
-    onMouseMove(toSyntheticMouseEvent(e, point));
-  }
+  if (!drag.value) return;
+  onMouseMove(toSyntheticMouseEvent(e, point));
 }
 
 function onMobileMultiTouchEnd(e) {
@@ -1443,25 +1415,11 @@ function onMobileMultiTouchEnd(e) {
     pinchState.value = null;
   }
 
-  const session = mobileTouchSession;
-
   if (drag.value && drag.value.type !== 'pendingSelect' && drag.value.type !== 'pendingMarquee') {
     onWindowDragEnd();
     clearMobileTouchSession();
     onPreviewTouchEnd(e);
     return;
-  }
-
-  if (session?.kind === 'emptyTap' && !session.longPressFired) {
-    if (!mobileTouchMoved(session, session.startClientX, session.startClientY)) {
-      scheduleMobileEmptyTap(session);
-    }
-  }
-
-  if (session?.kind === 'noteTap' && !drag.value) {
-    if (!mobileTouchMoved(session, session.startClientX, session.startClientY)) {
-      eraseNoteAt(session.rawBeat, session.pitch);
-    }
   }
 
   if (drag.value?.type === 'pendingSelect') {
@@ -1710,27 +1668,25 @@ function onWindowDragTouchMove(e) {
     return;
   }
 
+  if (isZoomToolActive()) return;
+
+  const gridTouch =
+    isActiveGridTouch(e) ||
+    isGridEditDrag() ||
+    (isMobileMultiActive() && !!mobileTouchSession);
+  if (!gridTouch) return;
+
+  e.preventDefault();
+
+  const point = touchPoint(e);
+  if (!point) return;
+
   if (isMobileMultiActive()) {
-    const gridTouch =
-      isActiveGridTouch(e) || isGridEditDrag() || !!mobileTouchSession;
-    if (!gridTouch) return;
-    e.preventDefault();
     onMobileMultiTouchMove(e);
     return;
   }
 
-  if (isZoomToolActive()) return;
-
-  const gridTouch =
-    isActiveGridTouch(e) || (isGridEditDrag() && e.touches.length === 1);
-  if (!gridTouch) return;
-
-  // Capture on scrollRef also blocks panning; this window listener forwards drags.
-  e.preventDefault();
-
   if (!drag.value) return;
-  const point = touchPoint(e);
-  if (!point) return;
   onMouseMove(toSyntheticMouseEvent(e, point));
 }
 
@@ -2007,7 +1963,7 @@ function toSyntheticMouseEvent(e, point) {
 function onGridTouchStart(e) {
   if (usesPinchZoom() && e.touches.length >= 2) {
     e.preventDefault();
-    clearMobileTapDefer();
+    clearMobileLastEmptyTap();
     clearMobileTouchSession();
     startPinch(e.touches);
     return;
@@ -2537,7 +2493,7 @@ watch(
   () => editTool.value,
   (tool) => {
     if (tool !== 'mobile-multi') {
-      clearMobileTapDefer();
+      clearMobileLastEmptyTap();
       clearMobileTouchSession();
     }
   }

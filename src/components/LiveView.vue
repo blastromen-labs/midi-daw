@@ -14,11 +14,15 @@
       />
       </div>
 
+      <div class="daw-toolbar-divider"></div>
+
       <div class="daw-toolbar-secondary">
       <ViewToggleButton
         mode="live"
         @view-mode-change="(v) => $emit('view-mode-change', v)"
       />
+
+      <div class="daw-toolbar-divider"></div>
 
       <SongMenu
         :songs="songs"
@@ -31,6 +35,8 @@
         @load-file="(text) => $emit('load-song-file', text)"
         @load-file-error="(msg) => $emit('load-song-file-error', msg)"
       />
+
+      <div class="daw-toolbar-divider"></div>
 
       <SettingsToolbarButton
         :sync-mode="syncMode"

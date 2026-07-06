@@ -37,7 +37,7 @@
       </Teleport>
     </ToolbarField>
 
-    <div class="h-4 w-px bg-line-light flex-shrink-0 mx-0.5 mb-1.5"></div>
+    <div class="daw-toolbar-divider"></div>
 
     <ToolbarField label="All" title="Select all notes (⌘A)">
       <button

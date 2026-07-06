@@ -225,7 +225,7 @@
       <div
         v-show="!isDrumTrack || drumControlsVisible"
         class="flex-shrink-0 bg-panel border-r border-line"
-        :class="isDrumTrack ? 'overflow-x-hidden overflow-y-visible' : 'overflow-hidden'"
+        :class="isDrumTrack ? 'overflow-x-hidden overflow-y-hidden' : 'overflow-hidden'"
         :style="{ width: keysWidth + 'px' }"
         ref="keysRef"
       >
@@ -244,133 +244,189 @@
           @touchend="onPreviewTouchEnd"
           @touchcancel="onPreviewTouchEnd"
         ></canvas>
-        <DrumPadList
-          v-else-if="activeTrack"
-          :pads="activeTrack.pads"
-          :row-height="rowHeight"
-          :track-volume="activeTrack.volume ?? 1"
-          @load-sample="onLoadSample"
-          @clear-sample="onClearSample"
-          @add-pad="onAddPad"
-          @remove-pad="onRemovePad"
-          @rename-pad="onRenamePad"
-          @update-pad="onUpdatePad"
-        />
-      </div>
-
-      <!-- Grid -->
-      <div
-        class="flex-1 overflow-auto overflow-y-hidden-native relative"
-        :class="scrollTouchActionClass"
-        ref="scrollRef"
-        @scroll="onScroll"
-        @wheel="onWheel"
-        @mousedown="onScrollAreaPointerDown"
-        @touchstart="onScrollAreaPointerDown"
-      >
-        <div
-          ref="gridContentRef"
-          class="relative"
-          :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }"
-          @dragenter.capture="onSampleDragEnter"
-          @dragover.capture="onSampleDragOver"
-          @dragleave.capture="onSampleDragLeave"
-          @drop.capture="onSampleDrop"
-        >
-          <canvas
-            ref="gridCanvas"
-            :width="gridWidth"
-            :height="canvasHeight"
-            class="absolute top-0 left-0"
-            :class="[gridCursorClass, gridTouchActionClass]"
-            @mousedown="onMouseDown"
-            @mousemove="onCanvasMouseMove"
-            @mouseup="onMouseUp"
-            @contextmenu="onGridContextMenu"
-            @touchstart="onGridTouchStart"
-            @touchend="onGridTouchEnd"
-            @touchcancel="onGridTouchEnd"
-          ></canvas>
-          <!-- Cheap overlay redrawn every animation frame; keeps the expensive
-               grid/notes canvas untouched so it never competes with the audio scheduler. -->
-          <canvas
-            ref="playheadCanvas"
-            :width="gridWidth"
-            :height="canvasHeight"
-            class="absolute top-0 left-0 pointer-events-none"
-          ></canvas>
+        <div v-else-if="activeTrack" :style="{ height: scrollContentHeight + 'px' }">
+          <DrumPadList
+            :pads="activeTrack.pads"
+            :row-height="rowHeight"
+            :track-volume="activeTrack.volume ?? 1"
+            @load-sample="onLoadSample"
+            @clear-sample="onClearSample"
+            @add-pad="onAddPad"
+            @remove-pad="onRemovePad"
+            @rename-pad="onRenamePad"
+            @update-pad="onUpdatePad"
+          />
           <div
-            v-if="marqueeRect"
-            class="absolute border border-accent bg-accent/20 pointer-events-none"
-            :style="marqueeStyle"
-          ></div>
-          <div
-            v-if="sampleDropPadId && isDrumTrack"
-            class="absolute left-0 right-0 pointer-events-none bg-accent/15 border-y border-accent/40"
-            :style="{ top: pitchToY(sampleDropPadId) + 'px', height: rowHeight + 'px' }"
-          ></div>
+            class="border-t border-line bg-panel flex items-center justify-center select-none px-2"
+            :style="{ height: drumVelocityBlockHeight + 'px' }"
+            @mousedown="onVelocityHeaderMouseDown"
+            @touchstart="onVelocityHeaderMouseDown"
+          >
+            <DrumVelocityPadSelect
+              v-if="velocityPadId"
+              v-model="velocityPadId"
+              :pads="activeTrack.pads"
+            />
+          </div>
         </div>
       </div>
 
-      <!-- Custom vertical scrollbar, replacing the native one for this
-           container — a touch-drag on the grid canvas above draws/edits
-           notes rather than panning, and re-styled (::-webkit-scrollbar)
-           native scrollbars generally can't be dragged with touch at all,
-           only with a mouse. See TouchScrollbar.vue. -->
-      <TouchScrollbar :container="scrollRef" :content="gridContentRef" orientation="vertical" />
-    </div>
-
-    <!-- Drag up/down to resize the velocity panel; a plain click (no drag)
-         toggles it collapsed, freeing up room for the note grid above. -->
-    <div
-      class="flex-shrink-0 h-2 bg-line hover:bg-line-light cursor-row-resize flex items-center justify-center transition-colors"
-      title="Drag to resize — click to collapse/expand"
-      @mousedown="onVelocityResizeStart"
-      @touchstart="onVelocityResizeStart"
-    >
-      <div class="flex gap-0.5 pointer-events-none">
-        <span v-for="i in 5" :key="i" class="w-0.5 h-0.5 rounded-full bg-muted-dim"></span>
-      </div>
-    </div>
-
-    <!-- Velocity panel -->
-    <div v-show="!velocityCollapsed" class="flex-shrink-0 flex bg-panel" :style="{ height: velocityHeight + 'px' }">
-      <div
-        class="flex-shrink-0 bg-panel border-r border-t border-line flex items-center justify-center select-none"
-        :class="isDrumTrack ? 'px-2' : ''"
-        :style="{ width: leftGutterWidth + 'px' }"
-        @mousedown="onVelocityHeaderMouseDown"
-        @touchstart="onVelocityHeaderMouseDown"
-      >
-        <select
-          v-if="isDrumTrack && drumControlsVisible && velocityPadId"
-          v-model="velocityPadId"
-          class="w-full max-w-full text-[10px] font-semibold bg-surface border border-line-light rounded px-1 py-0.5 outline-none focus:border-accent truncate"
-          title="Drum pad velocity"
-          @mousedown.stop
-          @touchstart.stop
-          @click.stop
+      <!-- Grid — drum velocity is part of scroll content, directly under the last pad row. -->
+      <div class="flex flex-1 min-h-0 relative">
+        <div
+          class="flex-1 h-full overflow-auto overflow-y-hidden-native relative"
+          :class="scrollTouchActionClass"
+          ref="scrollRef"
+          @scroll="onScroll"
+          @wheel="onWheel"
+          @mousedown="onScrollAreaPointerDown"
+          @touchstart="onScrollAreaPointerDown"
         >
-          <option v-for="pad in activeTrack.pads" :key="pad.id" :value="pad.id">
-            {{ pad.name }}
-          </option>
-        </select>
-        <span v-else class="text-[10px] font-semibold text-accent tracking-widest vertical-label">VEL</span>
+          <div
+            ref="gridContentRef"
+            class="relative"
+            :style="{ width: gridWidth + 'px', height: scrollContentHeight + 'px' }"
+            @dragenter.capture="onSampleDragEnter"
+            @dragover.capture="onSampleDragOver"
+            @dragleave.capture="onSampleDragLeave"
+            @drop.capture="onSampleDrop"
+          >
+            <div class="relative" :style="{ width: gridWidth + 'px', height: canvasHeight + 'px' }">
+              <canvas
+                ref="gridCanvas"
+                :width="gridWidth"
+                :height="canvasHeight"
+                class="absolute top-0 left-0"
+                :class="[gridCursorClass, gridTouchActionClass]"
+                @mousedown="onMouseDown"
+                @mousemove="onCanvasMouseMove"
+                @mouseup="onMouseUp"
+                @contextmenu="onGridContextMenu"
+                @touchstart="onGridTouchStart"
+                @touchend="onGridTouchEnd"
+                @touchcancel="onGridTouchEnd"
+              ></canvas>
+              <!-- Cheap overlay redrawn every animation frame; keeps the expensive
+                   grid/notes canvas untouched so it never competes with the audio scheduler. -->
+              <canvas
+                ref="playheadCanvas"
+                :width="gridWidth"
+                :height="canvasHeight"
+                class="absolute top-0 left-0 pointer-events-none"
+              ></canvas>
+              <div
+                v-if="marqueeRect"
+                class="absolute border border-accent bg-accent/20 pointer-events-none"
+                :style="marqueeStyle"
+              ></div>
+              <div
+                v-if="sampleDropPadId && isDrumTrack"
+                class="absolute left-0 right-0 pointer-events-none bg-accent/15 border-y border-accent/40"
+                :style="{ top: pitchToY(sampleDropPadId) + 'px', height: rowHeight + 'px' }"
+              ></div>
+            </div>
+
+            <div
+              v-if="isDrumTrack"
+              class="border-t border-line bg-panel"
+              :style="{ height: drumVelocityBlockHeight + 'px' }"
+            >
+              <div class="flex h-full w-full">
+                <div
+                  v-if="!drumControlsVisible"
+                  class="flex-shrink-0 border-r border-line bg-panel flex items-center justify-center select-none px-0.5"
+                  :style="{ width: DRUM_TOGGLE_STRIP_WIDTH + 'px' }"
+                  @mousedown="onVelocityHeaderMouseDown"
+                  @touchstart="onVelocityHeaderMouseDown"
+                >
+                  <DrumVelocityPadSelect
+                    v-if="velocityPadId && activeTrack"
+                    v-model="velocityPadId"
+                    :pads="activeTrack.pads"
+                    compact
+                  />
+                </div>
+                <div class="flex flex-col flex-1 min-w-0 h-full">
+                  <div
+                    class="flex-shrink-0 h-2 bg-line hover:bg-line-light cursor-row-resize flex items-center justify-center transition-colors"
+                    title="Drag to resize — click to collapse/expand"
+                    @mousedown="onVelocityResizeStart"
+                    @touchstart="onVelocityResizeStart"
+                  >
+                    <div class="flex gap-0.5 pointer-events-none">
+                      <span v-for="i in 5" :key="i" class="w-0.5 h-0.5 rounded-full bg-muted-dim"></span>
+                    </div>
+                  </div>
+                  <div
+                    v-show="!velocityCollapsed"
+                    class="flex-shrink-0 bg-panel flex-1 min-h-0"
+                    :style="{ minHeight: drumEmbeddedVelocityLaneHeight + 'px' }"
+                  >
+                    <VelocityLane
+                      v-if="activeTrack"
+                      :notes="velocityLaneNotes"
+                      :selected-note-ids="selectedNoteIds"
+                      :beat-width="beatWidth"
+                      :grid-width="gridWidth"
+                      :height="drumEmbeddedVelocityLaneHeight"
+                      :color="velocityLaneColor"
+                      :color-key="velocityLaneColorKey"
+                      embedded
+                      @update-notes="onVelocityLaneUpdate"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom vertical scrollbar, replacing the native one for this
+             container — a touch-drag on the grid canvas above draws/edits
+             notes rather than panning, and re-styled (::-webkit-scrollbar)
+             native scrollbars generally can't be dragged with touch at all,
+             only with a mouse. See TouchScrollbar.vue. -->
+        <TouchScrollbar :container="scrollRef" :content="gridContentRef" orientation="vertical" />
       </div>
-      <VelocityLane
-        v-if="activeTrack"
-        :notes="velocityLaneNotes"
-        :selected-note-ids="selectedNoteIds"
-        :beat-width="beatWidth"
-        :grid-width="gridWidth"
-        :height="velocityHeight"
-        :color="velocityLaneColor"
-        :color-for-note="isDrumTrack ? null : colorForNote"
-        :color-key="velocityLaneColorKey"
-        :scroll-left="mainScrollLeft"
-        @update-notes="onVelocityLaneUpdate"
-      />
     </div>
+
+    <!-- MIDI velocity — full width below the piano roll -->
+    <template v-if="!isDrumTrack">
+      <div
+        class="flex-shrink-0 h-2 bg-line hover:bg-line-light cursor-row-resize flex items-center justify-center transition-colors"
+        title="Drag to resize — click to collapse/expand"
+        @mousedown="onVelocityResizeStart"
+        @touchstart="onVelocityResizeStart"
+      >
+        <div class="flex gap-0.5 pointer-events-none">
+          <span v-for="i in 5" :key="i" class="w-0.5 h-0.5 rounded-full bg-muted-dim"></span>
+        </div>
+      </div>
+
+      <div v-show="!velocityCollapsed" class="flex-shrink-0 flex bg-panel" :style="{ height: velocityHeight + 'px' }">
+        <div
+          class="flex-shrink-0 bg-panel border-r border-t border-line flex items-center justify-center select-none"
+          :style="{ width: leftGutterWidth + 'px' }"
+          @mousedown="onVelocityHeaderMouseDown"
+          @touchstart="onVelocityHeaderMouseDown"
+        >
+          <span class="text-[10px] font-semibold text-accent tracking-widest vertical-label">VEL</span>
+        </div>
+        <VelocityLane
+          v-if="activeTrack"
+          :notes="velocityLaneNotes"
+          :selected-note-ids="selectedNoteIds"
+          :beat-width="beatWidth"
+          :grid-width="gridWidth"
+          :height="velocityHeight"
+          :color="velocityLaneColor"
+          :color-for-note="colorForNote"
+          :color-key="velocityLaneColorKey"
+          :scroll-left="mainScrollLeft"
+          @update-notes="onVelocityLaneUpdate"
+        />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -392,6 +448,7 @@ import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import VelocityLane from './VelocityLane.vue';
 import DrumPadList from './DrumPadList.vue';
+import DrumVelocityPadSelect from './DrumVelocityPadSelect.vue';
 import TrackMenu from './TrackMenu.vue';
 import SongMenu from './SongMenu.vue';
 import SettingsToolbarButton from './SettingsToolbarButton.vue';
@@ -603,6 +660,23 @@ const leftGutterWidth = computed(() => {
   }
   return KEY_WIDTH;
 });
+const VELOCITY_RESIZE_HANDLE_HEIGHT = 8;
+const DRUM_VELOCITY_PAD_SELECTOR_HEIGHT = 28;
+// Resize handle + lane (when expanded). Drum velocity scrolls with the grid so
+// it sits directly under the last pad row — not pinned to the viewport bottom.
+const drumVelocityLaneStripHeight = computed(() =>
+  VELOCITY_RESIZE_HANDLE_HEIGHT + (velocityCollapsed.value ? 0 : velocityHeight.value)
+);
+const drumVelocityBlockHeight = computed(() => {
+  if (!isDrumTrack.value) return 0;
+  return Math.max(DRUM_VELOCITY_PAD_SELECTOR_HEIGHT, drumVelocityLaneStripHeight.value);
+});
+const drumEmbeddedVelocityLaneHeight = computed(() =>
+  Math.max(MIN_VELOCITY_HEIGHT, drumVelocityBlockHeight.value - VELOCITY_RESIZE_HANDLE_HEIGHT)
+);
+const scrollContentHeight = computed(() =>
+  isDrumTrack.value ? canvasHeight.value + drumVelocityBlockHeight.value : canvasHeight.value
+);
 
 // Generic "rows" abstraction: each row has an opaque `key` that Note.pitch
 // stores — a MIDI pitch number for MIDI tracks, a pad id for drum tracks
@@ -866,7 +940,7 @@ function onVelocityLaneUpdate(updatedNotes) {
 }
 
 function onVelocityHeaderMouseDown(e) {
-  if (e.target?.tagName === 'SELECT' || e.target?.tagName === 'OPTION') return;
+  if (e.target?.closest('button, select, option')) return;
   clearSelection();
 }
 

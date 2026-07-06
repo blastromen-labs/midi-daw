@@ -38,6 +38,8 @@ const props = defineProps({
   colorForNote: { type: Function, default: null },
   colorKey: { type: String, default: '' },
   scrollLeft: { type: Number, default: 0 },
+  /** Parent scroll container owns horizontal position (e.g. drum velocity under the grid). */
+  embedded: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update-notes']);
@@ -247,7 +249,8 @@ watch(
 watch(
   () => props.scrollLeft,
   (left) => {
-    if (scrollWrapRef.value) scrollWrapRef.value.scrollLeft = left;
+    if (props.embedded || !scrollWrapRef.value) return;
+    scrollWrapRef.value.scrollLeft = left;
   }
 );
 

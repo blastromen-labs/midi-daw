@@ -138,9 +138,41 @@
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
     <div class="flex flex-shrink-0 border-b border-line bg-surface/90">
       <div
-        class="flex-shrink-0 border-r border-line/60"
-        :style="{ width: keysWidth + 'px' }"
-      ></div>
+        class="flex-shrink-0 border-r border-line/60 flex items-center"
+        :class="isDrumTrack && drumControlsVisible ? 'justify-end px-1' : 'justify-center'"
+        :style="{ width: leftGutterWidth + 'px' }"
+      >
+        <button
+          v-if="isDrumTrack"
+          type="button"
+          class="w-6 h-6 rounded flex items-center justify-center text-muted hover:text-white hover:bg-surface-hover transition-colors flex-shrink-0"
+          :title="drumControlsVisible ? 'Hide drum controls' : 'Show drum controls'"
+          @click="drumControlsVisible = !drumControlsVisible"
+        >
+          <svg
+            v-if="drumControlsVisible"
+            class="w-3.5 h-3.5"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            aria-hidden="true"
+          >
+            <path d="M10 4L6 8l4 4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <svg
+            v-else
+            class="w-3.5 h-3.5"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            aria-hidden="true"
+          >
+            <path d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
       <div class="flex-1 min-w-0 relative pb-3.5">
         <div
           ref="markerScrollRef"
@@ -191,6 +223,7 @@
     <div class="flex flex-1 min-h-0 overflow-hidden relative" ref="containerRef">
       <!-- Piano keys (MIDI tracks) / pad list (drum tracks) -->
       <div
+        v-show="!isDrumTrack || drumControlsVisible"
         class="flex-shrink-0 overflow-hidden bg-panel border-r border-line"
         :style="{ width: keysWidth + 'px' }"
         ref="keysRef"
@@ -304,12 +337,12 @@
       <div
         class="flex-shrink-0 bg-panel border-r border-t border-line flex items-center justify-center select-none"
         :class="isDrumTrack ? 'px-2' : ''"
-        :style="{ width: keysWidth + 'px' }"
+        :style="{ width: leftGutterWidth + 'px' }"
         @mousedown="onVelocityHeaderMouseDown"
         @touchstart="onVelocityHeaderMouseDown"
       >
         <select
-          v-if="isDrumTrack && velocityPadId"
+          v-if="isDrumTrack && drumControlsVisible && velocityPadId"
           v-model="velocityPadId"
           class="w-full max-w-full text-[10px] font-semibold bg-surface border border-line-light rounded px-1 py-0.5 outline-none focus:border-accent truncate"
           title="Drum pad velocity"
@@ -446,6 +479,8 @@ const ROW_HEIGHT = 20;
 const DRUM_ROW_HEIGHT = 36;
 const KEY_WIDTH = 48;
 const DRUM_KEYS_WIDTH = 288;
+// Narrow strip kept visible when pad controls are collapsed — holds the show/hide toggle.
+const DRUM_TOGGLE_STRIP_WIDTH = 32;
 const DEFAULT_BEAT_WIDTH = 140;
 const MIN_BEAT_WIDTH = 20;
 const MAX_BEAT_WIDTH = 400;
@@ -491,6 +526,7 @@ const velocityHeight = ref(DEFAULT_VELOCITY_HEIGHT);
 // Collapsed by default so the note grid gets the most room on first load —
 // still just a click (or drag) away on the resize handle above it.
 const velocityCollapsed = ref(true);
+const drumControlsVisible = ref(true);
 
 const gridWidth = computed(() => activeLoopEndBeat.value * beatWidth.value);
 
@@ -556,7 +592,16 @@ const velocityLaneColorKey = computed(() =>
   isDrumTrack.value ? velocityLaneColor.value : drumPadColorsKey.value
 );
 const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
-const keysWidth = computed(() => (isDrumTrack.value ? DRUM_KEYS_WIDTH : KEY_WIDTH));
+const keysWidth = computed(() => {
+  if (isDrumTrack.value) return drumControlsVisible.value ? DRUM_KEYS_WIDTH : 0;
+  return KEY_WIDTH;
+});
+const leftGutterWidth = computed(() => {
+  if (isDrumTrack.value) {
+    return drumControlsVisible.value ? DRUM_KEYS_WIDTH : DRUM_TOGGLE_STRIP_WIDTH;
+  }
+  return KEY_WIDTH;
+});
 
 // Generic "rows" abstraction: each row has an opaque `key` that Note.pitch
 // stores — a MIDI pitch number for MIDI tracks, a pad id for drum tracks

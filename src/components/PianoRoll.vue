@@ -6,6 +6,7 @@
       @mousedown="onToolbarMouseDown"
       @touchstart="onToolbarMouseDown"
     >
+      <div class="daw-toolbar-primary">
       <!-- Transport -->
       <ToolbarField v-if="syncMode !== 'external'">
         <button
@@ -101,9 +102,9 @@
         @copy="copySelection"
         @paste="pasteClipboard"
       />
+      </div>
 
-      <div class="flex-1"></div>
-
+      <div class="daw-toolbar-secondary">
       <ViewToggleButton
         label="Live"
         title="Switch to the Live launch grid (Tab)"
@@ -133,6 +134,7 @@
         @toggle-clock="$emit('toggle-clock')"
         @clock-output-change="(v) => $emit('clock-output-change', v)"
       />
+      </div>
     </div>
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -173,7 +175,7 @@
           </svg>
         </button>
       </div>
-      <div class="flex-1 min-w-0 relative pb-3.5">
+      <div class="flex-1 min-w-0 relative">
         <div
           ref="markerScrollRef"
           class="overflow-x-auto overflow-y-hidden marker-scroll-native-hidden"
@@ -209,13 +211,6 @@
             </div>
           </div>
         </div>
-        <!-- Custom horizontal scrollbar — native ones can't be dragged with
-             touch on mobile/tablet. Same component as the grid's vertical bar. -->
-        <TouchScrollbar
-          :container="markerScrollRef"
-          :content="markerBarRef"
-          orientation="horizontal"
-        />
       </div>
     </div>
 
@@ -2756,20 +2751,12 @@ onUnmounted(() => {
   overscroll-behavior: none;
 }
 
-/* The grid's own vertical scrolling is handled by <TouchScrollbar> instead
-   (see above) since it needs to be touch-draggable; hide the native
-   vertical thumb so the two don't visually double up. Horizontal scrolling
-   is driven from the marker bar above — hide the duplicate thumb here.
-   Per-axis hiding is WebKit-only (Chrome/Safari/Edge) — Firefox/other
-   engines will still show both, which is a harmless fallback, not a
-   functional regression. */
+/* The grid's vertical scrolling is handled by <TouchScrollbar> (touch-draggable);
+   hide only the native vertical thumb so the two don't double up. Horizontal
+   scrolling uses the native bar on the grid — marker timeline above stays in
+   sync via onScroll/onMarkerScroll. Per-axis hiding is WebKit-only. */
 .overflow-y-hidden-native::-webkit-scrollbar:vertical {
   width: 0;
-  display: none;
-}
-
-.overflow-y-hidden-native::-webkit-scrollbar:horizontal {
-  height: 0;
   display: none;
 }
 

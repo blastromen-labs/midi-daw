@@ -3,6 +3,7 @@
     <!-- Minimal transport bar — mirrors the piano roll's toolbar just enough
          to jam without switching views (see ToolbarField usage there). -->
     <div class="daw-toolbar">
+      <div class="daw-toolbar-primary">
       <ToolbarField v-if="syncMode !== 'external'">
         <button
           class="daw-toolbar-icon-btn rounded-full text-xs font-bold transition-all"
@@ -31,9 +32,9 @@
           :title="!clockInputId ? 'External sync — choose input in Settings' : playing ? 'Synced — playing' : 'Waiting for clock…'"
         ></span>
       </ToolbarField>
+      </div>
 
-      <div class="flex-1"></div>
-
+      <div class="daw-toolbar-secondary">
       <ViewToggleButton
         label="Roll"
         title="Switch to the Piano Roll (Tab)"
@@ -63,6 +64,7 @@
         @toggle-clock="$emit('toggle-clock')"
         @clock-output-change="(v) => $emit('clock-output-change', v)"
       />
+      </div>
     </div>
 
     <!-- Launch grid — one row per track, one clip button per pattern. -->

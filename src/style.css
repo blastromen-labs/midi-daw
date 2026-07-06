@@ -85,10 +85,20 @@ input[type='number'].toolbar-compact::-webkit-outer-spin-button {
   margin: 0;
 }
 
-/* Main nav bar — shared by Piano Roll and Live views. Kept tight for tablet width. */
+/* Main nav bar — shared by Piano Roll and Live views. Wraps to a second row
+   when too narrow instead of scrolling horizontally (which stole scroll focus
+   from the piano roll grid). */
 @layer components {
   .daw-toolbar {
-    @apply flex items-end gap-1 px-1.5 py-0.5 bg-surface border-b border-line flex-shrink-0 overflow-x-auto;
+    @apply flex flex-wrap items-end gap-x-1 gap-y-0.5 px-1.5 py-0.5 bg-surface border-b border-line flex-shrink-0 overflow-x-hidden;
+  }
+
+  .daw-toolbar-primary {
+    @apply flex flex-wrap items-end gap-x-1 gap-y-0.5 flex-1 min-w-0;
+  }
+
+  .daw-toolbar-secondary {
+    @apply flex items-end gap-x-1 flex-shrink-0 ml-auto;
   }
 
   .daw-toolbar-divider {

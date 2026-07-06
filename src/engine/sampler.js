@@ -6,7 +6,7 @@
 // stored on the reactive project (see createDrumPad in models/project.js) —
 // mirrors how midi.js keeps its output cache outside of any reactive object.
 
-import { getSharedAudioContext, resumeSharedAudioContext } from './audioContext.js';
+import { getSharedAudioContext, getMasterDestination, resumeSharedAudioContext } from './audioContext.js';
 import { getReverbInput } from './reverb.js';
 import { getDistortionCurve } from './padDistortion.js';
 import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
@@ -17,9 +17,21 @@ export async function resumeSamplerAudio() {
 
 const bufferCache = new Map(); // padId -> AudioBuffer
 let voiceId = 0;
-const activeVoices = new Map(); // voiceId -> { id, padId, source, gain }
+const activeVoices = new Map(); // voiceId -> { id, padId, source, gain, nodes }
 
 const CUT_RAMP_SEC = 0.008;
+
+function releaseVoiceGraph(voice) {
+  if (voice.released || !voice.nodes) return;
+  voice.released = true;
+  for (const node of voice.nodes) {
+    try {
+      node.disconnect();
+    } catch {
+      // Already disconnected or stopped.
+    }
+  }
+}
 
 async function decodeArrayBuffer(arrayBuffer, audioContext, { label = 'sample' } = {}) {
   if (isAiffBuffer(arrayBuffer)) {
@@ -67,6 +79,7 @@ function stopVoice(voice, whenSec) {
     voice.source.stop(now + CUT_RAMP_SEC + 0.002);
   } catch {
     // Source may already have ended.
+    releaseVoiceGraph(voice);
   }
 }
 
@@ -167,6 +180,7 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   if (!buffer) return;
 
   const c = getSharedAudioContext();
+  const out = getMasterDestination();
   const when = c.currentTime + Math.max(0, delayMs) / 1000;
   const trackPads = opts.trackPads ?? [];
   if (trackPads.length) applyCut(padId, trackPads, when);
@@ -190,6 +204,7 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   drive.gain.setValueAtTime(padGain, when);
   src.connect(drive);
 
+  const nodes = [src, drive];
   let tail = drive;
   if (distortion > 0.001) {
     const shaper = c.createWaveShaper();
@@ -197,6 +212,7 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
     shaper.oversample = '2x';
     drive.connect(shaper);
     tail = shaper;
+    nodes.push(shaper);
   }
 
   const gain = c.createGain();
@@ -205,6 +221,7 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   const reverbSend = Math.max(0, Math.min(1, opts.reverb ?? 0));
 
   tail.connect(gain);
+  nodes.push(gain);
 
   if (reverbSend > 0.001) {
     const dryGain = c.createGain();
@@ -213,10 +230,11 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
     wetGain.gain.value = reverbSend;
     gain.connect(dryGain);
     gain.connect(wetGain);
-    dryGain.connect(c.destination);
+    dryGain.connect(out);
     wetGain.connect(getReverbInput(padId, opts.reverbDecay));
+    nodes.push(dryGain, wetGain);
   } else {
-    gain.connect(c.destination);
+    gain.connect(out);
   }
 
   gain.gain.setValueAtTime(peakGain, when);
@@ -225,9 +243,12 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
     gain.gain.linearRampToValueAtTime(0, when + playDurationSec);
   }
 
-  const voice = { id: ++voiceId, padId, source: src, gain };
+  const voice = { id: ++voiceId, padId, source: src, gain, nodes };
   activeVoices.set(voice.id, voice);
-  src.onended = () => activeVoices.delete(voice.id);
+  src.onended = () => {
+    activeVoices.delete(voice.id);
+    releaseVoiceGraph(voice);
+  };
 
   src.start(when, 0);
   src.stop(endTime);

@@ -1,5 +1,5 @@
 <template>
-  <ToolbarField :title="buttonTitle">
+  <ToolbarField label="View" :title="buttonTitle">
     <button
       type="button"
       class="daw-toolbar-icon-btn bg-surface-hover text-muted hover:text-white hover:bg-surface-active transition-colors"

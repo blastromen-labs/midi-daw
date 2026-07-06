@@ -1,6 +1,6 @@
 <template>
-  <ToolbarField label="Tool">
-    <div class="flex items-center gap-0.5 flex-shrink-0" ref="rootRef">
+  <div class="flex items-end gap-0.5 flex-shrink-0" ref="rootRef">
+    <ToolbarField label="Tool">
       <button
         ref="triggerRef"
         type="button"
@@ -35,9 +35,11 @@
           </button>
         </div>
       </Teleport>
+    </ToolbarField>
 
-      <div class="h-4 w-px bg-line-light flex-shrink-0 mx-0.5"></div>
+    <div class="h-4 w-px bg-line-light flex-shrink-0 mx-0.5 mb-1.5"></div>
 
+    <ToolbarField label="All" title="Select all notes (⌘A)">
       <button
         type="button"
         class="daw-toolbar-icon-btn bg-surface-hover hover:bg-surface-active text-muted transition-colors"
@@ -51,6 +53,8 @@
           <rect x="14" y="14" width="7" height="7" rx="1" />
         </svg>
       </button>
+    </ToolbarField>
+    <ToolbarField label="Copy" title="Copy selection (⌘C)">
       <button
         type="button"
         class="daw-toolbar-icon-btn transition-colors"
@@ -66,6 +70,8 @@
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
         </svg>
       </button>
+    </ToolbarField>
+    <ToolbarField label="Paste" title="Paste at marker (⌘V)">
       <button
         type="button"
         class="daw-toolbar-icon-btn transition-colors"
@@ -81,9 +87,10 @@
           <rect x="8" y="2" width="8" height="4" rx="1" />
         </svg>
       </button>
+    </ToolbarField>
 
+    <ToolbarField v-if="hasSelection" label="Del" title="Delete selection">
       <button
-        v-if="hasSelection"
         type="button"
         class="daw-toolbar-icon-btn bg-surface-hover hover:bg-surface-active text-red-400 transition-colors"
         title="Delete selection"
@@ -94,8 +101,8 @@
           <path d="M10 11v6M14 11v6" />
         </svg>
       </button>
-    </div>
-  </ToolbarField>
+    </ToolbarField>
+  </div>
 </template>
 
 <script setup>

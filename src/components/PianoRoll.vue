@@ -55,6 +55,7 @@
         <GhostSourceControls
           :tracks="tracks"
           :track="activeTrack"
+          :compact-navbar="compactNavbar"
           @change="(changes) => emit('update-track', activeTrackId, changes)"
         />
       </template>
@@ -85,6 +86,20 @@
             {{ snapOptionLabel(s, compactNavbar) }}
           </option>
         </select>
+      </ToolbarField>
+
+      <ToolbarField label="Fit" title="Fit pattern width to screen">
+        <button
+          type="button"
+          class="daw-toolbar-icon-btn bg-surface-hover hover:bg-surface-active text-muted transition-colors"
+          title="Fit pattern width to screen"
+          @click="fitBeatWidthToViewport"
+        >
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 9V5H8M20 9V5h-4M4 15v4h4M20 15v4h-4" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M9 12h6" stroke-linecap="round" />
+          </svg>
+        </button>
       </ToolbarField>
 
       <div class="daw-toolbar-divider"></div>
@@ -514,11 +529,9 @@ const props = defineProps({
 });
 
 const liveBeat = usePlayheadBeat();
-const editTool = ref(
-  typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches
-    ? 'multi'
-    : 'mobile-multi'
-);
+const isFinePointer =
+  typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+const editTool = ref(isFinePointer ? 'multi' : 'mobile-multi');
 const emit = defineEmits([
   'update-notes',
   'select-track',
@@ -2133,6 +2146,35 @@ function zoomBeatWidthAt(clientX, factor) {
   });
 }
 
+function setHorizontalScrollLeft(left) {
+  const container = scrollRef.value;
+  if (!container) return;
+  container.scrollLeft = left;
+  mainScrollLeft.value = left;
+  if (markerScrollRef.value) {
+    syncingHorizontalScroll = true;
+    markerScrollRef.value.scrollLeft = left;
+    syncingHorizontalScroll = false;
+  }
+}
+
+function fitBeatWidthToViewport() {
+  const container = scrollRef.value;
+  const loopBeats = activeLoopEndBeat.value;
+  const viewportWidth = container?.clientWidth ?? 0;
+  if (!container || loopBeats <= 0 || viewportWidth <= 0) return;
+
+  const idealWidth = viewportWidth / loopBeats;
+  const newWidth = Math.min(MAX_BEAT_WIDTH, Math.max(MIN_BEAT_WIDTH, idealWidth));
+  beatWidth.value = newWidth;
+  nextTick(() => setHorizontalScrollLeft(0));
+}
+
+function maybeAutoFitBeatWidth() {
+  if (isFinePointer) return;
+  fitBeatWidthToViewport();
+}
+
 function zoomRowHeightAt(clientY, factor) {
   const container = scrollRef.value;
   if (!container) return;
@@ -2731,6 +2773,11 @@ watch(
   }
 );
 
+watch(
+  () => activeLoopEndBeat.value,
+  () => nextTick(maybeAutoFitBeatWidth)
+);
+
 // Release the previewed key on mouseup/touchend/blur anywhere, not just
 // inside the keys canvas, so a stray note never gets stuck on if the
 // pointer/finger drifts off.
@@ -2790,6 +2837,8 @@ function onDocumentMouseDown(e) {
 window.addEventListener('mousedown', onDocumentMouseDown);
 window.addEventListener('touchstart', onDocumentMouseDown);
 
+let gridViewportObserver = null;
+
 onMounted(() => {
   render();
   drawOverlays();
@@ -2799,9 +2848,16 @@ onMounted(() => {
   if (scrollRef.value && !isDrumTrack.value) {
     scrollRef.value.scrollTop = pitchToY(60) - 100;
   }
+  nextTick(maybeAutoFitBeatWidth);
+  if (scrollRef.value && typeof ResizeObserver !== 'undefined') {
+    gridViewportObserver = new ResizeObserver(() => maybeAutoFitBeatWidth());
+    gridViewportObserver.observe(scrollRef.value);
+  }
 });
 
 onUnmounted(() => {
+  gridViewportObserver?.disconnect();
+  gridViewportObserver = null;
   unbindScrollRefTouchGuards();
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('mousedown', onDocumentMouseDown);

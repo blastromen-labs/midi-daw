@@ -22,10 +22,6 @@ export async function initMidi() {
   return midiAccess;
 }
 
-export function getMidiAccess() {
-  return midiAccess;
-}
-
 export function listOutputs() {
   if (!midiAccess) return [];
   const outputs = [];
@@ -136,12 +132,6 @@ export function sendStop(outputId, delayMs = 0) {
   const output = getOutput(outputId);
   if (!output) return;
   output.send([0xfc], toAbsoluteTimestamp(delayMs));
-}
-
-export function sendContinue(outputId, delayMs = 0) {
-  const output = getOutput(outputId);
-  if (!output) return;
-  output.send([0xfb], toAbsoluteTimestamp(delayMs));
 }
 
 export function broadcastClock(outputIds, delayMs = 0) {

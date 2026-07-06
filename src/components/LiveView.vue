@@ -4,34 +4,14 @@
          to jam without switching views (see ToolbarField usage there). -->
     <div class="daw-toolbar">
       <div class="daw-toolbar-primary">
-      <ToolbarField v-if="syncMode !== 'external'">
-        <button
-          class="daw-toolbar-icon-btn rounded-full text-xs font-bold transition-all"
-          :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
-          :title="playing ? 'Stop' : 'Play'"
-          @click="$emit('toggle-play')"
-        >
-          {{ playing ? '■' : '▶' }}
-        </button>
-      </ToolbarField>
-      <ToolbarField v-if="syncMode !== 'external'" label="BPM">
-        <input
-          type="number"
-          :value="bpm"
-          min="40"
-          max="300"
-          class="toolbar-compact w-[2.5rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
-          title="BPM"
-          @change="(e) => $emit('bpm-change', Number(e.target.value))"
-        />
-      </ToolbarField>
-      <ToolbarField v-else label="Sync">
-        <span
-          class="w-1.5 h-1.5 rounded-full flex-shrink-0"
-          :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"
-          :title="!clockInputId ? 'External sync — choose input in Settings' : playing ? 'Synced — playing' : 'Waiting for clock…'"
-        ></span>
-      </ToolbarField>
+      <TransportToolbar
+        :playing="playing"
+        :bpm="bpm"
+        :sync-mode="syncMode"
+        :clock-input-id="clockInputId"
+        @toggle-play="$emit('toggle-play')"
+        @bpm-change="(v) => $emit('bpm-change', v)"
+      />
       </div>
 
       <div class="daw-toolbar-secondary">
@@ -113,7 +93,7 @@
               @dblclick="$emit('edit-pattern', track.id, pattern.id)"
             >
               <span class="block text-[11px] font-medium truncate">{{ pattern.name }}</span>
-              <span class="block text-[9px] opacity-70">{{ barsLabel(pattern.patternSteps) }}</span>
+              <span class="block text-[9px] opacity-70">{{ patternStepsLabel(pattern.patternSteps) }}</span>
 
               <span
                 v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping' || clipStatus(track, pattern) === 'arming'"
@@ -160,20 +140,20 @@
 <script setup>
 import { ref, onUnmounted } from 'vue';
 import {
-  BAR_LENGTH_OPTIONS,
   LIVE_LAUNCH_MODES,
   isPatternPlaying,
   isPatternQueued,
   isTrackStopQueued,
   patternLoopEndBeat,
+  patternStepsLabel,
 } from '../models/project.js';
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
-import ToolbarField from './ToolbarField.vue';
 import SongMenu from './SongMenu.vue';
 import SettingsToolbarButton from './SettingsToolbarButton.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
+import TransportToolbar from './TransportToolbar.vue';
 
 const props = defineProps({
   songs: { type: Array, default: () => [] },
@@ -342,14 +322,6 @@ onUnmounted(() => {
   window.removeEventListener('pointercancel', onDragEnd);
 });
 
-function barsLabel(steps) {
-  const opt = BAR_LENGTH_OPTIONS.find((o) => o.steps === steps);
-  return opt ? `${opt.bars} bar${opt.bars > 1 ? 's' : ''}` : `${steps / 4}b`;
-}
-
-// Progress within the clip's own loop — the pattern's phase is locked to the
-// master bar grid rather than to when it was launched (see liveLauncher.js
-// for why), so this is simply "absolute beat modulo pattern length".
 function clipProgress(pattern) {
   const len = patternLoopEndBeat(pattern);
   if (len <= 0) return 0;

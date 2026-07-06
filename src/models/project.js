@@ -137,22 +137,15 @@ export const STOPPED_PATTERN = '__stopped__';
 // silences the track entirely.
 export function getPlayingPattern(track, { useLiveLaunch = true, soloPreview = null } = {}) {
   if (!track?.patterns?.length) return null;
-  if (!useLiveLaunch) {
-    if (soloPreview) {
-      if (soloPreview.trackId !== track.id) return null;
-      return track.patterns.find((p) => p.id === soloPreview.patternId) ?? null;
-    }
-    // Hold-mode clips only sound while pointer-down (holdActive). Unlike toggle
-    // clips, null playingPatternId must not fall back to activePatternId or
-    // pressing Play would trigger the pattern with no hold — use the ▶ button.
-    if (track.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD && !track.holdActive) return null;
-    return getActivePattern(track);
+  if (!useLiveLaunch && soloPreview) {
+    if (soloPreview.trackId !== track.id) return null;
+    return track.patterns.find((p) => p.id === soloPreview.patternId) ?? null;
   }
   // Hold-mode clips only sound while pointer-down (holdActive). Unlike toggle
   // clips, null playingPatternId must not fall back to activePatternId or
-  // pressing Play would trigger the pattern with no hold — in Live mode and in
-  // the piano-roll editor alike (use the ▶ hold button to preview those clips).
+  // pressing Play would trigger the pattern with no hold — use the ▶ button.
   if (track.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD && !track.holdActive) return null;
+  if (!useLiveLaunch) return getActivePattern(track);
   if (track.playingPatternId === STOPPED_PATTERN) return null;
   const id = track.playingPatternId ?? track.activePatternId;
   return track.patterns.find((p) => p.id === id) ?? track.patterns[0];
@@ -176,10 +169,6 @@ export function isPatternQueued(track, patternId) {
 // to another pattern) once the currently playing pattern's loop completes.
 export function isTrackStopQueued(track) {
   return track?.pendingPatternId === STOPPED_PATTERN;
-}
-
-export function patternLoopEndBeat(pattern) {
-  return (pattern?.patternSteps ?? 16) / 4;
 }
 
 export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), patternSteps = 16) {
@@ -387,6 +376,26 @@ export const BAR_LENGTH_OPTIONS = [
   { bars: 32, steps: 512 },
   { bars: 64, steps: 1024 },
 ];
+
+export function stepsToBeats(steps) {
+  return steps / STEPS_PER_BEAT;
+}
+
+export function beatsToSteps(beats) {
+  return beats * STEPS_PER_BEAT;
+}
+
+export function patternLoopEndBeat(pattern) {
+  return stepsToBeats(pattern?.patternSteps ?? 16);
+}
+
+/** Human-readable bar length for a pattern's step count. */
+export function patternStepsLabel(steps, { compact = false } = {}) {
+  const opt = BAR_LENGTH_OPTIONS.find((o) => o.steps === steps);
+  if (!opt) return `${stepsToBeats(steps)}b`;
+  if (compact) return `${opt.bars}b`;
+  return `${opt.bars} bar${opt.bars > 1 ? 's' : ''}`;
+}
 
 export function trackLoopEndBeat(track) {
   return patternLoopEndBeat(getActivePattern(track));

@@ -20,6 +20,7 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { shade } from '../utils/color.js';
+import { beatToX as gridBeatToX } from '../utils/grid.js';
 import { THEME } from '../theme.js';
 
 // Vertical padding at top/bottom of the lane so a velocity-127 handle isn't
@@ -48,8 +49,10 @@ const canvas = ref(null);
 const scrollWrapRef = ref(null);
 const drag = ref(null);
 
-function beatToX(beat) {
-  return beat * props.beatWidth + 3;
+const LANE_X_OFFSET = 3;
+
+function noteBeatToX(beat) {
+  return gridBeatToX(beat, props.beatWidth, LANE_X_OFFSET);
 }
 
 function usableHeight() {
@@ -69,7 +72,7 @@ function findNoteNear(x) {
   let best = null;
   let bestDist = Infinity;
   for (const note of props.notes) {
-    const dist = Math.abs(x - beatToX(note.startBeat));
+    const dist = Math.abs(x - noteBeatToX(note.startBeat));
     if (dist <= HIT_RADIUS_PX && dist < bestDist) {
       best = note;
       bestDist = dist;
@@ -113,7 +116,7 @@ function paintSegment(x0, y0, x1, y1) {
   emit(
     'update-notes',
     props.notes.map((n) => {
-      const nx = beatToX(n.startBeat);
+      const nx = noteBeatToX(n.startBeat);
       if (nx < xMin || nx > xMax) return n;
       return { ...n, velocity: velocityOnSegment(x0, y0, x1, y1, nx) };
     })
@@ -214,7 +217,7 @@ function render() {
   }
 
   for (const note of props.notes) {
-    const x = beatToX(note.startBeat);
+    const x = noteBeatToX(note.startBeat);
     const topY = velocityToY(note.velocity);
     const bottomY = h - LANE_PADDING;
     const isSelected = props.selectedNoteIds.has(note.id);

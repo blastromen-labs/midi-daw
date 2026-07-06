@@ -122,6 +122,7 @@ import {
   defaultDrumSampleFile,
   ensureDefaultDrumPads,
   normalizeDrumTrack,
+  normalizeDrumPad,
   LIVE_LAUNCH_MODES,
 } from './models/project.js';
 import {
@@ -148,8 +149,8 @@ import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
 import { clearSample, hasSample, loadSampleUrl } from './engine/sampler.js';
 import { removeReverbBus } from './engine/reverb.js';
-import { normalizeDrumPad } from './models/project.js';
 import { hasFileDrag } from './utils/audioFile.js';
+import { isEditableTarget } from './utils/keyboard.js';
 import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately, holdPatternDown, holdPatternUp } from './engine/liveLauncher.js';
 
 const project = reactive(createProject());
@@ -340,11 +341,7 @@ function updateSong(songId, changes) {
 }
 
 function renameSong(songId, name) {
-  const song = songs.value.find((s) => s.id === songId);
-  if (!song) return;
-  song.name = name.trim() || song.name;
-  song.updatedAt = new Date().toISOString();
-  persistSongs();
+  updateSong(songId, { name });
 }
 
 function applySyncSettingsFromProject(snapshot) {
@@ -407,7 +404,6 @@ function syncClockLoopFromTracks() {
   for (const clock of [transport, externalClock]) {
     clock.loopStartBeat = loopStartBeat;
     clock.loopEndBeat = loopEndBeat;
-    clock.patternSteps = patternEndBeat * 4;
   }
 }
 
@@ -829,11 +825,7 @@ function onKeyDown(e) {
     // Don't hijack Tab while the user is actually typing (renaming a track,
     // editing BPM, etc.) — same guard PianoRoll uses for its own shortcuts.
     const target = e.target;
-    const isTextField =
-      target?.tagName === 'TEXTAREA' ||
-      target?.isContentEditable ||
-      (target?.tagName === 'INPUT' && !['button', 'checkbox', 'radio', 'range'].includes(target.type));
-    if (isTextField) return;
+    if (isEditableTarget(target)) return;
 
     e.preventDefault();
     viewMode.value = viewMode.value === 'roll' ? 'live' : 'roll';

@@ -3,6 +3,7 @@ import {
   BAR_LENGTH_OPTIONS,
   STEPS_PER_BEAT,
   createNote,
+  stepsToBeats,
 } from '../models/project.js';
 
 const { Midi } = pkg;
@@ -82,7 +83,7 @@ export function exportPatternToMidi(pattern, { bpm = 120, trackName = 'Pattern' 
   const track = midi.addTrack();
   track.name = trackName;
 
-  const loopEndBeat = (pattern?.patternSteps ?? 16) / STEPS_PER_BEAT;
+  const loopEndBeat = stepsToBeats(pattern?.patternSteps ?? 16);
 
   for (const note of pattern?.notes ?? []) {
     if (note.pitch == null || note.startBeat == null) continue;

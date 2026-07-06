@@ -1,5 +1,6 @@
 import { PPQN, beginMidiScheduleTick, endMidiScheduleTick } from './midi.js';
 import { resumeSharedAudioContext, getSharedAudioContext } from './audioContext.js';
+import { beatsToSeconds, secondsToBeats, wrapLoopBeat } from './beatMath.js';
 
 const SCHEDULE_AHEAD_SEC = 0.22;
 const LOOKAHEAD_MS = 12;
@@ -9,8 +10,6 @@ export class TransportClock {
     this.bpm = 120;
     this.playing = false;
     this.currentBeat = 0;
-    this.patternSteps = 16;
-    this.stepsPerBeat = 4;
     this.loopStartBeat = 0;
     this.loopEndBeat = 4;
 
@@ -27,10 +26,6 @@ export class TransportClock {
     return this.loopEndBeat - this.loopStartBeat;
   }
 
-  get patternLengthBeats() {
-    return this.patternSteps / this.stepsPerBeat;
-  }
-
   async init() {
     this._ctx = await resumeSharedAudioContext();
     return this._ctx;
@@ -45,11 +40,11 @@ export class TransportClock {
   }
 
   beatToSec(beat) {
-    return (beat * 60) / this.bpm;
+    return beatsToSeconds(beat, this.bpm);
   }
 
   secToBeat(sec) {
-    return (sec * this.bpm) / 60;
+    return secondsToBeats(sec, this.bpm);
   }
 
   getAbsoluteBeat() {
@@ -68,15 +63,7 @@ export class TransportClock {
   }
 
   _wrapBeat(beat) {
-    const len = this.loopLengthBeats;
-    if (len <= 0) return beat;
-    if (beat >= this.loopEndBeat) {
-      return this.loopStartBeat + ((beat - this.loopStartBeat) % len);
-    }
-    if (beat < this.loopStartBeat) {
-      return this.loopStartBeat;
-    }
-    return beat;
+    return wrapLoopBeat(beat, this.loopStartBeat, this.loopEndBeat);
   }
 
   onTick(fn) {
@@ -117,13 +104,6 @@ export class TransportClock {
     this.currentBeat = this.getCurrentBeat();
     this._scheduled.clear();
     this._emit('stop', { beat: this.currentBeat });
-  }
-
-  seek(beat) {
-    const wasPlaying = this.playing;
-    if (wasPlaying) this.stop();
-    this.currentBeat = this._wrapBeat(beat);
-    if (wasPlaying) this.play(this.currentBeat);
   }
 
   _key(type, id) {

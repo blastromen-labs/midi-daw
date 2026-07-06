@@ -1,10 +1,11 @@
 import { uid, normalizeTrackCategory, randomTrackColor } from '../models/project.js';
+import { sanitizeFilename } from '../utils/filename.js';
 
 const SONGS_KEY = 'midi-daw:songs';
 const CURRENT_SONG_KEY = 'midi-daw:currentSongId';
 const STORAGE_VERSION = 1;
-export const SONG_FILE_FORMAT = 'midi-daw-song';
-export const SONG_FILE_VERSION = 1;
+const SONG_FILE_FORMAT = 'midi-daw-song';
+const SONG_FILE_VERSION = 1;
 
 /** Project fields persisted to localStorage and song files (Live-mode runtime excluded). */
 const PERSISTED_PROJECT_SCALAR_KEYS = [
@@ -119,11 +120,7 @@ export function persistSongLibrary(songs, currentSongId) {
 }
 
 export function sanitizeSongFilename(name) {
-  const base = (name || 'Untitled')
-    .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-    .slice(0, 120);
-  return base || 'Untitled';
+  return sanitizeFilename(name);
 }
 
 /** Build the on-disk JSON payload for one song. */

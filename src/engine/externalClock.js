@@ -1,4 +1,5 @@
 import { PPQN, beginMidiScheduleTick, endMidiScheduleTick } from './midi.js';
+import { beatsToSeconds, secondsToBeats, wrapLoopBeat } from './beatMath.js';
 
 const TICK_HISTORY = PPQN; // one beat's worth — smooths jitter without lagging tempo changes
 const MAX_VALID_INTERVAL_MS = 2000;
@@ -12,8 +13,6 @@ export class ExternalClock {
   constructor() {
     this.playing = false;
     this.bpm = 120;
-    this.patternSteps = 16;
-    this.stepsPerBeat = 4;
     this.loopStartBeat = 0;
     this.loopEndBeat = 4;
 
@@ -34,11 +33,11 @@ export class ExternalClock {
   }
 
   beatToSec(beat) {
-    return (beat * 60) / this.bpm;
+    return beatsToSeconds(beat, this.bpm);
   }
 
   secToBeat(sec) {
-    return (sec * this.bpm) / 60;
+    return secondsToBeats(sec, this.bpm);
   }
 
   getAbsoluteBeat() {
@@ -58,11 +57,7 @@ export class ExternalClock {
   }
 
   _wrapBeat(beat) {
-    const len = this.loopLengthBeats;
-    if (len <= 0) return beat;
-    if (beat >= this.loopEndBeat) return this.loopStartBeat + ((beat - this.loopStartBeat) % len);
-    if (beat < this.loopStartBeat) return this.loopStartBeat;
-    return beat;
+    return wrapLoopBeat(beat, this.loopStartBeat, this.loopEndBeat);
   }
 
   onTick(fn) {

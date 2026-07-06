@@ -321,5 +321,3 @@ export class PlaybackEngine {
 }
 
 export const playback = new PlaybackEngine();
-
-export { PPQN };

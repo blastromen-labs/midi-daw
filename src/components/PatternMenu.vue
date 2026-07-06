@@ -70,7 +70,7 @@
               <span class="flex-1 min-w-0 truncate text-xs">{{ pattern.name }}</span>
 
               <span class="text-[9px] text-muted-dim tabular-nums flex-shrink-0">
-                {{ barsLabel(pattern.patternSteps) }}
+                {{ patternStepsLabel(pattern.patternSteps, { compact: true }) }}
               </span>
             </div>
           </div>
@@ -128,7 +128,7 @@
 
 <script setup>
 import { ref, computed, nextTick, onUnmounted } from 'vue';
-import { BAR_LENGTH_OPTIONS, LIVE_LAUNCH_MODES, randomPatternColor } from '../models/project.js';
+import { LIVE_LAUNCH_MODES, randomPatternColor, patternStepsLabel } from '../models/project.js';
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 import { contrastTextColor } from '../utils/color.js';
 import { initialLetter } from '../utils/text.js';
@@ -195,11 +195,6 @@ function patternToDraft(pattern) {
     patternSteps: pattern.patternSteps ?? 16,
     ...trackLiveDraft(),
   };
-}
-
-function barsLabel(steps) {
-  const opt = BAR_LENGTH_OPTIONS.find((o) => o.steps === steps);
-  return opt ? `${opt.bars}b` : `${steps / 4}b`;
 }
 
 function updatePosition() {

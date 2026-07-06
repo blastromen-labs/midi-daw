@@ -7,35 +7,14 @@
       @touchstart="onToolbarMouseDown"
     >
       <div class="daw-toolbar-primary">
-      <!-- Transport -->
-      <ToolbarField v-if="syncMode !== 'external'">
-        <button
-          class="daw-toolbar-icon-btn rounded-full text-xs font-bold transition-all"
-          :class="playing ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-accent hover:bg-accent-dim text-white'"
-          :title="playing ? 'Stop' : 'Play'"
-          @click="onTogglePlay"
-        >
-          {{ playing ? '■' : '▶' }}
-        </button>
-      </ToolbarField>
-      <ToolbarField v-if="syncMode !== 'external'" label="BPM">
-        <input
-          type="number"
-          :value="bpm"
-          min="40"
-          max="300"
-          class="toolbar-compact w-[2.5rem] bg-surface border border-line-light rounded text-xs text-center flex-shrink-0"
-          title="BPM"
-          @change="(e) => $emit('bpm-change', Number(e.target.value))"
-        />
-      </ToolbarField>
-      <ToolbarField v-else label="Sync">
-        <span
-          class="w-1.5 h-1.5 rounded-full flex-shrink-0"
-          :class="playing ? 'bg-green-500 animate-pulse' : 'bg-surface-hover'"
-          :title="!clockInputId ? 'External sync — choose input in Settings' : playing ? 'Synced — playing' : 'Waiting for clock…'"
-        ></span>
-      </ToolbarField>
+      <TransportToolbar
+        :playing="playing"
+        :bpm="bpm"
+        :sync-mode="syncMode"
+        :clock-input-id="clockInputId"
+        @toggle-play="onTogglePlay"
+        @bpm-change="(v) => $emit('bpm-change', v)"
+      />
 
       <div class="daw-toolbar-divider"></div>
 
@@ -474,6 +453,8 @@ import {
 import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
 import { padPlaybackOpts } from '../engine/padPlayback.js';
 import { audioFileFromDataTransfer, acceptFileDrag } from '../utils/audioFile.js';
+import { isEditableTarget } from '../utils/keyboard.js';
+import { beatToX as beatToGridX } from '../utils/grid.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import VelocityLane from './VelocityLane.vue';
@@ -487,6 +468,7 @@ import EditToolBar from './EditToolBar.vue';
 import PatternMenu from './PatternMenu.vue';
 import GhostSourceControls from './GhostSourceControls.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
+import TransportToolbar from './TransportToolbar.vue';
 import TouchScrollbar from './TouchScrollbar.vue';
 
 const PREVIEW_VELOCITY = 100;
@@ -928,7 +910,7 @@ function yToPitch(y) {
 }
 
 function beatToX(beat) {
-  return beat * beatWidth.value;
+  return beatToGridX(beat, beatWidth.value);
 }
 
 // Rounds to the nearest grid line — used for continuous drag feedback
@@ -2753,12 +2735,7 @@ window.addEventListener('touchcancel', onWindowDragTouchEnd);
 // their own but can still hold keyboard focus) are excluded, so normal text
 // selection still works in e.g. the track rename input.
 function onKeyDown(e) {
-  const target = e.target;
-  const isTextField =
-    target?.tagName === 'TEXTAREA' ||
-    target?.isContentEditable ||
-    (target?.tagName === 'INPUT' && !['button', 'checkbox', 'radio', 'range'].includes(target.type));
-  if (isTextField) return;
+  if (isEditableTarget(e.target)) return;
 
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault();

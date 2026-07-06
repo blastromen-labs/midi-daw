@@ -29,7 +29,7 @@ import {
 // The next grid line strictly after `currentAbsBeat` — "strictly after" so
 // clicking a clip right on a grid line still waits for the *next* one rather
 // than (depending on float rounding) sometimes firing immediately.
-export function nextBoundaryBeat(currentAbsBeat, gridBeats) {
+function nextBoundaryBeat(currentAbsBeat, gridBeats) {
   const EPSILON = 1e-6;
   const index = Math.floor(currentAbsBeat / gridBeats + EPSILON);
   return (index + 1) * gridBeats;

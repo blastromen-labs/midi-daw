@@ -104,7 +104,15 @@
 
         <div class="border-t border-line">
           <button
-            class="w-full text-xs py-1.5 hover:bg-surface-hover text-muted hover:text-white"
+            class="w-full text-left text-xs px-2 py-1.5 hover:bg-surface-hover text-muted hover:text-white disabled:opacity-30 disabled:pointer-events-none"
+            title="Duplicate the active pattern and its notes"
+            :disabled="!activePattern"
+            @click="cloneActive"
+          >
+            Clone pattern
+          </button>
+          <button
+            class="w-full text-left text-xs px-2 py-1.5 hover:bg-surface-hover text-muted hover:text-white"
             title="Add pattern"
             @click="startCreate"
           >
@@ -146,6 +154,7 @@ const props = defineProps({
 const emit = defineEmits([
   'select-pattern',
   'add-pattern',
+  'clone-pattern',
   'update-pattern',
   'update-track',
   'delete-pattern',
@@ -212,6 +221,12 @@ function toggleOpen() {
 function closeEditor() {
   editorOpen.value = false;
   editorPatternId.value = null;
+}
+
+function cloneActive() {
+  if (!activePattern.value) return;
+  emit('clone-pattern', activePattern.value.id);
+  open.value = false;
 }
 
 function startCreate() {

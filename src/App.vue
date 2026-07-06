@@ -24,6 +24,7 @@
           @select-track="activeTrackId = $event"
           @select-pattern="selectPattern"
           @add-pattern="addPattern"
+          @clone-pattern="clonePattern"
           @rename-pattern="renamePattern"
           @update-pattern="updatePattern"
           @delete-pattern="deletePattern"
@@ -110,6 +111,7 @@ import {
   createDrumTrack,
   createDrumPad,
   createPattern,
+  clonePattern as clonePatternModel,
   randomTrackColor,
   randomPatternColor,
   getActivePattern,
@@ -589,6 +591,19 @@ function addPattern(trackId, config = {}) {
     config.color ?? randomPatternColor(usedColors),
     config.patternSteps ?? active?.patternSteps ?? 16
   );
+  track.patterns.push(pattern);
+  track.activePatternId = pattern.id;
+}
+
+function clonePattern(trackId, sourcePatternId) {
+  const track = findTrack(trackId);
+  if (!track?.patterns?.length) return;
+
+  const source =
+    track.patterns.find((p) => p.id === sourcePatternId) ?? getActivePattern(track);
+  if (!source) return;
+
+  const pattern = clonePatternModel(source, track.patterns);
   track.patterns.push(pattern);
   track.activePatternId = pattern.id;
 }

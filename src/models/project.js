@@ -85,6 +85,31 @@ export function createPattern(name = 'Pattern 1', color = randomPatternColor(), 
   };
 }
 
+/** Deep-copy notes with fresh ids (pattern clone, shift-drag duplicate, etc.). */
+export function cloneNotes(notes) {
+  return (notes ?? []).map((n) => ({ ...n, id: uid() }));
+}
+
+/** Pick a non-colliding name when duplicating a pattern. */
+export function patternCloneName(patterns, sourceName) {
+  const base = `${sourceName} copy`;
+  if (!patterns.some((p) => p.name === base)) return base;
+  let i = 2;
+  while (patterns.some((p) => p.name === `${base} ${i}`)) i++;
+  return `${base} ${i}`;
+}
+
+/** Clone a pattern's settings and piano-roll notes into a new pattern object. */
+export function clonePattern(source, patterns) {
+  const usedColors = patterns.map((p) => p.color);
+  return createPattern(
+    patternCloneName(patterns, source.name),
+    randomPatternColor(usedColors),
+    source.patternSteps ?? 16,
+    cloneNotes(source.notes)
+  );
+}
+
 export function getActivePattern(track) {
   if (!track?.patterns?.length) return null;
   return track.patterns.find((p) => p.id === track.activePatternId) ?? track.patterns[0];

@@ -41,6 +41,7 @@
           :compact-navbar="compactNavbar"
           @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
           @add-pattern="(config) => emit('add-pattern', activeTrackId, config)"
+          @clone-pattern="(id) => emit('clone-pattern', activeTrackId, id)"
           @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
           @update-track="(changes) => emit('update-track', activeTrackId, changes)"
           @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
@@ -512,6 +513,7 @@ const emit = defineEmits([
   'select-track',
   'select-pattern',
   'add-pattern',
+  'clone-pattern',
   'rename-pattern',
   'update-pattern',
   'delete-pattern',

@@ -183,7 +183,7 @@
         >
           <div
             ref="markerBarRef"
-            class="relative h-3 cursor-crosshair select-none"
+            class="relative min-h-7 cursor-crosshair select-none touch-none flex items-center"
             :style="{ width: gridWidth + 'px' }"
             title="Click: marker (play/paste) · Double-click drag: set loop · Double-click: clear loop"
             @mousedown="onPasteBarMouseDown"
@@ -724,6 +724,9 @@ const pasteMarkerRowIndex = ref(0);
 const hasMarker = computed(() => props.markerBeat != null);
 const showPasteMarker = hasMarker;
 const loopDragPreview = ref(null);
+// Touch has no click.detail — track the last marker-bar tap for double-tap loop gestures.
+let markerLastTap = null;
+let activePasteBarTouchId = null;
 const activeLoopRegion = computed(() => loopDragPreview.value ?? props.loopRegion);
 const loopRegionStyle = computed(() => {
   const region = activeLoopRegion.value;
@@ -1049,6 +1052,18 @@ function pasteClipboard() {
   selectedNoteIds.value = new Set(newNotes.map((n) => n.id));
 }
 
+function startLoopRegionDrag(beat, clientX) {
+  drag.value = { type: 'loopRegion', startBeat: beat, endBeat: beat, startX: clientX, moved: false };
+}
+
+function isMarkerDoubleTap(beat) {
+  const prev = markerLastTap;
+  if (!prev) return false;
+  if (performance.now() - prev.time > DOUBLE_TAP_MS) return false;
+  const toleranceBeats = Math.max(snap.value || 0.125, 4 / beatWidth.value);
+  return Math.abs(prev.beat - beat) <= toleranceBeats;
+}
+
 function onPasteBarMouseDown(e) {
   e.preventDefault();
   e.stopPropagation();
@@ -1062,7 +1077,7 @@ function onPasteBarMouseDown(e) {
 
   // Second click of a double-click starts a loop-region drag from this beat.
   if (e.detail === 2) {
-    drag.value = { type: 'loopRegion', startBeat: beat, endBeat: beat, startX: e.clientX, moved: false };
+    startLoopRegionDrag(beat, e.clientX);
     return;
   }
 
@@ -1785,6 +1800,17 @@ function onWindowDragEnd() {
   onMouseUp();
 }
 
+function isActivePasteBarTouch(e) {
+  if (activePasteBarTouchId === null) return false;
+  for (const touch of e.touches) {
+    if (touch.identifier === activePasteBarTouchId) return true;
+  }
+  for (const touch of e.changedTouches ?? []) {
+    if (touch.identifier === activePasteBarTouchId) return true;
+  }
+  return false;
+}
+
 function onWindowDragTouchMove(e) {
   if (pinchState.value && e.touches.length >= 2) {
     e.preventDefault();
@@ -1794,6 +1820,13 @@ function onWindowDragTouchMove(e) {
   }
 
   if (isZoomToolActive()) return;
+
+  if (drag.value?.type === 'loopRegion' && isActivePasteBarTouch(e)) {
+    e.preventDefault();
+    const point = touchPoint(e);
+    if (point) onWindowDragMove(toSyntheticMouseEvent(e, point));
+    return;
+  }
 
   const gridTouch =
     isActiveGridTouch(e) ||
@@ -1823,7 +1856,15 @@ function isActiveGridTouch(e) {
   return false;
 }
 
-function onWindowDragTouchEnd() {
+function onWindowDragTouchEnd(e) {
+  if (activePasteBarTouchId !== null) {
+    for (const touch of e.changedTouches ?? []) {
+      if (touch.identifier === activePasteBarTouchId) {
+        activePasteBarTouchId = null;
+        break;
+      }
+    }
+  }
   if (!drag.value) return;
   onMouseUp();
 }
@@ -1953,18 +1994,39 @@ function onPasteBarTouchStart(e) {
   const point = touchPoint(e);
   if (!point) return;
   e.preventDefault();
-  onPasteBarMouseDown(toSyntheticMouseEvent(e, point));
+  e.stopPropagation();
+
+  const beat = markerEventToBeat(point);
+  activePasteBarTouchId = e.touches[0]?.identifier ?? null;
+
+  if (isMarkerDoubleTap(beat)) {
+    markerLastTap = null;
+    startLoopRegionDrag(beat, point.clientX);
+    return;
+  }
+
+  markerLastTap = { beat, time: performance.now() };
+  setMarkerBeat(beat);
 }
 
 function onPasteBarTouchMove(e) {
-  if (!drag.value || drag.value.type !== 'loopRegion') return;
+  if (!isActivePasteBarTouch(e)) return;
+  if (drag.value?.type !== 'loopRegion') return;
   const point = touchPoint(e);
   if (!point) return;
   e.preventDefault();
   onWindowDragMove(toSyntheticMouseEvent(e, point));
 }
 
-function onPasteBarTouchEnd() {
+function onPasteBarTouchEnd(e) {
+  if (activePasteBarTouchId !== null) {
+    for (const touch of e.changedTouches ?? []) {
+      if (touch.identifier === activePasteBarTouchId) {
+        activePasteBarTouchId = null;
+        break;
+      }
+    }
+  }
   onWindowDragEnd();
 }
 

@@ -26,7 +26,6 @@
           <section>
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Name</label>
             <input
-              ref="nameInputRef"
               v-model="draft.name"
               type="text"
               class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded outline-none focus:border-accent"
@@ -141,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue';
 import { TRACK_ACCENT_COLORS, TRACK_CATEGORIES } from '../models/project.js';
 import VolumeSlider from './VolumeSlider.vue';
 
@@ -159,7 +158,6 @@ const emit = defineEmits(['save', 'cancel', 'delete']);
 
 const accentColors = TRACK_ACCENT_COLORS;
 const trackCategories = TRACK_CATEGORIES;
-const nameInputRef = ref(null);
 const confirmDelete = ref(false);
 const titleId = `track-editor-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -212,10 +210,7 @@ function onKeyDown(e) {
   emit('cancel');
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', onKeyDown);
-  nextTick(() => nameInputRef.value?.focus());
-});
+onMounted(() => window.addEventListener('keydown', onKeyDown));
 
 onUnmounted(() => window.removeEventListener('keydown', onKeyDown));
 </script>

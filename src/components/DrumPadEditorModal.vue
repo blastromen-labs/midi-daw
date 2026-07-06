@@ -29,7 +29,6 @@
           <section>
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Name</label>
             <input
-              ref="nameInputRef"
               v-model="draft.name"
               type="text"
               class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded outline-none focus:border-accent"
@@ -262,7 +261,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { DRUM_PAD_COLORS, REVERB_DECAY_MIN, REVERB_DECAY_MAX, REVERB_DECAY_DEFAULT, PAD_GAIN_MIN, PAD_GAIN_MAX, PAD_GAIN_DEFAULT } from '../models/project.js';
 import {
   playSample,
@@ -287,7 +286,6 @@ const props = defineProps({
 const emit = defineEmits(['save', 'load-sample', 'clear-sample', 'remove', 'cancel']);
 
 const padColors = DRUM_PAD_COLORS;
-const nameInputRef = ref(null);
 const fileInputRef = ref(null);
 const titleId = `drum-pad-editor-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -402,10 +400,7 @@ function onKeyDown(e) {
   if (e.key === 'Escape') emit('cancel');
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', onKeyDown);
-  nextTick(() => nameInputRef.value?.focus());
-});
+onMounted(() => window.addEventListener('keydown', onKeyDown));
 
 onUnmounted(() => window.removeEventListener('keydown', onKeyDown));
 </script>

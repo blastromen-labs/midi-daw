@@ -1,10 +1,11 @@
 import { REVERB_DECAY_DEFAULT } from '../models/project.js';
 
 /** Build playSample opts from a pad + its parent drum track (for cut-by + reverb). */
-export function padPlaybackOpts(pad, track) {
+export function padPlaybackOpts(pad, track, notePitchOffset = 0) {
   const trackPads = track?.pads ?? [];
+  const pitch = (Number(pad.pitch) || 0) + (Number(notePitchOffset) || 0);
   return {
-    pitch: Number(pad.pitch) || 0,
+    pitch: Math.max(-24, Math.min(24, pitch)),
     sampleLength: pad.sampleLength ?? 1,
     fadeOut: pad.fadeOut ?? 0,
     cutBySelf: pad.cutBySelf !== false,

@@ -23,8 +23,43 @@ export function syncUidCounter(root) {
   nextId = max + 1;
 }
 
-export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity = 100) {
-  return { id: uid(), pitch, startBeat, duration, velocity };
+/** Per-hit pitch tweak for drum notes (semitones relative to the pad's base pitch). */
+export const NOTE_PITCH_OFFSET_MIN = -12;
+export const NOTE_PITCH_OFFSET_MAX = 12;
+
+export function clampNotePitchOffset(offset) {
+  return Math.max(
+    NOTE_PITCH_OFFSET_MIN,
+    Math.min(NOTE_PITCH_OFFSET_MAX, Math.round(Number(offset) || 0))
+  );
+}
+
+export function createNote(pitch = 60, startBeat = 0, duration = 0.25, velocity = 100, pitchOffset = 0) {
+  return {
+    id: uid(),
+    pitch,
+    startBeat,
+    duration,
+    velocity,
+    pitchOffset: clampNotePitchOffset(pitchOffset),
+  };
+}
+
+/** Coerce legacy or missing note fields when loading a song. */
+export function normalizeNote(note) {
+  if (!note) return note;
+  if (note.pitchOffset == null) note.pitchOffset = 0;
+  note.pitchOffset = clampNotePitchOffset(note.pitchOffset);
+  return note;
+}
+
+/** Normalize every note in every pattern (e.g. after deserializing a song). */
+export function normalizeProjectNotes(tracks) {
+  for (const track of tracks ?? []) {
+    for (const pattern of track.patterns ?? []) {
+      for (const note of pattern.notes ?? []) normalizeNote(note);
+    }
+  }
 }
 
 // Accent swatches for the track menu — independent of piano-roll note color.

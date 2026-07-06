@@ -293,9 +293,10 @@
             @mousedown="onVelocityHeaderMouseDown"
             @touchstart="onVelocityHeaderMouseDown"
           >
-            <DrumVelocityPadSelect
+            <DrumEventLaneControls
               v-if="velocityPadId"
-              v-model="velocityPadId"
+              v-model:pad-id="velocityPadId"
+              v-model:mode="drumLaneMode"
               :pads="activeTrack.pads"
             />
           </div>
@@ -305,16 +306,23 @@
           class="flex flex-col"
           :style="{ height: scrollContentHeight + 'px' }"
         >
-          <div class="flex-1 min-h-0"></div>
+          <DrumPadMuteStrip
+            class="flex-shrink-0"
+            :pads="activeTrack.pads"
+            :row-height="rowHeight"
+            :style="{ height: canvasHeight + 'px' }"
+            @update-pad="onUpdatePad"
+          />
           <div
             class="border-t border-line bg-panel flex items-center justify-center select-none px-0.5"
             :style="{ height: drumVelocityBlockHeight + 'px' }"
             @mousedown="onVelocityHeaderMouseDown"
             @touchstart="onVelocityHeaderMouseDown"
           >
-            <DrumVelocityPadSelect
+            <DrumEventLaneControls
               v-if="velocityPadId"
-              v-model="velocityPadId"
+              v-model:pad-id="velocityPadId"
+              v-model:mode="drumLaneMode"
               :pads="activeTrack.pads"
               compact
             />
@@ -386,7 +394,7 @@
                 <div class="flex flex-col flex-1 min-w-0 h-full">
                   <div
                     class="flex-shrink-0 h-2 bg-line hover:bg-line-light cursor-row-resize flex items-center justify-center transition-colors"
-                    title="Drag to resize — click to collapse/expand"
+                    title="Drag down to expand — click to toggle"
                     @mousedown="onVelocityResizeStart"
                     @touchstart="onVelocityResizeStart"
                   >
@@ -408,6 +416,7 @@
                       :height="drumEmbeddedVelocityLaneHeight"
                       :color="velocityLaneColor"
                       :color-key="velocityLaneColorKey"
+                      :mode="drumLaneMode"
                       embedded
                       @update-notes="onVelocityLaneUpdate"
                     />
@@ -487,7 +496,8 @@ import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import VelocityLane from './VelocityLane.vue';
 import DrumPadList from './DrumPadList.vue';
-import DrumVelocityPadSelect from './DrumVelocityPadSelect.vue';
+import DrumPadMuteStrip from './DrumPadMuteStrip.vue';
+import DrumEventLaneControls from './DrumEventLaneControls.vue';
 import TrackMenu from './TrackMenu.vue';
 import SongMenu from './SongMenu.vue';
 import SettingsToolbarButton from './SettingsToolbarButton.vue';
@@ -662,6 +672,7 @@ const drumPadColorsKey = computed(() =>
 );
 
 const velocityPadId = ref(null);
+const drumLaneMode = ref('velocity');
 
 watch(
   () => [activeTrack.value?.id, (activeTrack.value?.pads ?? []).map((p) => p.id).join(',')],
@@ -696,7 +707,9 @@ const velocityLaneColor = computed(() => {
 });
 
 const velocityLaneColorKey = computed(() =>
-  isDrumTrack.value ? velocityLaneColor.value : drumPadColorsKey.value
+  isDrumTrack.value
+    ? `${velocityLaneColor.value}|${drumLaneMode.value}`
+    : drumPadColorsKey.value
 );
 const rowHeight = computed(() => (isDrumTrack.value ? DRUM_ROW_HEIGHT : ROW_HEIGHT) * rowZoom.value);
 const leftGutterWidth = computed(() => {
@@ -708,7 +721,11 @@ const leftGutterWidth = computed(() => {
 // Must match leftGutterWidth so the marker timeline and grid share the same horizontal origin.
 const keysWidth = computed(() => leftGutterWidth.value);
 const VELOCITY_RESIZE_HANDLE_HEIGHT = 8;
-const DRUM_VELOCITY_PAD_SELECTOR_HEIGHT = 28;
+const DRUM_LANE_CONTROLS_HEIGHT_FULL = 32;
+const DRUM_LANE_CONTROLS_HEIGHT_COMPACT = 52;
+const drumLaneControlsHeight = computed(() =>
+  drumControlsVisible.value ? DRUM_LANE_CONTROLS_HEIGHT_FULL : DRUM_LANE_CONTROLS_HEIGHT_COMPACT
+);
 // Resize handle + lane (when expanded). Drum velocity scrolls with the grid so
 // it sits directly under the last pad row — not pinned to the viewport bottom.
 const drumVelocityLaneStripHeight = computed(() =>
@@ -716,7 +733,7 @@ const drumVelocityLaneStripHeight = computed(() =>
 );
 const drumVelocityBlockHeight = computed(() => {
   if (!isDrumTrack.value) return 0;
-  return Math.max(DRUM_VELOCITY_PAD_SELECTOR_HEIGHT, drumVelocityLaneStripHeight.value);
+  return Math.max(drumLaneControlsHeight.value, drumVelocityLaneStripHeight.value);
 });
 const drumEmbeddedVelocityLaneHeight = computed(() =>
   Math.max(MIN_VELOCITY_HEIGHT, drumVelocityBlockHeight.value - VELOCITY_RESIZE_HANDLE_HEIGHT)
@@ -995,6 +1012,9 @@ function onVelocityLaneUpdate(updatedNotes) {
 function onVelocityHeaderMouseDown(e) {
   if (e.target?.closest('button, select, option')) return;
   clearSelection();
+  // Drum velocity sits below the pad rows — dragging the header down expands it
+  // (same gesture as the resize handle in the grid column).
+  if (isDrumTrack.value) onVelocityResizeStart(e);
 }
 
 async function onImportMidi(file) {
@@ -1055,6 +1075,7 @@ function copySelection() {
       rowOffset: rowIndexOf(n.pitch) - minRow,
       duration: n.duration,
       velocity: n.velocity,
+      pitchOffset: n.pitchOffset ?? 0,
       pitch: n.pitch,
     })),
   };
@@ -1085,7 +1106,13 @@ function pasteClipboard() {
     const pitch = resolvePastePitch(item, clip.sourceKind);
     if (pitch === undefined) continue;
     newNotes.push(
-      createNote(pitch, Math.max(0, pasteBeat + item.beatOffset), item.duration, item.velocity)
+      createNote(
+        pitch,
+        Math.max(0, pasteBeat + item.beatOffset),
+        item.duration,
+        item.velocity,
+        item.pitchOffset ?? 0
+      )
     );
   }
 
@@ -2430,11 +2457,11 @@ function toggleVelocityCollapse() {
   velocityCollapsed.value = !velocityCollapsed.value;
 }
 
-// Drag the handle above the velocity panel up/down to resize it; dragging
-// down past a small threshold collapses it out of the way entirely, freeing
-// up room for the note grid above. A plain click (no meaningful drag) is
-// treated as a shorthand for toggling collapse, now that there's no
-// dedicated header label to click instead.
+// Drag the handle above the velocity panel to resize it. MIDI velocity is
+// pinned below the viewport, so drag up to grow it; drum velocity scrolls
+// beneath the last pad row, so drag down to grow it instead. Dragging past a
+// small threshold in the shrink direction collapses it entirely. A plain click
+// (no meaningful drag) toggles collapse.
 const CLICK_DRAG_THRESHOLD_PX = 3;
 
 // Reads clientY off either a MouseEvent or a TouchEvent so the drag logic
@@ -2445,10 +2472,18 @@ function clientYOf(e) {
   return touch ? touch.clientY : e.clientY;
 }
 
+function scrollDrumVelocityIntoView() {
+  const container = scrollRef.value;
+  if (!container || !isDrumTrack.value) return;
+  const maxScroll = Math.max(0, scrollContentHeight.value - container.clientHeight);
+  container.scrollTop = maxScroll;
+}
+
 function onVelocityResizeStart(e) {
   e.preventDefault();
   const startY = clientYOf(e);
   const startHeight = velocityCollapsed.value ? 0 : velocityHeight.value;
+  const drumTrack = isDrumTrack.value;
   const prevUserSelect = document.body.style.userSelect;
   document.body.style.userSelect = 'none';
   let dragged = false;
@@ -2456,12 +2491,14 @@ function onVelocityResizeStart(e) {
   function onMove(ev) {
     const y = clientYOf(ev);
     if (Math.abs(y - startY) > CLICK_DRAG_THRESHOLD_PX) dragged = true;
-    const proposedHeight = startHeight + (startY - y);
+    const delta = drumTrack ? y - startY : startY - y;
+    const proposedHeight = startHeight + delta;
     if (proposedHeight <= VELOCITY_COLLAPSE_THRESHOLD) {
       velocityCollapsed.value = true;
     } else {
       velocityCollapsed.value = false;
       velocityHeight.value = Math.max(MIN_VELOCITY_HEIGHT, Math.min(MAX_VELOCITY_HEIGHT, proposedHeight));
+      if (drumTrack) scrollDrumVelocityIntoView();
     }
   }
 
@@ -2471,7 +2508,10 @@ function onVelocityResizeStart(e) {
     window.removeEventListener('mouseup', onUp);
     window.removeEventListener('touchmove', onMove);
     window.removeEventListener('touchend', onUp);
-    if (!dragged) toggleVelocityCollapse();
+    if (!dragged) {
+      toggleVelocityCollapse();
+      if (drumTrack && !velocityCollapsed.value) scrollDrumVelocityIntoView();
+    }
   }
 
   window.addEventListener('mousemove', onMove);

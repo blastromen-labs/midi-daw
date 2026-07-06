@@ -133,6 +133,7 @@ import {
   syncUidCounter,
   defaultDrumSampleFile,
   ensureDefaultDrumPads,
+  normalizeProjectNotes,
   normalizeDrumTrack,
   normalizeDrumPad,
   LIVE_LAUNCH_MODES,
@@ -274,6 +275,7 @@ function replaceProject(snapshot, { preserveSelection = false } = {}) {
   for (const key of Object.keys(project)) delete project[key];
   Object.assign(project, loaded);
   ensureDefaultDrumPads(project.tracks);
+  normalizeProjectNotes(project.tracks);
 
   if (preserveSelection) {
     applySessionSelection(project.tracks, trackIndex, patternIndex);

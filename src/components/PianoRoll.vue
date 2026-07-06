@@ -405,7 +405,7 @@ const liveBeat = usePlayheadBeat();
 const editTool = ref(
   typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches
     ? 'multi'
-    : 'pen'
+    : 'mobile-multi'
 );
 const emit = defineEmits([
   'update-notes',
@@ -455,6 +455,11 @@ const ZOOM_STEP = 1.12;
 // Pinch maps finger spread to zoom; 1.0 would be 1:1 (too fast on tablet).
 // ~0.4 feels closer to a few wheel ticks per comfortable pinch gesture.
 const PINCH_ZOOM_SENSITIVITY = 0.4;
+// Touch multi tool pinches a bit slower so zoom stays controllable on phones.
+const MOBILE_MULTI_PINCH_SENSITIVITY = 0.28;
+const LONG_PRESS_MS = 450;
+const DOUBLE_TAP_MS = 280;
+const DOUBLE_TAP_DISTANCE_PX = 24;
 // Vertical zoom is a multiplier on top of the base row height (20px MIDI /
 // 36px drum) rather than its own pixel range, so it scales sensibly for
 // either track kind without a second set of min/max pixel constants.
@@ -1132,8 +1137,49 @@ function finalizeResizeStamp() {
 }
 
 // Tablet tool modes — maps toolbar selections to the same drag types desktop uses.
-// Multi on touch devices falls back to pen behavior.
+// Multi on touch devices falls back to pen behavior; mobile-multi uses touch gestures.
+function onMobileMultiMouseDown(e) {
+  const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(e);
+  const existing = findNoteAt(rawBeat, pitch);
+
+  if (existing && selectedNoteIds.value.has(existing.id)) {
+    stampNoteDuration(existing);
+    drag.value = {
+      type: 'pendingSelect',
+      noteId: existing.id,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+    };
+    return;
+  }
+
+  if (existing) {
+    eraseNoteAt(rawBeat, pitch);
+    return;
+  }
+
+  if (e.detail === 2) {
+    drag.value = {
+      type: 'pendingMarquee',
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      x1: x,
+      y1: y,
+    };
+    return;
+  }
+
+  const note = createNote(pitch, cellBeat, placementDuration(), 100);
+  emitNotes([...getNotes(), note]);
+  clearSelection();
+  startDrawPreview(note.pitch, note.velocity);
+}
+
 function onToolModeDown(e) {
+  if (editTool.value === 'mobile-multi') {
+    onMobileMultiMouseDown(e);
+    return;
+  }
   const tool = editTool.value === 'multi' ? 'pen' : editTool.value;
   if (tool === 'zoom') return;
 
@@ -1192,8 +1238,240 @@ function hasFinePointer() {
   return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 }
 
+function isMobileMultiActive() {
+  return editTool.value === 'mobile-multi';
+}
+
 function usesClassicGestures() {
   return editTool.value === 'multi' && hasFinePointer();
+}
+
+function usesPinchZoom() {
+  return editTool.value === 'zoom' || isMobileMultiActive();
+}
+
+function activePinchSensitivity() {
+  return isMobileMultiActive() ? MOBILE_MULTI_PINCH_SENSITIVITY : PINCH_ZOOM_SENSITIVITY;
+}
+
+// Deferred empty-cell tap so a fast second tap can start marquee without placing two notes.
+let mobileTapDeferTimer = null;
+let mobileLastEmptyTap = null;
+let mobileTouchSession = null;
+
+function clearMobileTapDefer() {
+  if (mobileTapDeferTimer) {
+    clearTimeout(mobileTapDeferTimer);
+    mobileTapDeferTimer = null;
+  }
+}
+
+function clearMobileTouchSession() {
+  if (mobileTouchSession?.longPressTimer) {
+    clearTimeout(mobileTouchSession.longPressTimer);
+  }
+  mobileTouchSession = null;
+}
+
+function mobileTouchMoved(session, clientX, clientY) {
+  if (!session) return false;
+  const dx = clientX - session.startClientX;
+  const dy = clientY - session.startClientY;
+  return Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX;
+}
+
+function scheduleMobileEmptyTap(session) {
+  clearMobileTapDefer();
+  mobileLastEmptyTap = {
+    clientX: session.startClientX,
+    clientY: session.startClientY,
+    cellBeat: session.cellBeat,
+    pitch: session.pitch,
+    time: performance.now(),
+  };
+  mobileTapDeferTimer = setTimeout(() => {
+    mobileTapDeferTimer = null;
+    mobileLastEmptyTap = null;
+    const note = createNote(session.pitch, session.cellBeat, placementDuration(), 100);
+    emitNotes([...getNotes(), note]);
+    clearSelection();
+    startDrawPreview(note.pitch, note.velocity);
+  }, DOUBLE_TAP_MS);
+}
+
+function isMobileDoubleTapEmpty(point, cellBeat, pitch) {
+  const prev = mobileLastEmptyTap;
+  if (!prev) return false;
+  const now = performance.now();
+  if (now - prev.time > DOUBLE_TAP_MS) return false;
+  if (prev.cellBeat !== cellBeat || prev.pitch !== pitch) return false;
+  const dx = point.clientX - prev.clientX;
+  const dy = point.clientY - prev.clientY;
+  return Math.hypot(dx, dy) <= DOUBLE_TAP_DISTANCE_PX;
+}
+
+function startMobileLengthDraw(note) {
+  stampNoteDuration(note);
+  drag.value = {
+    type: 'resize',
+    anchorNoteId: note.id,
+    anchorOrigStartBeat: note.startBeat,
+    anchorOrigDuration: note.duration,
+    origDurations: new Map([[note.id, note.duration]]),
+  };
+  mobileTouchSession = { ...mobileTouchSession, kind: 'lengthDraw', noteId: note.id };
+}
+
+function onMobileMultiTouchStart(e) {
+  if (e.touches.length >= 2) {
+    e.preventDefault();
+    clearMobileTapDefer();
+    clearMobileTouchSession();
+    drag.value = null;
+    startPinch(e.touches);
+    return;
+  }
+
+  const point = touchPoint(e);
+  if (!point) return;
+  e.preventDefault();
+  e.stopPropagation();
+  activeGridTouchId = e.touches[0]?.identifier ?? null;
+  bindPreviewTouch(e);
+
+  const { x, y, rawBeat, cellBeat, pitch } = eventToGridPos(toSyntheticMouseEvent(e, point));
+  const existing = findNoteAt(rawBeat, pitch);
+
+  if (!existing && isMobileDoubleTapEmpty(point, cellBeat, pitch)) {
+    clearMobileTapDefer();
+    mobileLastEmptyTap = null;
+    mobileTouchSession = {
+      kind: 'marquee',
+      startClientX: point.clientX,
+      startClientY: point.clientY,
+    };
+    drag.value = {
+      type: 'pendingMarquee',
+      startClientX: point.clientX,
+      startClientY: point.clientY,
+      x1: x,
+      y1: y,
+    };
+    return;
+  }
+
+  if (existing && selectedNoteIds.value.has(existing.id)) {
+    stampNoteDuration(existing);
+    mobileTouchSession = {
+      kind: 'moveSelected',
+      startClientX: point.clientX,
+      startClientY: point.clientY,
+      noteId: existing.id,
+    };
+    drag.value = {
+      type: 'pendingSelect',
+      noteId: existing.id,
+      startClientX: point.clientX,
+      startClientY: point.clientY,
+    };
+    return;
+  }
+
+  if (existing) {
+    mobileTouchSession = {
+      kind: 'noteTap',
+      startClientX: point.clientX,
+      startClientY: point.clientY,
+      rawBeat,
+      pitch,
+      noteId: existing.id,
+    };
+    return;
+  }
+
+  mobileTouchSession = {
+    kind: 'emptyTap',
+    startClientX: point.clientX,
+    startClientY: point.clientY,
+    cellBeat,
+    pitch,
+    x,
+    y,
+    longPressFired: false,
+  };
+  mobileTouchSession.longPressTimer = setTimeout(() => {
+    if (!mobileTouchSession || mobileTouchSession.kind !== 'emptyTap' || mobileTouchSession.longPressFired) return;
+    clearMobileTapDefer();
+    mobileLastEmptyTap = null;
+    mobileTouchSession.longPressFired = true;
+    const note = createNote(pitch, cellBeat, noteLength.value || 0.125, 100);
+    emitNotes([...getNotes(), note]);
+    clearSelection();
+    startDrawPreview(note.pitch, note.velocity);
+    startMobileLengthDraw(note);
+  }, LONG_PRESS_MS);
+}
+
+function onMobileMultiTouchMove(e) {
+  const point = touchPoint(e);
+  if (!point || !mobileTouchSession) return;
+
+  if (mobileTouchSession.longPressTimer && mobileTouchMoved(mobileTouchSession, point.clientX, point.clientY)) {
+    clearTimeout(mobileTouchSession.longPressTimer);
+    mobileTouchSession.longPressTimer = null;
+  }
+
+  if (mobileTouchSession.kind === 'noteTap' && !drag.value) {
+    if (mobileTouchMoved(mobileTouchSession, point.clientX, point.clientY)) {
+      const existing = getNotes().find((n) => n.id === mobileTouchSession.noteId);
+      if (existing) {
+        selectedNoteIds.value = new Set([existing.id]);
+        startMoveDrag(existing, mobileTouchSession.startClientX, mobileTouchSession.startClientY);
+        mobileTouchSession.kind = 'moveSelected';
+      }
+    }
+    return;
+  }
+
+  if (drag.value) {
+    onMouseMove(toSyntheticMouseEvent(e, point));
+  }
+}
+
+function onMobileMultiTouchEnd(e) {
+  if (pinchState.value && e.touches.length < 2) {
+    pinchState.value = null;
+  }
+
+  const session = mobileTouchSession;
+
+  if (drag.value && drag.value.type !== 'pendingSelect' && drag.value.type !== 'pendingMarquee') {
+    onWindowDragEnd();
+    clearMobileTouchSession();
+    onPreviewTouchEnd(e);
+    return;
+  }
+
+  if (session?.kind === 'emptyTap' && !session.longPressFired) {
+    if (!mobileTouchMoved(session, session.startClientX, session.startClientY)) {
+      scheduleMobileEmptyTap(session);
+    }
+  }
+
+  if (session?.kind === 'noteTap' && !drag.value) {
+    if (!mobileTouchMoved(session, session.startClientX, session.startClientY)) {
+      eraseNoteAt(session.rawBeat, session.pitch);
+    }
+  }
+
+  if (drag.value?.type === 'pendingSelect') {
+    onMouseUp();
+  } else if (drag.value?.type === 'pendingMarquee') {
+    onMouseUp();
+  }
+
+  clearMobileTouchSession();
+  onPreviewTouchEnd(e);
 }
 
 function onMouseDown(e) {
@@ -1428,7 +1706,16 @@ function onWindowDragTouchMove(e) {
   if (pinchState.value && e.touches.length >= 2) {
     e.preventDefault();
     const rawScale = pinchDistance(e.touches) / pinchState.value.startDist;
-    applyPinchScale(dampedPinchScale(rawScale));
+    applyPinchScale(dampedPinchScale(rawScale, activePinchSensitivity()));
+    return;
+  }
+
+  if (isMobileMultiActive()) {
+    const gridTouch =
+      isActiveGridTouch(e) || isGridEditDrag() || !!mobileTouchSession;
+    if (!gridTouch) return;
+    e.preventDefault();
+    onMobileMultiTouchMove(e);
     return;
   }
 
@@ -1636,8 +1923,8 @@ function startPinch(touches) {
   };
 }
 
-function dampedPinchScale(rawScale) {
-  return 1 + (rawScale - 1) * PINCH_ZOOM_SENSITIVITY;
+function dampedPinchScale(rawScale, sensitivity = PINCH_ZOOM_SENSITIVITY) {
+  return 1 + (rawScale - 1) * sensitivity;
 }
 
 function applyPinchScale(scale) {
@@ -1718,13 +2005,20 @@ function toSyntheticMouseEvent(e, point) {
 }
 
 function onGridTouchStart(e) {
-  if (isZoomToolActive()) {
-    if (e.touches.length >= 2) {
-      e.preventDefault();
-      startPinch(e.touches);
-    }
+  if (usesPinchZoom() && e.touches.length >= 2) {
+    e.preventDefault();
+    clearMobileTapDefer();
+    clearMobileTouchSession();
+    startPinch(e.touches);
     return;
   }
+
+  if (isMobileMultiActive()) {
+    onMobileMultiTouchStart(e);
+    return;
+  }
+
+  if (isZoomToolActive()) return;
 
   const point = touchPoint(e);
   if (!point) return;
@@ -1738,6 +2032,10 @@ function onGridTouchStart(e) {
 function onGridTouchEnd(e) {
   if (pinchState.value && (!e || e.touches.length < 2)) {
     pinchState.value = null;
+  }
+  if (isMobileMultiActive()) {
+    onMobileMultiTouchEnd(e);
+    return;
   }
   if (!isZoomToolActive()) {
     onWindowDragEnd();
@@ -2234,6 +2532,16 @@ watch(
 watch(liveBeat, drawOverlays);
 watch(displayPlayheadBeat, drawOverlays);
 watch(() => props.playing, drawOverlays);
+
+watch(
+  () => editTool.value,
+  (tool) => {
+    if (tool !== 'mobile-multi') {
+      clearMobileTapDefer();
+      clearMobileTouchSession();
+    }
+  }
+);
 
 watch(
   () => props.activeTrackId,

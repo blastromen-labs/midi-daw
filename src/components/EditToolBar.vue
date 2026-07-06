@@ -123,6 +123,16 @@ const IconMulti = {
   },
 };
 
+const IconMobileMulti = {
+  render() {
+    return h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
+      h('rect', { x: '7', y: '4', width: '10', height: '16', rx: '2' }),
+      h('path', { d: 'M11 17h2' }),
+      h('path', { d: 'M9 8h6M9 11h4', 'stroke-linecap': 'round' }),
+    ]);
+  },
+};
+
 const IconPen = {
   render() {
     return h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
@@ -173,6 +183,12 @@ const IconZoom = {
 
 const tools = [
   { id: 'multi', shortName: 'Multi', label: 'Multi — draw, move, Cmd-drag select, right-drag erase', icon: IconMulti },
+  {
+    id: 'mobile-multi',
+    shortName: 'Touch',
+    label: 'Touch — tap draw/erase, long-press length, double-tap drag select, pinch zoom',
+    icon: IconMobileMulti,
+  },
   { id: 'pen', shortName: 'Pen', label: 'Pen — draw notes', icon: IconPen },
   { id: 'erase', shortName: 'Erase', label: 'Erase — remove notes', icon: IconErase },
   { id: 'select', shortName: 'Select', label: 'Select — move and marquee', icon: IconSelect },

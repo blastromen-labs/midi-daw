@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div
       class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
-      @mousedown.self="emit('cancel')"
+      @mousedown.self="cancelEdit"
     >
       <div
         class="w-full max-w-md bg-panel border border-line rounded-lg shadow-xl overflow-hidden max-h-[90vh] flex flex-col"
@@ -19,7 +19,7 @@
             type="button"
             class="w-7 h-7 rounded flex items-center justify-center text-muted hover:text-white hover:bg-surface-hover"
             title="Close"
-            @click="emit('cancel')"
+            @click="cancelEdit"
           >
             ×
           </button>
@@ -241,7 +241,7 @@
             <button
               type="button"
               class="px-3 py-1.5 rounded text-xs text-muted hover:text-white hover:bg-surface-hover"
-              @click="emit('cancel')"
+              @click="cancelEdit"
             >
               Cancel
             </button>
@@ -261,7 +261,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { DRUM_PAD_COLORS, REVERB_DECAY_MIN, REVERB_DECAY_MAX, REVERB_DECAY_DEFAULT, PAD_GAIN_MIN, PAD_GAIN_MAX, PAD_GAIN_DEFAULT } from '../models/project.js';
 import {
   playSample,
@@ -283,11 +283,13 @@ const props = defineProps({
   canRemove: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['save', 'load-sample', 'clear-sample', 'remove', 'cancel']);
+const emit = defineEmits(['save', 'load-sample', 'clear-sample', 'remove', 'cancel', 'live-update', 'revert']);
 
 const padColors = DRUM_PAD_COLORS;
 const fileInputRef = ref(null);
 const titleId = `drum-pad-editor-${Math.random().toString(36).slice(2, 9)}`;
+const initialSnapshot = ref(null);
+const editorReady = ref(false);
 
 const draft = reactive({
   name: '',
@@ -326,7 +328,42 @@ function refreshWaveform() {
   waveformDuration.value = data?.duration ?? getSampleDuration(props.pad.id);
 }
 
+function snapshotFromPad() {
+  const p = props.pad;
+  return {
+    name: p.name ?? '',
+    color: p.color ?? padColors[0],
+    volume: p.volume ?? 1,
+    cutBySelf: p.cutBySelf !== false,
+    cutByPads: [...(p.cutByPads ?? [])],
+    pitch: p.pitch ?? 0,
+    sampleLength: p.sampleLength ?? 1,
+    fadeOut: p.fadeOut ?? 0,
+    reverb: p.reverb ?? 0,
+    reverbDecay: p.reverbDecay ?? REVERB_DECAY_DEFAULT,
+    gain: p.gain ?? PAD_GAIN_DEFAULT,
+    distortion: p.distortion ?? 0,
+  };
+}
+
+function liveChangesFromDraft() {
+  return {
+    color: draft.color,
+    volume: draft.volume,
+    cutBySelf: draft.cutBySelf,
+    cutByPads: [...draft.cutByPads],
+    pitch: draft.pitch,
+    sampleLength: draft.sampleLength,
+    fadeOut: draft.fadeOut,
+    reverb: draft.reverb,
+    reverbDecay: draft.reverbDecay,
+    gain: draft.gain,
+    distortion: draft.distortion,
+  };
+}
+
 function syncFromPad() {
+  editorReady.value = false;
   draft.name = props.pad.name ?? '';
   draft.color = props.pad.color ?? padColors[0];
   draft.volume = props.pad.volume ?? 1;
@@ -339,11 +376,28 @@ function syncFromPad() {
   draft.reverbDecay = props.pad.reverbDecay ?? REVERB_DECAY_DEFAULT;
   draft.gain = props.pad.gain ?? PAD_GAIN_DEFAULT;
   draft.distortion = props.pad.distortion ?? 0;
+  if (initialSnapshot.value === null) {
+    initialSnapshot.value = snapshotFromPad();
+  }
   refreshWaveform();
+  nextTick(() => {
+    editorReady.value = true;
+  });
 }
 
-watch(() => props.pad, syncFromPad, { immediate: true, deep: true });
+watch(() => props.pad.id, syncFromPad, { immediate: true });
 watch(() => props.pad.fileName, refreshWaveform);
+
+// Push sound-affecting edits to the project immediately so pattern playback
+// uses them — same path as the pad-list volume slider, not only on Save.
+watch(
+  draft,
+  () => {
+    if (!editorReady.value) return;
+    emit('live-update', liveChangesFromDraft());
+  },
+  { deep: true },
+);
 
 function toggleCutBy(padId) {
   const idx = draft.cutByPads.indexOf(padId);
@@ -354,20 +408,12 @@ function toggleCutBy(padId) {
 function submit() {
   const name = draft.name.trim();
   if (!name) return;
-  emit('save', {
-    name,
-    color: draft.color,
-    volume: draft.volume,
-    cutBySelf: draft.cutBySelf,
-    cutByPads: [...draft.cutByPads],
-    pitch: draft.pitch,
-    sampleLength: draft.sampleLength,
-    fadeOut: draft.fadeOut,
-    reverb: draft.reverb,
-    reverbDecay: draft.reverbDecay,
-    gain: draft.gain,
-    distortion: draft.distortion,
-  });
+  emit('save', { name, ...liveChangesFromDraft() });
+}
+
+function cancelEdit() {
+  if (initialSnapshot.value) emit('revert', { ...initialSnapshot.value });
+  emit('cancel');
 }
 
 function onFileChosen(e) {
@@ -397,7 +443,7 @@ function preview() {
 }
 
 function onKeyDown(e) {
-  if (e.key === 'Escape') emit('cancel');
+  if (e.key === 'Escape') cancelEdit();
 }
 
 onMounted(() => window.addEventListener('keydown', onKeyDown));

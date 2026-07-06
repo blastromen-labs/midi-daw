@@ -82,6 +82,8 @@
       :track-volume="trackVolume"
       :can-remove="pads.length > 1"
       @save="onEditorSave"
+      @live-update="onEditorLiveUpdate"
+      @revert="onEditorRevert"
       @load-sample="onEditorLoadSample"
       @clear-sample="onEditorClearSample"
       @remove="onEditorRemove"
@@ -143,6 +145,19 @@ function onListDrop(e) {
 
 function openEditor(padId) {
   editingPadId.value = padId;
+}
+
+function onEditorLiveUpdate(changes) {
+  if (!editingPadId.value) return;
+  emit('update-pad', editingPadId.value, changes);
+}
+
+function onEditorRevert(snapshot) {
+  if (!editingPadId.value) return;
+  const padId = editingPadId.value;
+  emit('rename-pad', padId, snapshot.name);
+  const { name: _name, ...rest } = snapshot;
+  emit('update-pad', padId, rest);
 }
 
 function onEditorSave(changes) {

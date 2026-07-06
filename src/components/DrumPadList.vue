@@ -10,6 +10,7 @@
     <div
       v-for="pad in pads"
       :key="pad.id"
+      :ref="(el) => setPadBlockRef(pad.id, el)"
       class="pad-block relative flex-shrink-0 border-b border-line/60"
       :style="{ height: rowHeight + 'px' }"
       :data-pad-id="pad.id"
@@ -84,6 +85,7 @@
       <DrumPadQuickEdit
         v-if="quickEditPadId === pad.id"
         :pad="pad"
+        :anchor-el="quickEditAnchorEl"
         @update="(changes) => $emit('update-pad', pad.id, changes)"
       />
     </div>
@@ -136,8 +138,17 @@ const listRef = ref(null);
 const dragOverPadId = ref(null);
 const editingPadId = ref(null);
 const quickEditPadId = ref(null);
+const padBlockRefs = ref({});
 
 const editingPad = computed(() => props.pads.find((p) => p.id === editingPadId.value) ?? null);
+const quickEditAnchorEl = computed(() =>
+  quickEditPadId.value ? padBlockRefs.value[quickEditPadId.value] ?? null : null
+);
+
+function setPadBlockRef(padId, el) {
+  if (el) padBlockRefs.value[padId] = el;
+  else delete padBlockRefs.value[padId];
+}
 
 function padAtClientY(clientY) {
   const el = listRef.value;

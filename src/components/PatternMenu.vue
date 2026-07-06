@@ -18,11 +18,17 @@
       <button
         ref="triggerRef"
         class="daw-toolbar-menu-btn"
+        :class="compactNavbar ? 'daw-toolbar-menu-btn--compact' : ''"
+        :title="activePattern?.name ?? 'No patterns'"
         @click="toggleOpen"
       >
-        <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: activePattern?.color }"></span>
-        <span class="truncate flex-1 min-w-0 text-left">{{ activePattern?.name ?? 'No patterns' }}</span>
-        <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
+        <span
+          class="rounded-sm flex-shrink-0 ring-1 ring-line/50"
+          :class="compactNavbar ? 'w-3 h-3' : 'w-2 h-2'"
+          :style="{ background: activePattern?.color }"
+        ></span>
+        <span v-if="!compactNavbar" class="truncate flex-1 min-w-0 text-left">{{ activePattern?.name ?? 'No patterns' }}</span>
+        <span v-if="!compactNavbar" class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
       </button>
 
       <button
@@ -129,6 +135,7 @@ const props = defineProps({
   soloPreview: { type: Object, default: null },
   /** Show Load/Save MIDI controls (MIDI synth tracks only). */
   midiIoEnabled: { type: Boolean, default: false },
+  compactNavbar: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([

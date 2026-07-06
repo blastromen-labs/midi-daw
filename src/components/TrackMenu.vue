@@ -4,11 +4,17 @@
       <button
         ref="triggerRef"
         class="daw-toolbar-menu-btn"
+        :class="compactNavbar ? 'daw-toolbar-menu-btn--compact' : ''"
+        :title="activeTrack?.name ?? 'No tracks'"
         @click="toggleOpen"
       >
-        <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: activeTrack?.color }"></span>
-        <span class="truncate flex-1 min-w-0 text-left">{{ activeTrack?.name ?? 'No tracks' }}</span>
-        <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
+        <span
+          class="rounded-sm flex-shrink-0 ring-1 ring-line/50"
+          :class="compactNavbar ? 'w-3 h-3' : 'w-2 h-2'"
+          :style="{ background: activeTrack?.color }"
+        ></span>
+        <span v-if="!compactNavbar" class="truncate flex-1 min-w-0 text-left">{{ activeTrack?.name ?? 'No tracks' }}</span>
+        <span v-if="!compactNavbar" class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
       </button>
 
       <button
@@ -94,6 +100,7 @@ const props = defineProps({
   tracks: { type: Array, required: true },
   activeTrackId: String,
   midiOutputs: { type: Array, default: () => [] },
+  compactNavbar: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['select', 'add-track', 'update-track', 'delete-track']);

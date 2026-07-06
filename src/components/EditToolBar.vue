@@ -4,13 +4,14 @@
       <button
         ref="triggerRef"
         type="button"
-        class="flex items-center gap-1 pl-1 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[4.75rem]"
+        class="flex items-center gap-1 pl-1 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0"
+        :class="compactNavbar ? 'daw-toolbar-icon-btn' : 'w-[4.75rem]'"
         :title="activeTool.label"
         @click="toggleOpen"
       >
         <component :is="activeTool.icon" class="w-3.5 h-3.5 flex-shrink-0" />
-        <span class="truncate flex-1 min-w-0 text-left">{{ activeTool.shortName }}</span>
-        <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
+        <span v-if="!compactNavbar" class="truncate flex-1 min-w-0 text-left">{{ activeTool.shortName }}</span>
+        <span v-if="!compactNavbar" class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
       </button>
 
       <Teleport to="body">
@@ -105,6 +106,7 @@ const props = defineProps({
   modelValue: { type: String, default: 'multi' },
   hasSelection: { type: Boolean, default: false },
   hasClipboard: { type: Boolean, default: false },
+  compactNavbar: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:modelValue', 'delete-selection', 'select-all', 'copy', 'paste']);

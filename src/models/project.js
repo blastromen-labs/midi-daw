@@ -450,6 +450,12 @@ export const SNAP_VALUES = [
   { label: '1/64', value: 0.0625 },
 ];
 
+/** Toolbar label for a snap option — compact mode drops the redundant "1/" prefix. */
+export function snapOptionLabel(entry, compact = false) {
+  if (!compact) return entry.label;
+  return entry.label.slice(2);
+}
+
 /** How a pattern is triggered in Live mode — configured per track in the piano roll. */
 export const LIVE_LAUNCH_MODES = {
   /** One click toggles loop on/off (default Live clip behavior). */

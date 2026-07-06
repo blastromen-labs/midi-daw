@@ -74,6 +74,11 @@ select:focus {
   line-height: 1.25;
 }
 
+select.toolbar-compact {
+  padding-right: 1.125rem;
+  text-align-last: center;
+}
+
 input[type='number'].toolbar-compact {
   -moz-appearance: textfield;
   appearance: textfield;
@@ -107,6 +112,10 @@ input[type='number'].toolbar-compact::-webkit-outer-spin-button {
 
   .daw-toolbar-menu-btn {
     @apply flex items-center gap-1 pl-1 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[6.25rem];
+  }
+
+  .daw-toolbar-menu-btn--compact {
+    @apply w-auto min-w-0 px-1 justify-center;
   }
 
   .daw-toolbar-icon-btn {

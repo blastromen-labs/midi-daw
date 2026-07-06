@@ -92,6 +92,30 @@
               <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
             </select>
           </section>
+
+          <section class="border-t border-line pt-4">
+            <h3 class="text-[10px] uppercase tracking-wider text-muted-dim mb-2">Interface</h3>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <span class="text-xs text-muted block">Compact navbar</span>
+                <span class="text-[11px] text-muted-dim leading-snug">
+                  Narrower track, pattern, song, and tool controls for tablets.
+                </span>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-5 rounded-full transition-colors relative flex-shrink-0"
+                :class="compactNavbar ? 'bg-accent' : 'bg-surface-hover'"
+                title="Use compact navbar controls"
+                @click="emit('compact-navbar-change', !compactNavbar)"
+              >
+                <span
+                  class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                  :class="compactNavbar ? 'left-5' : 'left-0.5'"
+                ></span>
+              </button>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -104,6 +128,7 @@ defineProps({
   clockInputId: { type: String, default: '' },
   sendMidiClock: Boolean,
   clockOutputId: { type: String, default: '' },
+  compactNavbar: Boolean,
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
 });
@@ -114,5 +139,6 @@ const emit = defineEmits([
   'clock-input-change',
   'toggle-clock',
   'clock-output-change',
+  'compact-navbar-change',
 ]);
 </script>

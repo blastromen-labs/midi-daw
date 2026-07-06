@@ -1,4 +1,4 @@
-import { uid, normalizeTrackCategory } from '../models/project.js';
+import { uid, normalizeTrackCategory, randomTrackColor } from '../models/project.js';
 
 const SONGS_KEY = 'midi-daw:songs';
 const CURRENT_SONG_KEY = 'midi-daw:currentSongId';
@@ -71,15 +71,26 @@ export function deserializeProject(data) {
   return project;
 }
 
-export function createSongEntry(name, project) {
+export function createSongEntry(name, project, color) {
   const now = new Date().toISOString();
   return {
     id: uid(),
     name: name.trim() || 'Untitled',
+    color: color ?? randomTrackColor(),
     createdAt: now,
     updatedAt: now,
     project: serializeProject(project),
   };
+}
+
+function normalizeSongColors(songs) {
+  const used = [];
+  for (const song of songs) {
+    if (!song.color) {
+      song.color = randomTrackColor(used);
+    }
+    used.push(song.color);
+  }
 }
 
 export function loadSongLibrary() {
@@ -90,6 +101,7 @@ export function loadSongLibrary() {
     if (parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.songs)) {
       return { songs: [], currentSongId: null };
     }
+    normalizeSongColors(parsed.songs);
     const currentSongId = localStorage.getItem(CURRENT_SONG_KEY);
     return { songs: parsed.songs, currentSongId };
   } catch {

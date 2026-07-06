@@ -22,6 +22,7 @@
       :clock-input-id="clockInputId"
       :send-midi-clock="sendMidiClock"
       :clock-output-id="clockOutputId"
+      :compact-navbar="compactNavbar"
       :midi-inputs="midiInputs"
       :midi-outputs="midiOutputs"
       @close="open = false"
@@ -29,6 +30,7 @@
       @clock-input-change="(v) => emit('clock-input-change', v)"
       @toggle-clock="emit('toggle-clock')"
       @clock-output-change="(v) => emit('clock-output-change', v)"
+      @compact-navbar-change="(v) => emit('compact-navbar-change', v)"
     />
   </div>
 </template>
@@ -42,6 +44,7 @@ defineProps({
   clockInputId: { type: String, default: '' },
   sendMidiClock: Boolean,
   clockOutputId: { type: String, default: '' },
+  compactNavbar: Boolean,
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
 });
@@ -51,6 +54,7 @@ const emit = defineEmits([
   'clock-input-change',
   'toggle-clock',
   'clock-output-change',
+  'compact-navbar-change',
 ]);
 
 const open = ref(false);

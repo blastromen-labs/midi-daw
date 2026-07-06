@@ -16,6 +16,7 @@
           :sync-mode="syncSettings.syncMode"
           :clock-input-id="syncSettings.clockInputId"
           :midi-inputs="midiInputs"
+          :compact-navbar="globalSettings.compactNavbar"
           :marker-beat="project.markerBeat"
           :loop-region="project.loopRegion"
           :solo-preview="project.soloPreview"
@@ -41,12 +42,14 @@
           @clock-output-change="syncSettings.clockOutputId = $event"
           @sync-mode-change="syncSettings.syncMode = $event"
           @clock-input-change="syncSettings.clockInputId = $event"
+          @compact-navbar-change="globalSettings.compactNavbar = $event"
           @view-mode-change="viewMode = $event"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
           @preview-pattern="onPreviewPattern"
           @select-song="selectSong"
           @rename-song="renameSong"
+          @update-song="updateSong"
           @create-song="createSong"
           @save-song-file="saveSongToFile"
           @load-song-file="loadSongFromFile"
@@ -65,12 +68,14 @@
           :clock-output-id="syncSettings.clockOutputId"
           :midi-inputs="midiInputs"
           :midi-outputs="midiOutputs"
+          :compact-navbar="globalSettings.compactNavbar"
           @toggle-play="togglePlay"
           @bpm-change="setBpm"
           @sync-mode-change="syncSettings.syncMode = $event"
           @clock-input-change="syncSettings.clockInputId = $event"
           @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
           @clock-output-change="syncSettings.clockOutputId = $event"
+          @compact-navbar-change="globalSettings.compactNavbar = $event"
           @view-mode-change="viewMode = $event"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
@@ -79,6 +84,7 @@
           @reorder-patterns="reorderPatterns"
           @select-song="selectSong"
           @rename-song="renameSong"
+          @update-song="updateSong"
           @create-song="createSong"
           @save-song-file="saveSongToFile"
           @load-song-file="loadSongFromFile"
@@ -127,6 +133,7 @@ import {
   downloadSongFile,
   parseSongFileJson,
 } from './engine/songStorage.js';
+import { loadGlobalSettings, persistGlobalSettings } from './engine/globalSettings.js';
 import {
   initMidi,
   listOutputs,
@@ -159,6 +166,7 @@ const syncSettings = reactive({
   sendMidiClock: false,
   clockOutputId: '',
 });
+const globalSettings = reactive(loadGlobalSettings());
 // Defaults to the first MIDI channel (falling back to whatever's first) so
 // the piano roll opens on a familiar MIDI-note view rather than the drum pad list.
 const activeTrackId = ref((project.tracks.find((t) => t.kind === 'midi') ?? project.tracks[0]).id);
@@ -314,10 +322,20 @@ function selectSong(songId) {
 
 function createSong(name) {
   saveCurrentSong();
-  const entry = createSongEntry(name, createProject());
+  const usedColors = songs.value.map((s) => s.color).filter(Boolean);
+  const entry = createSongEntry(name, createProject(), randomTrackColor(usedColors));
   songs.value.push(entry);
   currentSongId.value = entry.id;
   replaceProject(entry.project, { preserveSelection: true });
+  persistSongs();
+}
+
+function updateSong(songId, changes) {
+  const song = songs.value.find((s) => s.id === songId);
+  if (!song) return;
+  if (changes.name != null) song.name = changes.name.trim() || song.name;
+  if (changes.color != null) song.color = changes.color;
+  song.updatedAt = new Date().toISOString();
   persistSongs();
 }
 
@@ -362,7 +380,8 @@ function loadSongFromFile(text) {
 
   saveCurrentSong();
   applySyncSettingsFromProject(parsed.project);
-  const entry = createSongEntry(parsed.name, parsed.project);
+  const usedColors = songs.value.map((s) => s.color).filter(Boolean);
+  const entry = createSongEntry(parsed.name, parsed.project, randomTrackColor(usedColors));
   songs.value.push(entry);
   currentSongId.value = entry.id;
   replaceProject(entry.project, { preserveSelection: true });
@@ -472,6 +491,7 @@ onUnmounted(() => {
 });
 
 watch(syncSettings, applyGlobalSettingsToProject, { deep: true, immediate: true });
+watch(globalSettings, () => persistGlobalSettings(globalSettings), { deep: true });
 watch(() => [syncSettings.syncMode, syncSettings.clockInputId], engageSyncMode);
 
 watch(

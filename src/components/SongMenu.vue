@@ -1,13 +1,32 @@
 <template>
   <div class="song-menu flex-shrink-0 flex flex-col items-center gap-px" ref="rootRef">
-    <button
-      ref="triggerRef"
-      class="daw-toolbar-menu-btn"
-      @click="toggleOpen"
-    >
-      <span class="truncate flex-1 min-w-0 text-left">{{ activeSong?.name ?? 'No song' }}</span>
-      <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
-    </button>
+    <div class="flex items-center gap-0.5">
+      <button
+        ref="triggerRef"
+        class="daw-toolbar-menu-btn"
+        :class="compactNavbar ? 'daw-toolbar-menu-btn--compact' : ''"
+        :title="activeSong?.name ?? 'No song'"
+        @click="toggleOpen"
+      >
+        <span
+          class="rounded-sm flex-shrink-0 ring-1 ring-line/50"
+          :class="compactNavbar ? 'w-3 h-3' : 'w-2 h-2'"
+          :style="{ background: activeSong?.color ?? '#6699ff' }"
+        ></span>
+        <span v-if="!compactNavbar" class="truncate flex-1 min-w-0 text-left">{{ activeSong?.name ?? 'No song' }}</span>
+        <span v-if="!compactNavbar" class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
+      </button>
+
+      <button
+        type="button"
+        class="daw-toolbar-icon-btn text-base leading-none text-muted hover:text-white hover:bg-surface-hover disabled:opacity-30 disabled:pointer-events-none"
+        title="Edit song"
+        :disabled="!activeSong"
+        @click="startEditActive"
+      >
+        ✎
+      </button>
+    </div>
     <span class="text-[7px] leading-none text-muted-dim uppercase tracking-wider select-none">Song</span>
 
     <Teleport to="body">
@@ -26,6 +45,11 @@
             @click="selectSong(song)"
           >
             <div class="flex items-center gap-1.5 px-2 py-1">
+              <span
+                class="w-3 h-3 rounded-sm flex-shrink-0 ring-1 ring-line"
+                :style="{ background: song.color ?? '#6699ff' }"
+              />
+
               <input
                 v-if="renamingId === song.id"
                 :ref="(el) => setRenameInputRef(el)"
@@ -102,18 +126,27 @@
         </div>
       </div>
     </Teleport>
+
+    <SongEditorModal
+      v-if="editorOpen"
+      :initial="editorInitial"
+      @save="commitEditor"
+      @cancel="closeEditor"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, nextTick, onUnmounted } from 'vue';
+import SongEditorModal from './SongEditorModal.vue';
 
 const props = defineProps({
   songs: { type: Array, required: true },
   activeSongId: String,
+  compactNavbar: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['select', 'rename', 'create', 'save-file', 'load-file', 'load-file-error']);
+const emit = defineEmits(['select', 'rename', 'update', 'create', 'save-file', 'load-file', 'load-file-error']);
 
 const open = ref(false);
 const renamingId = ref(null);
@@ -125,6 +158,9 @@ const panelRef = ref(null);
 const createInputRef = ref(null);
 const fileInputRef = ref(null);
 const panelStyle = ref({});
+
+const editorOpen = ref(false);
+const editorInitial = ref({});
 
 const activeSong = computed(() => props.songs.find((s) => s.id === props.activeSongId));
 
@@ -148,6 +184,26 @@ function toggleOpen() {
     creating.value = false;
     newSongName.value = '';
   }
+}
+
+function closeEditor() {
+  editorOpen.value = false;
+}
+
+function startEditActive() {
+  if (!activeSong.value) return;
+  editorInitial.value = {
+    name: activeSong.value.name,
+    color: activeSong.value.color,
+  };
+  open.value = false;
+  editorOpen.value = true;
+}
+
+function commitEditor(values) {
+  if (!activeSong.value) return;
+  emit('update', activeSong.value.id, values);
+  closeEditor();
 }
 
 function setRenameInputRef(el) {
@@ -220,6 +276,7 @@ function onFileSelected(e) {
 }
 
 function onDocumentPointerDown(e) {
+  if (editorOpen.value) return;
   if (!open.value) return;
   const insideTrigger = rootRef.value?.contains(e.target);
   const insidePanel = panelRef.value?.contains(e.target);
@@ -236,6 +293,7 @@ function onWindowChange() {
 }
 
 function onKeyDown(e) {
+  if (editorOpen.value) return;
   if (open.value && e.key === 'Escape') {
     if (creating.value) {
       cancelCreate();

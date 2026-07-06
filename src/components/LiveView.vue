@@ -44,8 +44,10 @@
       <SongMenu
         :songs="songs"
         :active-song-id="activeSongId"
+        :compact-navbar="compactNavbar"
         @select="(id) => $emit('select-song', id)"
         @rename="(id, name) => $emit('rename-song', id, name)"
+        @update="(id, changes) => $emit('update-song', id, changes)"
         @create="(name) => $emit('create-song', name)"
         @save-file="$emit('save-song-file')"
         @load-file="(text) => $emit('load-song-file', text)"
@@ -57,12 +59,14 @@
         :clock-input-id="clockInputId"
         :send-midi-clock="sendMidiClock"
         :clock-output-id="clockOutputId"
+        :compact-navbar="compactNavbar"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
         @sync-mode-change="(v) => $emit('sync-mode-change', v)"
         @clock-input-change="(v) => $emit('clock-input-change', v)"
         @toggle-clock="$emit('toggle-clock')"
         @clock-output-change="(v) => $emit('clock-output-change', v)"
+        @compact-navbar-change="(v) => $emit('compact-navbar-change', v)"
       />
       </div>
     </div>
@@ -183,6 +187,7 @@ const props = defineProps({
   clockOutputId: { type: String, default: '' },
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
+  compactNavbar: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -192,6 +197,7 @@ const emit = defineEmits([
   'clock-input-change',
   'toggle-clock',
   'clock-output-change',
+  'compact-navbar-change',
   'view-mode-change',
   'trigger-pattern',
   'hold-pattern-down',
@@ -200,6 +206,7 @@ const emit = defineEmits([
   'reorder-patterns',
   'select-song',
   'rename-song',
+  'update-song',
   'create-song',
   'save-song-file',
   'load-song-file',

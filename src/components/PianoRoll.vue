@@ -44,6 +44,7 @@
         :tracks="tracks"
         :active-track-id="activeTrackId"
         :midi-outputs="midiOutputs"
+        :compact-navbar="compactNavbar"
         @select="(id) => $emit('select-track', id)"
         @add-track="(kind, config) => $emit('add-track', kind, config)"
         @update-track="(id, changes) => $emit('update-track', id, changes)"
@@ -58,6 +59,7 @@
           :playing="playing"
           :solo-preview="soloPreview"
           :midi-io-enabled="activeTrack.kind === 'midi'"
+          :compact-navbar="compactNavbar"
           @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
           @add-pattern="(config) => emit('add-pattern', activeTrackId, config)"
           @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
@@ -81,13 +83,27 @@
 
       <!-- Note placement -->
       <ToolbarField label="Snap">
-        <select v-model="snap" class="text-xs flex-shrink-0 py-0.5" title="Snap">
-          <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
+        <select
+          v-model="snap"
+          class="text-xs flex-shrink-0 py-0.5"
+          :class="compactNavbar ? 'toolbar-compact w-10 min-w-[2.5rem] text-center' : ''"
+          title="Snap"
+        >
+          <option v-for="s in snapValues" :key="s.value" :value="s.value">
+            {{ snapOptionLabel(s, compactNavbar) }}
+          </option>
         </select>
       </ToolbarField>
       <ToolbarField label="Len">
-        <select v-model="noteLength" class="text-xs flex-shrink-0 py-0.5" title="Note length — independent of Snap">
-          <option v-for="s in snapValues" :key="s.value" :value="s.value">{{ s.label }}</option>
+        <select
+          v-model="noteLength"
+          class="text-xs flex-shrink-0 py-0.5"
+          :class="compactNavbar ? 'toolbar-compact w-10 min-w-[2.5rem] text-center' : ''"
+          title="Note length — independent of Snap"
+        >
+          <option v-for="s in snapValues" :key="s.value" :value="s.value">
+            {{ snapOptionLabel(s, compactNavbar) }}
+          </option>
         </select>
       </ToolbarField>
 
@@ -97,6 +113,7 @@
         v-model="editTool"
         :has-selection="hasSelection"
         :has-clipboard="hasClipboard"
+        :compact-navbar="compactNavbar"
         @delete-selection="deleteSelectedNotes"
         @select-all="selectAllNotes"
         @copy="copySelection"
@@ -114,8 +131,10 @@
       <SongMenu
         :songs="songs"
         :active-song-id="activeSongId"
+        :compact-navbar="compactNavbar"
         @select="(id) => $emit('select-song', id)"
         @rename="(id, name) => $emit('rename-song', id, name)"
+        @update="(id, changes) => $emit('update-song', id, changes)"
         @create="(name) => $emit('create-song', name)"
         @save-file="$emit('save-song-file')"
         @load-file="(text) => $emit('load-song-file', text)"
@@ -127,12 +146,14 @@
         :clock-input-id="clockInputId"
         :send-midi-clock="sendMidiClock"
         :clock-output-id="clockOutputId"
+        :compact-navbar="compactNavbar"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
         @sync-mode-change="(v) => $emit('sync-mode-change', v)"
         @clock-input-change="(v) => $emit('clock-input-change', v)"
         @toggle-clock="$emit('toggle-clock')"
         @clock-output-change="(v) => $emit('clock-output-change', v)"
+        @compact-navbar-change="(v) => $emit('compact-navbar-change', v)"
       />
       </div>
     </div>
@@ -441,7 +462,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
+import { noteName, SNAP_VALUES, snapOptionLabel, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import {
@@ -494,6 +515,7 @@ const props = defineProps({
   syncMode: { type: String, default: 'internal' },
   clockInputId: { type: String, default: '' },
   midiInputs: { type: Array, default: () => [] },
+  compactNavbar: { type: Boolean, default: false },
   markerBeat: { type: Number, default: null },
   loopRegion: { type: Object, default: null },
   soloPreview: { type: Object, default: null },
@@ -528,12 +550,14 @@ const emit = defineEmits([
   'clock-output-change',
   'sync-mode-change',
   'clock-input-change',
+  'compact-navbar-change',
   'view-mode-change',
   'hold-pattern-down',
   'hold-pattern-up',
   'preview-pattern',
   'select-song',
   'rename-song',
+  'update-song',
   'create-song',
   'save-song-file',
   'load-song-file',

@@ -175,7 +175,7 @@
           </svg>
         </button>
       </div>
-      <div class="flex-1 min-w-0 relative">
+      <div class="flex-1 min-w-0 relative pb-3.5">
         <div
           ref="markerScrollRef"
           class="overflow-x-auto overflow-y-hidden marker-scroll-native-hidden"
@@ -211,6 +211,15 @@
             </div>
           </div>
         </div>
+        <!-- Horizontal scroll under the marker timeline — drives the grid
+             directly (scrollRef) so it stays in sync; top placement keeps it
+             visible on tablet without reaching the bottom of the roll. -->
+        <TouchScrollbar
+          v-if="scrollRef"
+          :container="scrollRef"
+          :content="gridContentRef"
+          orientation="horizontal"
+        />
       </div>
     </div>
 
@@ -267,9 +276,9 @@
       </div>
 
       <!-- Grid — drum velocity is part of scroll content, directly under the last pad row. -->
-      <div class="flex flex-1 min-h-0 relative">
+      <div class="flex flex-1 min-h-0 min-w-0 relative">
         <div
-          class="flex-1 h-full overflow-auto overflow-y-hidden-native relative"
+          class="flex-1 min-h-0 overflow-auto overflow-y-hidden-native relative"
           :class="scrollTouchActionClass"
           ref="scrollRef"
           @scroll="onScroll"
@@ -2751,12 +2760,15 @@ onUnmounted(() => {
   overscroll-behavior: none;
 }
 
-/* The grid's vertical scrolling is handled by <TouchScrollbar> (touch-draggable);
-   hide only the native vertical thumb so the two don't double up. Horizontal
-   scrolling uses the native bar on the grid — marker timeline above stays in
-   sync via onScroll/onMarkerScroll. Per-axis hiding is WebKit-only. */
+/* Grid vertical + timeline horizontal use <TouchScrollbar>; hide native thumbs
+   on the grid so they don't double up. Per-axis hiding is WebKit-only. */
 .overflow-y-hidden-native::-webkit-scrollbar:vertical {
   width: 0;
+  display: none;
+}
+
+.overflow-y-hidden-native::-webkit-scrollbar:horizontal {
+  height: 0;
   display: none;
 }
 

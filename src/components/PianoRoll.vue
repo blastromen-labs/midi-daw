@@ -143,7 +143,7 @@
         :style="{ width: leftGutterWidth + 'px' }"
       >
         <div
-          v-if="isDrumTrack && activeTrack"
+          v-if="isDrumTrack && activeTrack && drumControlsVisible"
           class="flex-1 min-w-0"
         >
           <VolumeSlider
@@ -562,8 +562,8 @@ const ROW_HEIGHT = 20;
 const DRUM_ROW_HEIGHT = 36;
 const KEY_WIDTH = 48;
 const DRUM_KEYS_WIDTH = 288;
-// Narrow strip kept visible when pad controls are collapsed — track volume + show/hide toggle.
-const DRUM_TOGGLE_STRIP_WIDTH = 120;
+// Narrow strip kept visible when pad controls are collapsed — show/hide toggle only.
+const DRUM_TOGGLE_STRIP_WIDTH = 40;
 const DEFAULT_BEAT_WIDTH = 140;
 const MIN_BEAT_WIDTH = 20;
 const MAX_BEAT_WIDTH = 400;

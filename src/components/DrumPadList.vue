@@ -10,11 +10,14 @@
     <div
       v-for="pad in pads"
       :key="pad.id"
-      class="pad-row flex items-center gap-1 px-1 py-1 border-b border-line/60 group transition-colors pointer-events-none"
-      :class="dragOverPadId === pad.id ? 'bg-accent/15 ring-1 ring-inset ring-accent/50' : ''"
+      class="pad-block relative flex-shrink-0 border-b border-line/60"
       :style="{ height: rowHeight + 'px' }"
       :data-pad-id="pad.id"
     >
+      <div
+        class="pad-row flex items-center gap-1 px-1 py-1 h-full group transition-colors pointer-events-none"
+        :class="dragOverPadId === pad.id ? 'bg-accent/15 ring-1 ring-inset ring-accent/50' : ''"
+      >
       <button
         type="button"
         class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/60 pointer-events-auto"
@@ -31,6 +34,17 @@
           :title="pad.fileName"
         >{{ pad.fileName }}</span>
       </div>
+
+      <button
+        type="button"
+        class="quick-edit-toggle flex items-center justify-center flex-shrink-0 self-center pointer-events-auto w-5 h-5 rounded text-muted hover:text-white hover:bg-surface-hover relative z-20"
+        :title="quickEditPadId === pad.id ? 'Close quick edit' : 'Quick edit — pitch & FX'"
+        @click.stop="toggleQuickEdit(pad.id)"
+      >
+        <span class="text-[10px] leading-none select-none" aria-hidden="true">
+          {{ quickEditPadId === pad.id ? '▴' : '▾' }}
+        </span>
+      </button>
 
       <button
         type="button"
@@ -65,6 +79,13 @@
       >
         Edit
       </button>
+      </div>
+
+      <DrumPadQuickEdit
+        v-if="quickEditPadId === pad.id"
+        :pad="pad"
+        @update="(changes) => $emit('update-pad', pad.id, changes)"
+      />
     </div>
 
     <button
@@ -99,6 +120,7 @@ import { padPlaybackOpts, previewTrackOpts } from '../engine/padPlayback.js';
 import { audioFileFromDataTransfer, acceptFileDrag } from '../utils/audioFile.js';
 import VolumeSlider from './VolumeSlider.vue';
 import DrumPadEditorModal from './DrumPadEditorModal.vue';
+import DrumPadQuickEdit from './DrumPadQuickEdit.vue';
 
 const PREVIEW_VELOCITY = 100;
 
@@ -113,6 +135,7 @@ const emit = defineEmits(['load-sample', 'clear-sample', 'add-pad', 'remove-pad'
 const listRef = ref(null);
 const dragOverPadId = ref(null);
 const editingPadId = ref(null);
+const quickEditPadId = ref(null);
 
 const editingPad = computed(() => props.pads.find((p) => p.id === editingPadId.value) ?? null);
 
@@ -144,6 +167,7 @@ function onListDrop(e) {
 }
 
 function openEditor(padId) {
+  quickEditPadId.value = null;
   editingPadId.value = padId;
 }
 
@@ -195,6 +219,10 @@ function onEditorRemove() {
   const padId = editingPadId.value;
   editingPadId.value = null;
   emit('remove-pad', padId);
+}
+
+function toggleQuickEdit(padId) {
+  quickEditPadId.value = quickEditPadId.value === padId ? null : padId;
 }
 
 function toggleMute(pad) {

@@ -224,7 +224,8 @@
       <!-- Piano keys (MIDI tracks) / pad list (drum tracks) -->
       <div
         v-show="!isDrumTrack || drumControlsVisible"
-        class="flex-shrink-0 overflow-hidden bg-panel border-r border-line"
+        class="flex-shrink-0 bg-panel border-r border-line"
+        :class="isDrumTrack ? 'overflow-x-hidden overflow-y-visible' : 'overflow-hidden'"
         :style="{ width: keysWidth + 'px' }"
         ref="keysRef"
       >

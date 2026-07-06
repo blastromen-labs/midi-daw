@@ -92,8 +92,20 @@
       </div>
     </div>
 
-    <div v-if="midiError" class="fixed bottom-4 right-4 bg-red-900/90 text-red-200 px-4 py-2 rounded text-sm">
-      {{ midiError }}
+    <div
+      v-if="midiError"
+      class="fixed bottom-4 right-4 flex items-start gap-2 bg-red-900/90 text-red-200 pl-4 pr-2 py-2 rounded text-sm max-w-sm"
+    >
+      <span class="flex-1 pt-0.5">{{ midiError }}</span>
+      <button
+        type="button"
+        class="shrink-0 w-6 h-6 rounded flex items-center justify-center text-red-300 hover:text-white hover:bg-red-800/80"
+        title="Dismiss"
+        aria-label="Dismiss"
+        @click="midiError = ''"
+      >
+        ×
+      </button>
     </div>
     <div v-if="fileError" class="fixed bottom-4 left-4 bg-red-900/90 text-red-200 px-4 py-2 rounded text-sm max-w-sm">
       {{ fileError }}

@@ -48,7 +48,6 @@
           @hold-pattern-up="onHoldPatternUp"
           @preview-pattern="onPreviewPattern"
           @select-song="selectSong"
-          @rename-song="renameSong"
           @update-song="updateSong"
           @create-song="createSong"
           @save-song-file="saveSongToFile"
@@ -83,7 +82,6 @@
           @edit-pattern="editPattern"
           @reorder-patterns="reorderPatterns"
           @select-song="selectSong"
-          @rename-song="renameSong"
           @update-song="updateSong"
           @create-song="createSong"
           @save-song-file="saveSongToFile"
@@ -338,10 +336,6 @@ function updateSong(songId, changes) {
   if (changes.color != null) song.color = changes.color;
   song.updatedAt = new Date().toISOString();
   persistSongs();
-}
-
-function renameSong(songId, name) {
-  updateSong(songId, { name });
 }
 
 function applySyncSettingsFromProject(snapshot) {

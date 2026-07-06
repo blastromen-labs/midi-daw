@@ -53,26 +53,7 @@
                 :style="{ background: song.color ?? '#6699ff' }"
               />
 
-              <input
-                v-if="renamingId === song.id"
-                :ref="(el) => setRenameInputRef(el)"
-                :value="song.name"
-                class="flex-1 min-w-0 bg-transparent border-b border-accent text-xs px-0.5 outline-none"
-                @click.stop
-                @keydown.enter="commitRename($event, song.id)"
-                @keydown.esc="renamingId = null"
-                @blur="commitRename($event, song.id)"
-              />
-              <span v-else class="flex-1 min-w-0 truncate text-xs">{{ song.name }}</span>
-
-              <button
-                v-if="renamingId !== song.id"
-                class="opacity-0 group-hover:opacity-100 text-[10px] text-muted-dim hover:text-white flex-shrink-0"
-                title="Rename song"
-                @click.stop="startRename(song)"
-              >
-                ✎
-              </button>
+              <span class="flex-1 min-w-0 truncate text-xs">{{ song.name }}</span>
             </div>
           </div>
 
@@ -151,10 +132,9 @@ const props = defineProps({
   compactNavbar: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['select', 'rename', 'update', 'create', 'save-file', 'load-file', 'load-file-error']);
+const emit = defineEmits(['select', 'update', 'create', 'save-file', 'load-file', 'load-file-error']);
 
 const open = ref(false);
-const renamingId = ref(null);
 const creating = ref(false);
 const newSongName = ref('');
 const rootRef = ref(null);
@@ -185,7 +165,6 @@ function toggleOpen() {
   open.value = !open.value;
   if (open.value) nextTick(updatePosition);
   else {
-    renamingId.value = null;
     creating.value = false;
     newSongName.value = '';
   }
@@ -211,30 +190,12 @@ function commitEditor(values) {
   closeEditor();
 }
 
-function setRenameInputRef(el) {
-  if (el) nextTick(() => el.focus());
-}
-
 function selectSong(song) {
-  if (renamingId.value) return;
   emit('select', song.id);
   open.value = false;
 }
 
-function startRename(song) {
-  creating.value = false;
-  renamingId.value = song.id;
-}
-
-function commitRename(e, songId) {
-  if (renamingId.value !== songId) return;
-  const name = e.target.value.trim();
-  renamingId.value = null;
-  if (name) emit('rename', songId, name);
-}
-
 function startCreate() {
-  renamingId.value = null;
   creating.value = true;
   newSongName.value = '';
   nextTick(() => createInputRef.value?.focus());
@@ -287,7 +248,6 @@ function onDocumentPointerDown(e) {
   const insidePanel = panelRef.value?.contains(e.target);
   if (!insideTrigger && !insidePanel) {
     open.value = false;
-    renamingId.value = null;
     creating.value = false;
     newSongName.value = '';
   }
@@ -305,7 +265,6 @@ function onKeyDown(e) {
       return;
     }
     open.value = false;
-    renamingId.value = null;
   }
 }
 

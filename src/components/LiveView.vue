@@ -26,7 +26,6 @@
         :active-song-id="activeSongId"
         :compact-navbar="compactNavbar"
         @select="(id) => $emit('select-song', id)"
-        @rename="(id, name) => $emit('rename-song', id, name)"
         @update="(id, changes) => $emit('update-song', id, changes)"
         @create="(name) => $emit('create-song', name)"
         @save-file="$emit('save-song-file')"
@@ -185,7 +184,6 @@ const emit = defineEmits([
   'edit-pattern',
   'reorder-patterns',
   'select-song',
-  'rename-song',
   'update-song',
   'create-song',
   'save-song-file',

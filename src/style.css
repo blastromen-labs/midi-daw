@@ -79,6 +79,25 @@ select.toolbar-compact {
   text-align-last: center;
 }
 
+/* Snap/Len in compact navbar. The native dropdown arrow reserves its own
+   fixed-width box regardless of padding, which left no room for the value
+   text at this width — replace it with a small drawn arrow so the full
+   width is available for the number. */
+select.toolbar-compact.toolbar-compact--dense {
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 0.7rem 1px 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath fill='%236c7981' d='M0 0l4 5 4-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 3px center;
+  background-size: 6px 4px;
+  text-align: center;
+  text-align-last: center;
+}
+
 input[type='number'].toolbar-compact {
   -moz-appearance: textfield;
   appearance: textfield;

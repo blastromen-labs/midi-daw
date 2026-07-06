@@ -85,8 +85,8 @@
       <ToolbarField label="Snap">
         <select
           v-model="snap"
-          class="text-xs flex-shrink-0 py-0.5"
-          :class="compactNavbar ? 'toolbar-compact w-10 min-w-[2.5rem] text-center' : ''"
+          class="flex-shrink-0"
+          :class="compactNavbar ? 'toolbar-compact toolbar-compact--dense w-[2.375rem] min-w-[2.375rem]' : 'text-xs py-0.5'"
           title="Snap"
         >
           <option v-for="s in snapValues" :key="s.value" :value="s.value">
@@ -97,8 +97,8 @@
       <ToolbarField label="Len">
         <select
           v-model="noteLength"
-          class="text-xs flex-shrink-0 py-0.5"
-          :class="compactNavbar ? 'toolbar-compact w-10 min-w-[2.5rem] text-center' : ''"
+          class="flex-shrink-0"
+          :class="compactNavbar ? 'toolbar-compact toolbar-compact--dense w-[2.375rem] min-w-[2.375rem]' : 'text-xs py-0.5'"
           title="Note length — independent of Snap"
         >
           <option v-for="s in snapValues" :key="s.value" :value="s.value">

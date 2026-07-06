@@ -27,3 +27,14 @@ export function shade(hex, amount) {
     b: b + (target - b) * t,
   });
 }
+
+/**
+ * Black or white — whichever stays readable as text/icon color drawn on top
+ * of an arbitrary accent color (e.g. a letter inside a track's color swatch).
+ */
+export function contrastTextColor(hex) {
+  if (!hex) return '#0b0f12';
+  const { r, g, b } = hexToRgb(hex);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? '#0b0f12' : '#ffffff';
+}

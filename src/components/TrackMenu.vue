@@ -9,10 +9,13 @@
         @click="toggleOpen"
       >
         <span
-          class="rounded-sm flex-shrink-0 ring-1 ring-line/50"
-          :class="compactNavbar ? 'w-3 h-3' : 'w-2 h-2'"
-          :style="{ background: activeTrack?.color }"
-        ></span>
+          class="rounded-sm flex-shrink-0 ring-1 ring-line/50 flex items-center justify-center leading-none"
+          :class="compactNavbar ? 'w-3 h-3 text-[7px] font-bold' : 'w-2 h-2'"
+          :style="{
+            background: activeTrack?.color,
+            color: compactNavbar ? contrastTextColor(activeTrack?.color) : undefined,
+          }"
+        >{{ compactNavbar ? initialLetter(activeTrack?.name) : '' }}</span>
         <span v-if="!compactNavbar" class="truncate flex-1 min-w-0 text-left">{{ activeTrack?.name ?? 'No tracks' }}</span>
         <span v-if="!compactNavbar" class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
       </button>
@@ -94,6 +97,8 @@
 <script setup>
 import { ref, computed, nextTick, onUnmounted } from 'vue';
 import { randomTrackColor, defaultTrackCategory } from '../models/project.js';
+import { contrastTextColor } from '../utils/color.js';
+import { initialLetter } from '../utils/text.js';
 import TrackEditorModal from './TrackEditorModal.vue';
 
 const props = defineProps({

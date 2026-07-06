@@ -11,10 +11,13 @@
       @click.stop="toggleOpen"
     >
       <span
-        class="rounded-sm flex-shrink-0 ring-1 ring-line/60"
-        :class="compact ? 'w-2.5 h-2.5' : 'w-2 h-2'"
-        :style="{ background: activePad?.color ?? '#666' }"
-      ></span>
+        class="rounded-sm flex-shrink-0 ring-1 ring-line/60 flex items-center justify-center leading-none"
+        :class="compact ? 'w-2.5 h-2.5 text-[7px] font-bold' : 'w-2 h-2'"
+        :style="{
+          background: activePad?.color ?? '#666',
+          color: compact ? contrastTextColor(activePad?.color ?? '#666') : undefined,
+        }"
+      >{{ compact ? initialLetter(activePad?.name) : '' }}</span>
       <template v-if="!compact">
         <span class="flex-1 min-w-0 truncate text-left text-[10px] font-semibold">
           {{ activePad?.name ?? 'Pad' }}
@@ -53,6 +56,8 @@
 
 <script setup>
 import { ref, computed, nextTick, onUnmounted } from 'vue';
+import { contrastTextColor } from '../utils/color.js';
+import { initialLetter } from '../utils/text.js';
 
 const DROPDOWN_GAP = 4;
 const VIEWPORT_MARGIN = 8;

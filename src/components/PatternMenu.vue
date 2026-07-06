@@ -23,10 +23,13 @@
         @click="toggleOpen"
       >
         <span
-          class="rounded-sm flex-shrink-0 ring-1 ring-line/50"
-          :class="compactNavbar ? 'w-3 h-3' : 'w-2 h-2'"
-          :style="{ background: activePattern?.color }"
-        ></span>
+          class="rounded-sm flex-shrink-0 ring-1 ring-line/50 flex items-center justify-center leading-none"
+          :class="compactNavbar ? 'w-3 h-3 text-[7px] font-bold' : 'w-2 h-2'"
+          :style="{
+            background: activePattern?.color,
+            color: compactNavbar ? contrastTextColor(activePattern?.color) : undefined,
+          }"
+        >{{ compactNavbar ? initialLetter(activePattern?.name) : '' }}</span>
         <span v-if="!compactNavbar" class="truncate flex-1 min-w-0 text-left">{{ activePattern?.name ?? 'No patterns' }}</span>
         <span v-if="!compactNavbar" class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
       </button>
@@ -127,6 +130,8 @@
 import { ref, computed, nextTick, onUnmounted } from 'vue';
 import { BAR_LENGTH_OPTIONS, LIVE_LAUNCH_MODES, randomPatternColor } from '../models/project.js';
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
+import { contrastTextColor } from '../utils/color.js';
+import { initialLetter } from '../utils/text.js';
 import PatternEditorModal from './PatternEditorModal.vue';
 
 const props = defineProps({

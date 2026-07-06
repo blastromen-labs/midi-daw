@@ -35,12 +35,14 @@
           </section>
 
           <section>
-            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Category</label>
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Bar length</label>
             <select
-              v-model="draft.category"
+              v-model.number="draft.patternSteps"
               class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded"
             >
-              <option v-for="cat in trackCategories" :key="cat" :value="cat">{{ cat }}</option>
+              <option v-for="opt in barLengthOptions" :key="opt.steps" :value="opt.steps">
+                {{ opt.bars }} bar{{ opt.bars === 1 ? '' : 's' }}
+              </option>
             </select>
           </section>
 
@@ -60,46 +62,43 @@
             </div>
           </section>
 
-          <section v-if="kind === 'midi'" class="border-t border-line pt-4">
-            <h3 class="text-[10px] uppercase tracking-wider text-muted-dim mb-2">MIDI routing</h3>
-            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Output</label>
+          <section class="border-t border-line pt-4">
+            <h3 class="text-[10px] uppercase tracking-wider text-muted-dim mb-2">Live</h3>
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Launch mode</label>
             <select
-              v-model="draft.midiOutputId"
+              v-model="draft.liveLaunchMode"
               class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded mb-3"
             >
-              <option value="">— Not connected —</option>
-              <option v-for="d in midiOutputs" :key="d.id" :value="d.id">{{ d.name }}</option>
+              <option value="toggle">Loop</option>
+              <option value="hold">Hold</option>
             </select>
-            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Channel</label>
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Sync grid</label>
             <select
-              v-model.number="draft.midiChannel"
+              v-model="draft.liveSyncGrid"
               class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded"
+              :disabled="draft.liveLaunchMode !== 'hold'"
+              title="Grid the pattern unmute aligns to when you press (Hold mode)"
             >
-              <option v-for="ch in 16" :key="ch - 1" :value="ch - 1">Channel {{ ch }}</option>
+              <option v-for="opt in liveSyncGridOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
             </select>
-          </section>
-
-          <section v-else class="border-t border-line pt-4">
-            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
-              Volume — {{ Math.round(draft.volume * 100) }}%
-            </label>
-            <VolumeSlider wide class="w-full" v-model="draft.volume" />
           </section>
         </div>
 
         <div class="flex items-center gap-2 px-4 py-3 border-t border-line bg-surface/40">
-          <div v-if="mode === 'edit'" class="flex items-center gap-2 min-w-0 flex-1">
+          <div v-if="mode === 'edit' && canDelete" class="flex items-center gap-2 min-w-0 flex-1">
             <template v-if="!confirmDelete">
               <button
                 type="button"
                 class="px-3 py-1.5 rounded text-xs text-red-400 hover:text-red-300 hover:bg-surface-hover flex-shrink-0"
                 @click="confirmDelete = true"
               >
-                Delete track
+                Delete pattern
               </button>
             </template>
             <template v-else>
-              <span class="text-xs text-muted truncate">Delete "{{ draft.name.trim() || 'this track' }}"?</span>
+              <span class="text-xs text-muted truncate">Delete "{{ draft.name.trim() || 'this pattern' }}"?</span>
               <button
                 type="button"
                 class="px-2 py-1.5 rounded text-xs text-muted hover:text-white hover:bg-surface-hover flex-shrink-0"
@@ -131,7 +130,7 @@
               :disabled="!draft.name.trim()"
               @click="submit"
             >
-              {{ mode === 'create' ? 'Create track' : 'Save' }}
+              {{ mode === 'create' ? 'Create pattern' : 'Save' }}
             </button>
           </div>
         </div>
@@ -142,50 +141,42 @@
 
 <script setup>
 import { ref, computed, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { TRACK_ACCENT_COLORS, TRACK_CATEGORIES } from '../models/project.js';
-import VolumeSlider from './VolumeSlider.vue';
+import { TRACK_ACCENT_COLORS, BAR_LENGTH_OPTIONS, LIVE_SYNC_GRID_OPTIONS } from '../models/project.js';
 
 const props = defineProps({
   mode: { type: String, required: true }, // 'create' | 'edit'
-  kind: { type: String, required: true }, // 'midi' | 'drum'
   initial: {
     type: Object,
     required: true,
   },
-  midiOutputs: { type: Array, default: () => [] },
+  canDelete: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['save', 'cancel', 'delete']);
 
 const accentColors = TRACK_ACCENT_COLORS;
-const trackCategories = TRACK_CATEGORIES;
+const barLengthOptions = BAR_LENGTH_OPTIONS;
+const liveSyncGridOptions = LIVE_SYNC_GRID_OPTIONS;
 const nameInputRef = ref(null);
 const confirmDelete = ref(false);
-const titleId = `track-editor-${Math.random().toString(36).slice(2, 9)}`;
+const titleId = `pattern-editor-${Math.random().toString(36).slice(2, 9)}`;
 
 const draft = reactive({
   name: '',
   color: accentColors[0],
-  category: trackCategories[0],
-  midiOutputId: '',
-  midiChannel: 0,
-  volume: 1,
+  patternSteps: barLengthOptions[0].steps,
+  liveLaunchMode: 'toggle',
+  liveSyncGrid: '1/16',
 });
 
-const heading = computed(() => {
-  if (props.mode === 'create') {
-    return props.kind === 'drum' ? 'New drum track' : 'New MIDI track';
-  }
-  return props.kind === 'drum' ? 'Edit drum track' : 'Edit MIDI track';
-});
+const heading = computed(() => (props.mode === 'create' ? 'New pattern' : 'Edit pattern'));
 
 function syncFromInitial() {
   draft.name = props.initial.name ?? '';
   draft.color = props.initial.color ?? accentColors[0];
-  draft.category = props.initial.category ?? trackCategories[0];
-  draft.midiOutputId = props.initial.midiOutputId ?? '';
-  draft.midiChannel = props.initial.midiChannel ?? 0;
-  draft.volume = props.initial.volume ?? 1;
+  draft.patternSteps = props.initial.patternSteps ?? barLengthOptions[0].steps;
+  draft.liveLaunchMode = props.initial.liveLaunchMode ?? 'toggle';
+  draft.liveSyncGrid = props.initial.liveSyncGrid ?? '1/16';
 }
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
@@ -196,10 +187,9 @@ function submit() {
   emit('save', {
     name,
     color: draft.color,
-    category: draft.category,
-    midiOutputId: draft.midiOutputId,
-    midiChannel: draft.midiChannel,
-    volume: draft.volume,
+    patternSteps: draft.patternSteps,
+    liveLaunchMode: draft.liveLaunchMode,
+    liveSyncGrid: draft.liveSyncGrid,
   });
 }
 

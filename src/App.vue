@@ -568,16 +568,16 @@ function selectPattern(trackId, patternId) {
   if (track) track.activePatternId = patternId;
 }
 
-function addPattern(trackId) {
+function addPattern(trackId, config = {}) {
   const track = findTrack(trackId);
   if (!track?.patterns?.length) return;
 
   const active = getActivePattern(track);
   const usedColors = track.patterns.map((p) => p.color);
   const pattern = createPattern(
-    `Pattern ${track.patterns.length + 1}`,
-    randomPatternColor(usedColors),
-    active?.patternSteps ?? 16
+    config.name ?? `Pattern ${track.patterns.length + 1}`,
+    config.color ?? randomPatternColor(usedColors),
+    config.patternSteps ?? active?.patternSteps ?? 16
   );
   track.patterns.push(pattern);
   track.activePatternId = pattern.id;

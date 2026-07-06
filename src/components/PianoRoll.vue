@@ -1,9 +1,6 @@
 <template>
   <div ref="rootRef" class="piano-roll flex flex-col bg-panel rounded-lg border border-line overflow-hidden h-full">
-    <!-- Toolbar — the app's only nav bar: transport controls (play/tempo, or
-         a clock-input picker in External sync mode), track switching/routing,
-         and note-placement settings. overflow-x-auto is a safety net so this
-         still fits (scrollable, not broken) on a narrow/portrait tablet. -->
+    <!-- Toolbar — transport, song/track/pattern controls, snap/tools, and view toggle. -->
     <div
       class="flex items-end gap-2 px-2 py-1 bg-surface border-b border-line flex-shrink-0 overflow-x-auto"
       @mousedown="onToolbarMouseDown"
@@ -65,21 +62,9 @@
         ></span>
       </ToolbarField>
 
-      <ToolbarField v-if="activeTrack" label="Bar">
-        <select
-          :value="activePatternSteps"
-          @change="(e) => emit('update-pattern', activeTrackId, activePattern?.id, { patternSteps: Number(e.target.value) })"
-          class="toolbar-compact text-xs w-9 text-center"
-          title="Bar length for this track"
-        >
-          <option v-for="opt in barLengthOptions" :key="opt.steps" :value="opt.steps">{{ opt.bars }}</option>
-        </select>
-      </ToolbarField>
-
       <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
-      <!-- Track: select/rename/add-new all live in this one menu instead of
-           separate always-visible controls (see TrackMenu.vue). -->
+      <!-- Track: selection dropdown, dedicated edit button, and add-new actions (TrackMenu.vue). -->
       <TrackMenu
         :tracks="tracks"
         :active-track-id="activeTrackId"
@@ -89,6 +74,33 @@
         @update-track="(id, changes) => $emit('update-track', id, changes)"
         @delete-track="(id) => $emit('delete-track', id)"
       />
+
+      <template v-if="activeTrack">
+        <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
+
+        <PatternMenu
+          :track="activeTrack"
+          :playing="playing"
+          :solo-preview="soloPreview"
+          :midi-io-enabled="activeTrack.kind === 'midi'"
+          @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
+          @add-pattern="(config) => emit('add-pattern', activeTrackId, config)"
+          @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
+          @update-track="(changes) => emit('update-track', activeTrackId, changes)"
+          @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
+          @hold-pattern-down="(id) => emit('hold-pattern-down', activeTrackId, id)"
+          @hold-pattern-up="() => emit('hold-pattern-up', activeTrackId)"
+          @preview-pattern="(id) => emit('preview-pattern', activeTrackId, id)"
+          @import-midi="onImportMidi"
+          @export-midi="onExportMidi"
+        />
+
+        <GhostSourceControls
+          :tracks="tracks"
+          :track="activeTrack"
+          @change="(changes) => emit('update-track', activeTrackId, changes)"
+        />
+      </template>
 
       <div class="h-4 w-px bg-line-light flex-shrink-0 mb-2"></div>
 
@@ -124,27 +136,6 @@
         @click="$emit('view-mode-change', 'live')"
       />
     </div>
-
-    <!-- Pattern selector — one row of patterns for the active track. -->
-    <PatternBar
-      :tracks="tracks"
-      :track="activeTrack"
-      :playing="playing"
-      :solo-preview="soloPreview"
-      :midi-io-enabled="activeTrack?.kind === 'midi'"
-      @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
-      @add-pattern="emit('add-pattern', activeTrackId)"
-      @rename-pattern="(id, name) => emit('rename-pattern', activeTrackId, id, name)"
-      @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
-      @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
-      @update-track="(changes) => emit('update-track', activeTrackId, changes)"
-      @import-midi="onImportMidi"
-      @export-midi="onExportMidi"
-      @ghost-source-change="(changes) => emit('update-track', activeTrackId, changes)"
-      @hold-pattern-down="(id) => emit('hold-pattern-down', activeTrackId, id)"
-      @hold-pattern-up="() => emit('hold-pattern-up', activeTrackId)"
-      @preview-pattern="(id) => emit('preview-pattern', activeTrackId, id)"
-    />
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
     <div class="flex flex-shrink-0 border-b border-line bg-surface/90">
@@ -353,7 +344,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BAR_LENGTH_OPTIONS, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
+import { noteName, SNAP_VALUES, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import {
@@ -374,7 +365,8 @@ import SongMenu from './SongMenu.vue';
 import SettingsToolbarButton from './SettingsToolbarButton.vue';
 import ToolbarField from './ToolbarField.vue';
 import EditToolBar from './EditToolBar.vue';
-import PatternBar from './PatternBar.vue';
+import PatternMenu from './PatternMenu.vue';
+import GhostSourceControls from './GhostSourceControls.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
 import TouchScrollbar from './TouchScrollbar.vue';
 
@@ -415,8 +407,6 @@ const editTool = ref(
     ? 'multi'
     : 'pen'
 );
-const barLengthOptions = BAR_LENGTH_OPTIONS;
-
 const emit = defineEmits([
   'update-notes',
   'select-track',
@@ -507,7 +497,6 @@ const activePattern = computed(() => getActivePattern(activeTrack.value));
 const ghostSource = computed(() => getGhostSource(activeTrack.value, props.tracks));
 const ghostPattern = computed(() => ghostSource.value?.pattern ?? null);
 const isDrumTrack = computed(() => activeTrack.value?.kind === 'drum');
-const activePatternSteps = computed(() => activePattern.value?.patternSteps ?? 16);
 const activeLoopEndBeat = computed(() => patternLoopEndBeat(activePattern.value));
 // Playhead wraps to the active track's pattern length in the piano roll view.
 const displayPlayheadBeat = computed(() => {

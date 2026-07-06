@@ -1,19 +1,40 @@
 <template>
   <ToolbarField label="Tool">
-    <div class="flex items-center gap-0.5 flex-shrink-0">
+    <div class="flex items-center gap-0.5 flex-shrink-0" ref="rootRef">
       <button
-        v-for="tool in tools"
-        :key="tool.id"
+        ref="triggerRef"
         type="button"
-        class="w-7 h-7 rounded flex items-center justify-center transition-colors"
-        :class="modelValue === tool.id
-          ? 'bg-accent text-white'
-          : 'bg-surface-hover hover:bg-surface-active text-muted'"
-        :title="tool.label"
-        @click="$emit('update:modelValue', tool.id)"
+        class="flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[5.5rem]"
+        :title="activeTool.label"
+        @click="toggleOpen"
       >
-        <component :is="tool.icon" class="w-3.5 h-3.5" />
+        <component :is="activeTool.icon" class="w-3.5 h-3.5 flex-shrink-0" />
+        <span class="truncate flex-1 min-w-0 text-left">{{ activeTool.shortName }}</span>
+        <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
       </button>
+
+      <Teleport to="body">
+        <div
+          v-if="open"
+          ref="panelRef"
+          class="fixed z-50 w-56 bg-panel border border-line rounded-md shadow-lg overflow-hidden py-1"
+          :style="panelStyle"
+        >
+          <button
+            v-for="tool in tools"
+            :key="tool.id"
+            type="button"
+            class="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-surface-hover"
+            :class="modelValue === tool.id ? 'bg-surface-hover' : ''"
+            :title="tool.label"
+            @click="selectTool(tool.id)"
+          >
+            <component :is="tool.icon" class="w-3.5 h-3.5 flex-shrink-0 text-muted" />
+            <span class="text-xs">{{ tool.shortName }}</span>
+          </button>
+        </div>
+      </Teleport>
+
       <div class="h-4 w-px bg-line-light flex-shrink-0 mx-0.5"></div>
 
       <button
@@ -77,16 +98,22 @@
 </template>
 
 <script setup>
-import { h } from 'vue';
+import { ref, computed, nextTick, onUnmounted, h } from 'vue';
 import ToolbarField from './ToolbarField.vue';
 
-defineProps({
+const props = defineProps({
   modelValue: { type: String, default: 'multi' },
   hasSelection: { type: Boolean, default: false },
   hasClipboard: { type: Boolean, default: false },
 });
 
-defineEmits(['update:modelValue', 'delete-selection', 'select-all', 'copy', 'paste']);
+const emit = defineEmits(['update:modelValue', 'delete-selection', 'select-all', 'copy', 'paste']);
+
+const open = ref(false);
+const rootRef = ref(null);
+const triggerRef = ref(null);
+const panelRef = ref(null);
+const panelStyle = ref({});
 
 const IconMulti = {
   render() {
@@ -145,11 +172,63 @@ const IconZoom = {
 };
 
 const tools = [
-  { id: 'multi', label: 'Multi — draw, move, Cmd-drag select, right-drag erase', icon: IconMulti },
-  { id: 'pen', label: 'Pen — draw notes', icon: IconPen },
-  { id: 'erase', label: 'Erase — remove notes', icon: IconErase },
-  { id: 'select', label: 'Select — move and marquee', icon: IconSelect },
-  { id: 'length', label: 'Length — resize notes', icon: IconLength },
-  { id: 'zoom', label: 'Zoom — pinch or scroll wheel', icon: IconZoom },
+  { id: 'multi', shortName: 'Multi', label: 'Multi — draw, move, Cmd-drag select, right-drag erase', icon: IconMulti },
+  { id: 'pen', shortName: 'Pen', label: 'Pen — draw notes', icon: IconPen },
+  { id: 'erase', shortName: 'Erase', label: 'Erase — remove notes', icon: IconErase },
+  { id: 'select', shortName: 'Select', label: 'Select — move and marquee', icon: IconSelect },
+  { id: 'length', shortName: 'Length', label: 'Length — resize notes', icon: IconLength },
+  { id: 'zoom', shortName: 'Zoom', label: 'Zoom — pinch or scroll wheel', icon: IconZoom },
 ];
+
+const activeTool = computed(() => tools.find((t) => t.id === props.modelValue) ?? tools[0]);
+
+function updatePosition() {
+  const el = triggerRef.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  panelStyle.value = { top: rect.bottom + 4 + 'px', left: rect.left + 'px' };
+}
+
+function toggleOpen() {
+  open.value = !open.value;
+  if (open.value) nextTick(updatePosition);
+}
+
+function selectTool(toolId) {
+  emit('update:modelValue', toolId);
+  open.value = false;
+}
+
+function onDocumentPointerDown(e) {
+  if (!open.value) return;
+  const insideTrigger = rootRef.value?.contains(e.target);
+  const insidePanel = panelRef.value?.contains(e.target);
+  if (!insideTrigger && !insidePanel) {
+    open.value = false;
+  }
+}
+
+function onWindowChange() {
+  if (open.value) updatePosition();
+}
+
+function onKeyDown(e) {
+  if (open.value && e.key === 'Escape') {
+    open.value = false;
+  }
+}
+
+window.addEventListener('mousedown', onDocumentPointerDown);
+window.addEventListener('touchstart', onDocumentPointerDown);
+window.addEventListener('scroll', onWindowChange, true);
+window.addEventListener('resize', onWindowChange);
+window.addEventListener('keydown', onKeyDown);
+
+onUnmounted(() => {
+  window.removeEventListener('mousedown', onDocumentPointerDown);
+  window.removeEventListener('touchstart', onDocumentPointerDown);
+  window.removeEventListener('scroll', onWindowChange, true);
+  window.removeEventListener('resize', onWindowChange);
+  window.removeEventListener('keydown', onKeyDown);
+});
 </script>

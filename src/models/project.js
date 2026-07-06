@@ -130,7 +130,7 @@ export function getGhostSource(viewingTrack, tracks = []) {
 export const STOPPED_PATTERN = '__stopped__';
 
 // Which pattern a track plays during transport.
-// Piano-roll mode follows activePatternId (the tab selected in PatternBar),
+// Piano-roll mode follows activePatternId (the pattern selected in the main toolbar),
 // except Hold-mode tracks stay silent until their ▶ button is held.
 // Live mode uses playingPatternId independently so you can edit one pattern
 // while another loops; null there means "same as active", and STOPPED_PATTERN

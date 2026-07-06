@@ -1,26 +1,63 @@
 <template>
-  <ToolbarField label="View" :title="title">
+  <ToolbarField :title="buttonTitle">
     <button
       type="button"
-      class="px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none bg-surface-hover hover:bg-surface-active transition-colors flex-shrink-0"
-      @click="$emit('click')"
+      class="daw-toolbar-icon-btn bg-surface-hover text-muted hover:text-white hover:bg-surface-active transition-colors"
+      :title="buttonTitle"
+      :aria-label="buttonTitle"
+      @click="toggle"
     >
-      {{ label }}
+      <!-- Pattern icon — shown while in Live mode -->
+      <svg
+        v-if="mode === 'live'"
+        viewBox="0 0 24 24"
+        class="w-3.5 h-3.5"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <path d="M4 7h16M4 12h16M4 17h10" stroke-linecap="round" />
+        <rect x="14" y="14" width="6" height="4" rx="0.5" fill="currentColor" stroke="none" />
+      </svg>
+      <!-- Live icon — shown while in Pattern mode -->
+      <svg
+        v-else
+        viewBox="0 0 24 24"
+        class="w-3.5 h-3.5"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <rect x="4" y="4" width="7" height="7" rx="1" />
+        <rect x="13" y="4" width="7" height="7" rx="1" />
+        <rect x="4" y="13" width="7" height="7" rx="1" />
+        <rect x="13" y="13" width="7" height="7" rx="1" />
+      </svg>
     </button>
   </ToolbarField>
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import ToolbarField from './ToolbarField.vue';
 
-// A single toggle button, same idea as the Play/Stop transport button: it
-// always shows the *action* a click performs ("Live" while in Piano Roll,
-// "Roll" while in Live mode), not the current state — so there's one control
-// instead of two always-visible mode pills. Song + Settings sit at the right
-// edge (Song immediately left of the cog); flex-1 before View keeps them pinned.
-defineProps({
-  label: { type: String, required: true },
-  title: { type: String, default: '' },
+const props = defineProps({
+  mode: {
+    type: String,
+    required: true,
+    validator: (v) => v === 'roll' || v === 'live',
+  },
 });
-defineEmits(['click']);
+
+const emit = defineEmits(['view-mode-change']);
+
+const buttonTitle = computed(() =>
+  props.mode === 'roll' ? 'Switch to Live (Tab)' : 'Switch to Pattern (Tab)',
+);
+
+function toggle() {
+  emit('view-mode-change', props.mode === 'roll' ? 'live' : 'roll');
+}
 </script>

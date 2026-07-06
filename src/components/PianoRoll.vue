@@ -102,9 +102,8 @@
 
       <div class="daw-toolbar-secondary">
       <ViewToggleButton
-        label="Live"
-        title="Switch to the Live launch grid (Tab)"
-        @click="$emit('view-mode-change', 'live')"
+        mode="roll"
+        @view-mode-change="(v) => $emit('view-mode-change', v)"
       />
 
       <SongMenu

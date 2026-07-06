@@ -16,9 +16,8 @@
 
       <div class="daw-toolbar-secondary">
       <ViewToggleButton
-        label="Roll"
-        title="Switch to the Piano Roll (Tab)"
-        @click="$emit('view-mode-change', 'roll')"
+        mode="live"
+        @view-mode-change="(v) => $emit('view-mode-change', v)"
       />
 
       <SongMenu

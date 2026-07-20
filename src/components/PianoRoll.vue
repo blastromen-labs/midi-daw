@@ -1389,7 +1389,9 @@ function startMoveDrag(existing, clientX, clientY) {
     startCursorRowIndex,
     anchorOrigBeat: existing.startBeat,
     anchorOrigPitch: existing.pitch,
-    origPositions: new Map(group.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch }])),
+    origPositions: new Map(
+      group.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch, duration: n.duration }])
+    ),
   };
 }
 
@@ -2064,23 +2066,42 @@ function onMouseMove(e) {
   if (drag.value.type === 'move') {
     const dx = e.clientX - drag.value.startClientX;
     const newAnchorBeat = snapBeat(drag.value.anchorOrigBeat + dx / beatWidth.value, snap.value);
-    const deltaBeat = newAnchorBeat - drag.value.anchorOrigBeat;
+    let deltaBeat = newAnchorBeat - drag.value.anchorOrigBeat;
+
+    // Clamp the whole selection as a rigid body on every edge. Per-note
+    // Math.max/min would let notes keep sliding after one of them has already
+    // hit a wall, collapsing gaps in beat or pitch.
+    const origList = [...drag.value.origPositions.values()];
+    const minOrigBeat = Math.min(...origList.map((o) => o.beat));
+    const maxOrigEnd = Math.max(...origList.map((o) => o.beat + o.duration));
+    // Left: leftmost start >= 0. Right: rightmost end <= pattern length.
+    // Math.max(0, …) on the right delta so an already-overhanging note (e.g.
+    // from resize) isn't yanked left on the first move tick.
+    deltaBeat = Math.max(-minOrigBeat, deltaBeat);
+    deltaBeat = Math.min(Math.max(0, activeLoopEndBeat.value - maxOrigEnd), deltaBeat);
 
     // Moved by row *index* delta rather than adding to the row key directly —
     // a drum pad id isn't a number you can add an offset to. Step when the
     // cursor enters a new row so up/down feel the same (see startMoveDrag).
     const cursorRowIndex = Math.floor(y / rowHeight.value);
-    const deltaIndex = cursorRowIndex - drag.value.startCursorRowIndex;
+    let deltaIndex = cursorRowIndex - drag.value.startCursorRowIndex;
+    const origIndexes = origList.map((o) => keyToIndex.value.get(o.pitch) ?? 0);
+    const minOrigIndex = Math.min(...origIndexes);
+    const maxOrigIndex = Math.max(...origIndexes);
+    deltaIndex = Math.max(
+      -minOrigIndex,
+      Math.min(rows.value.length - 1 - maxOrigIndex, deltaIndex)
+    );
 
     emitNotes(
       getNotes().map((n) => {
         const orig = drag.value.origPositions.get(n.id);
         if (!orig) return n;
         const origIndex = keyToIndex.value.get(orig.pitch) ?? 0;
-        const newIndex = Math.max(0, Math.min(rows.value.length - 1, origIndex + deltaIndex));
+        const newIndex = origIndex + deltaIndex;
         return {
           ...n,
-          startBeat: Math.max(0, orig.beat + deltaBeat),
+          startBeat: orig.beat + deltaBeat,
           pitch: rows.value[newIndex]?.key ?? orig.pitch,
         };
       })

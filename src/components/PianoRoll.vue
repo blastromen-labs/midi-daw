@@ -259,6 +259,7 @@
         :class="isDrumTrack ? 'overflow-x-hidden overflow-y-hidden' : 'overflow-hidden'"
         :style="{ width: keysWidth + 'px' }"
         ref="keysRef"
+        @wheel="onKeysWheel"
       >
         <canvas
           v-if="activeTrack && activeTrack.kind !== 'drum'"
@@ -478,8 +479,24 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { noteName, SNAP_VALUES, NOTE_LENGTH_VALUES, snapOptionLabel, snapBeat, createNote, uid, MIDI_NOTE_COLOR, BEATS_PER_BAR, getActivePattern, getGhostSource, patternLoopEndBeat } from '../models/project.js';
+import {
+  noteName,
+  SNAP_VALUES,
+  NOTE_LENGTH_VALUES,
+  snapOptionLabel,
+  snapBeat,
+  createNote,
+  uid,
+  MIDI_NOTE_COLOR,
+  MIDI_OVERLAP_NOTE_COLOR,
+  collectOverlappingNoteIds,
+  BEATS_PER_BAR,
+  getActivePattern,
+  getGhostSource,
+  patternLoopEndBeat,
+} from '../models/project.js';
 import { usePlayheadBeat } from '../composables/usePlayheadBeat.js';
+import { createNoteHistory } from '../engine/noteHistory.js';
 import { sendNoteOn, sendNoteOff } from '../engine/midi.js';
 import {
   downloadMidiFile,
@@ -663,11 +680,18 @@ const displayPlayheadBeat = computed(() => {
   if (len <= 0) return liveBeat.value;
   return ((liveBeat.value % len) + len) % len;
 });
-// MIDI notes use the green palette; drum steps use each pad's own color.
+// Same-pitch MIDI notes whose gates overlap paint blue so stacked doubles are obvious.
+const overlappingMidiNoteIds = computed(() => {
+  if (isDrumTrack.value) return new Set();
+  return collectOverlappingNoteIds(activePattern.value?.notes ?? []);
+});
+
+// MIDI notes use the green palette (blue when overlapping); drum steps use each pad's color.
 function colorForNote(note) {
   if (isDrumTrack.value) {
     return activeTrack.value?.pads?.find((p) => p.id === note.pitch)?.color ?? DEFAULT_NOTE_COLOR;
   }
+  if (overlappingMidiNoteIds.value.has(note.id)) return MIDI_OVERLAP_NOTE_COLOR;
   return MIDI_NOTE_COLOR;
 }
 
@@ -998,12 +1022,44 @@ function getNotes() {
   return activePattern.value?.notes ?? [];
 }
 
+// Piano-roll note undo/redo — max 10 actions, coalesced per gesture (see noteHistory.js).
+const noteHistory = createNoteHistory();
+let restoringNoteHistory = false;
+
 function emitNotes(notes) {
   if (!activePattern.value) return;
+  if (!restoringNoteHistory) noteHistory.record(getNotes());
   emit('update-notes', props.activeTrackId, activePattern.value.id, notes);
 }
 
+function pruneSelectionToNotes(notes) {
+  if (!selectedNoteIds.value.size) return;
+  const alive = new Set(notes.map((n) => n.id));
+  const next = [...selectedNoteIds.value].filter((id) => alive.has(id));
+  selectedNoteIds.value = new Set(next);
+}
+
+function undoNotes() {
+  const snapshot = noteHistory.undo(getNotes());
+  if (!snapshot || !activePattern.value) return;
+  restoringNoteHistory = true;
+  emit('update-notes', props.activeTrackId, activePattern.value.id, snapshot);
+  restoringNoteHistory = false;
+  pruneSelectionToNotes(snapshot);
+}
+
+function redoNotes() {
+  const snapshot = noteHistory.redo(getNotes());
+  if (!snapshot || !activePattern.value) return;
+  restoringNoteHistory = true;
+  emit('update-notes', props.activeTrackId, activePattern.value.id, snapshot);
+  restoringNoteHistory = false;
+  pruneSelectionToNotes(snapshot);
+}
+
 function onVelocityLaneUpdate(updatedNotes) {
+  // Velocity/pitch lane emits continuously while dragging — one undo step.
+  noteHistory.beginGroup();
   if (!isDrumTrack.value || !velocityPadId.value) {
     emitNotes(updatedNotes);
     return;
@@ -1268,6 +1324,22 @@ function eraseNoteAt(beat, pitch) {
   emitNotes(getNotes().filter((n) => n.id !== existing.id));
 }
 
+function startErasePaint(beat, pitch) {
+  noteHistory.beginGroup();
+  eraseNoteAt(beat, pitch);
+  drag.value = { type: 'erasePaint' };
+}
+
+function startPaintAdd(pitch, cellBeat) {
+  noteHistory.beginGroup();
+  const note = createNote(pitch, cellBeat, placementDuration(), 100);
+  emitNotes([...getNotes(), note]);
+  clearSelection();
+  startDrawPreview(note.pitch, note.velocity);
+  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
+  return note;
+}
+
 function clearSelection() {
   selectedNoteIds.value = new Set();
 }
@@ -1280,6 +1352,7 @@ function deleteSelectedNotes() {
 }
 
 function startResizeDrag(resizeTarget) {
+  noteHistory.beginGroup();
   const group =
     selectedNoteIds.value.has(resizeTarget.id) && selectedNoteIds.value.size > 1
       ? getNotes().filter((n) => selectedNoteIds.value.has(n.id))
@@ -1295,14 +1368,25 @@ function startResizeDrag(resizeTarget) {
 }
 
 function startMoveDrag(existing, clientX, clientY) {
+  noteHistory.beginGroup();
   const keepSelection = selectedNoteIds.value.has(existing.id) && selectedNoteIds.value.size > 1;
   if (!keepSelection) selectedNoteIds.value = new Set([existing.id]);
 
   const group = getNotes().filter((n) => selectedNoteIds.value.has(n.id));
+  // Cursor row at grab time — vertical moves step when the pointer crosses into
+  // a new row (symmetric up/down). Tracking the note's top + dy with floor()
+  // jumped up after 1px (crossing the row's top edge) but needed a full
+  // rowHeight of travel before stepping down.
+  const rect = gridCanvas.value?.getBoundingClientRect();
+  const startCursorRowIndex = rect
+    ? Math.floor((clientY - rect.top) / rowHeight.value)
+    : (keyToIndex.value.get(existing.pitch) ?? 0);
+
   drag.value = {
     type: 'move',
     startClientX: clientX,
     startClientY: clientY,
+    startCursorRowIndex,
     anchorOrigBeat: existing.startBeat,
     anchorOrigPitch: existing.pitch,
     origPositions: new Map(group.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch }])),
@@ -1367,8 +1451,7 @@ function onMobileMultiMouseDown(e) {
   }
 
   if (existing) {
-    eraseNoteAt(rawBeat, pitch);
-    drag.value = { type: 'erasePaint' };
+    startErasePaint(rawBeat, pitch);
     return;
   }
 
@@ -1383,11 +1466,7 @@ function onMobileMultiMouseDown(e) {
     return;
   }
 
-  const note = createNote(pitch, cellBeat, placementDuration(), 100);
-  emitNotes([...getNotes(), note]);
-  clearSelection();
-  startDrawPreview(note.pitch, note.velocity);
-  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
+  startPaintAdd(pitch, cellBeat);
 }
 
 function onToolModeDown(e) {
@@ -1402,8 +1481,7 @@ function onToolModeDown(e) {
 
   if (tool === 'erase') {
     if (!findNoteAt(rawBeat, pitch)) clearSelection();
-    eraseNoteAt(rawBeat, pitch);
-    drag.value = { type: 'erasePaint' };
+    startErasePaint(rawBeat, pitch);
     return;
   }
 
@@ -1442,11 +1520,7 @@ function onToolModeDown(e) {
     return;
   }
 
-  const note = createNote(pitch, cellBeat, placementDuration(), 100);
-  emitNotes([...getNotes(), note]);
-  clearSelection();
-  startDrawPreview(note.pitch, note.velocity);
-  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
+  startPaintAdd(pitch, cellBeat);
 }
 
 function hasFinePointer() {
@@ -1568,24 +1642,19 @@ function onMobileMultiTouchStart(e) {
 
   if (existing) {
     clearMobileLastEmptyTap();
-    eraseNoteAt(rawBeat, pitch);
+    startErasePaint(rawBeat, pitch);
     mobileTouchSession = {
       kind: 'noteErase',
       startClientX: point.clientX,
       startClientY: point.clientY,
     };
-    drag.value = { type: 'erasePaint' };
     return;
   }
 
   // Empty cell — place immediately and paint-drag like the pen tool; hold still
   // to switch into length draw after LONG_PRESS_MS.
   clearMobileLastEmptyTap();
-  const note = createNote(pitch, cellBeat, placementDuration(), 100);
-  emitNotes([...getNotes(), note]);
-  clearSelection();
-  startDrawPreview(note.pitch, note.velocity);
-  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
+  const note = startPaintAdd(pitch, cellBeat);
 
   mobileLastEmptyTap = {
     cellBeat,
@@ -1680,8 +1749,7 @@ function onMouseDown(e) {
     if (!findNoteAt(rawBeat, pitch)) {
       clearSelection();
     }
-    eraseNoteAt(rawBeat, pitch);
-    drag.value = { type: 'erasePaint' };
+    startErasePaint(rawBeat, pitch);
     return;
   }
 
@@ -1718,17 +1786,11 @@ function onMouseDown(e) {
     const clones = sourceGroup.map((n) => ({ ...n, id: uid() }));
     const anchorClone = clones[sourceGroup.findIndex((n) => n.id === existing.id)];
 
+    // Clone + drag is one undo step (beginGroup before emit; startMoveDrag is a no-op).
+    noteHistory.beginGroup();
     emitNotes([...getNotes(), ...clones]);
     selectedNoteIds.value = new Set(clones.map((n) => n.id));
-
-    drag.value = {
-      type: 'move',
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      anchorOrigBeat: anchorClone.startBeat,
-      anchorOrigPitch: anchorClone.pitch,
-      origPositions: new Map(clones.map((n) => [n.id, { beat: n.startBeat, pitch: n.pitch }])),
-    };
+    startMoveDrag(anchorClone, e.clientX, e.clientY);
     return;
   }
 
@@ -1742,15 +1804,8 @@ function onMouseDown(e) {
 
   // Clicking empty space places a note — right-click-drag (above) erases,
   // Cmd/Ctrl-drag (above) marquee-selects, so a single click tool is enough
-  // without a separate Draw/Select/Erase mode switcher.
-  const note = createNote(pitch, cellBeat, placementDuration(), 100);
-  emitNotes([...getNotes(), note]);
-  // Newly drawn notes start unselected — a fresh click shouldn't leave the
-  // selection outline sitting on the note you just placed.
-  clearSelection();
-  startDrawPreview(note.pitch, note.velocity);
-  // Hold and drag to paint more notes into new cells in one stroke.
-  drag.value = { type: 'paintAdd', lastCell: `${cellBeat}:${pitch}` };
+  // without a separate Draw/Select/Erase mode switcher. Hold-drag paints more.
+  startPaintAdd(pitch, cellBeat);
 }
 
 // Audition while drawing — same hold/release behavior as clicking the piano
@@ -1875,8 +1930,9 @@ function onWindowDragMove(e) {
 }
 
 function onWindowDragEnd() {
-  if (!drag.value) return;
-  onMouseUp();
+  if (drag.value) onMouseUp();
+  // Also closes velocity-lane groups (those don't set piano-roll drag.value).
+  noteHistory.endGroup();
 }
 
 function isActivePasteBarTouch(e) {
@@ -1944,8 +2000,8 @@ function onWindowDragTouchEnd(e) {
       }
     }
   }
-  if (!drag.value) return;
-  onMouseUp();
+  if (drag.value) onMouseUp();
+  noteHistory.endGroup();
 }
 
 function onMouseMove(e) {
@@ -2007,19 +2063,14 @@ function onMouseMove(e) {
 
   if (drag.value.type === 'move') {
     const dx = e.clientX - drag.value.startClientX;
-    const dy = e.clientY - drag.value.startClientY;
     const newAnchorBeat = snapBeat(drag.value.anchorOrigBeat + dx / beatWidth.value, snap.value);
     const deltaBeat = newAnchorBeat - drag.value.anchorOrigBeat;
 
     // Moved by row *index* delta rather than adding to the row key directly —
-    // a drum pad id isn't a number you can add an offset to, and this also
-    // reads more clearly for the MIDI case (drag N rows, not "+N pitch").
-    const anchorOrigIndex = keyToIndex.value.get(drag.value.anchorOrigPitch) ?? 0;
-    const newAnchorIndex = Math.max(
-      0,
-      Math.min(rows.value.length - 1, Math.floor((pitchToY(drag.value.anchorOrigPitch) + dy) / rowHeight.value))
-    );
-    const deltaIndex = newAnchorIndex - anchorOrigIndex;
+    // a drum pad id isn't a number you can add an offset to. Step when the
+    // cursor enters a new row so up/down feel the same (see startMoveDrag).
+    const cursorRowIndex = Math.floor(y / rowHeight.value);
+    const deltaIndex = cursorRowIndex - drag.value.startCursorRowIndex;
 
     emitNotes(
       getNotes().map((n) => {
@@ -2057,16 +2108,19 @@ function onMouseUp() {
   if (drag.value?.type === 'pendingSelect') {
     selectedNoteIds.value = new Set([drag.value.noteId]);
     drag.value = null;
+    noteHistory.endGroup();
     return;
   }
   if (drag.value?.type === 'pendingMarquee') {
     clearSelection();
     drag.value = null;
+    noteHistory.endGroup();
     return;
   }
   if (drag.value?.type === 'resize') finalizeResizeStamp();
   if (drag.value?.type === 'marquee') marqueeRect.value = null;
   drag.value = null;
+  noteHistory.endGroup();
 }
 
 function onPasteBarTouchStart(e) {
@@ -2563,6 +2617,31 @@ function onWheel(e) {
   zoomBeatWidthAt(e.clientX, factor);
 }
 
+// The keys/pad column is a sibling of the grid scroll container (not inside
+// it), and uses overflow:hidden so its scrollTop is only a mirror of the
+// grid. Wheel events over the keys therefore never reach scrollRef — forward
+// them so vertical/horizontal pan (and zoom modifiers) still work.
+function onKeysWheel(e) {
+  const zoomTool = isZoomToolActive();
+  if (zoomTool || e.metaKey || e.ctrlKey) {
+    onWheel(e);
+    return;
+  }
+
+  const container = scrollRef.value;
+  if (!container) return;
+
+  // Shift+wheel is commonly remapped to horizontal scroll when deltaX is 0.
+  const shiftHorizontal = e.shiftKey && e.deltaX === 0 && e.deltaY !== 0;
+  const dx = shiftHorizontal ? e.deltaY : e.deltaX;
+  const dy = shiftHorizontal ? 0 : e.deltaY;
+  if (dx === 0 && dy === 0) return;
+
+  e.preventDefault();
+  container.scrollLeft += dx;
+  container.scrollTop += dy;
+}
+
 // True piano coloring: white keys light, black keys dark, like a real
 // keyboard, each with a subtle glossy gradient for a nicer keyboard look.
 // Only used for MIDI tracks — drum tracks render <DrumPadList> instead.
@@ -2847,6 +2926,7 @@ watch(
   () => props.activeTrackId,
   () => {
     clearSelection();
+    noteHistory.clear();
   }
 );
 
@@ -2854,6 +2934,7 @@ watch(
   () => activePattern.value?.id,
   () => {
     clearSelection();
+    noteHistory.clear();
   }
 );
 
@@ -2882,6 +2963,20 @@ window.addEventListener('touchcancel', onWindowDragTouchEnd);
 // selection still works in e.g. the track rename input.
 function onKeyDown(e) {
   if (isEditableTarget(e.target)) return;
+
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redoNotes();
+    else undoNotes();
+    return;
+  }
+
+  // Common Windows redo shortcut; macOS uses Cmd+Shift+Z above.
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    redoNotes();
+    return;
+  }
 
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
     e.preventDefault();

@@ -97,6 +97,45 @@ export function normalizeTrackCategory(track) {
 
 // MIDI/synth notes in the piano roll always use this green, regardless of accent.
 export const MIDI_NOTE_COLOR = '#a7d7af';
+// Same lightness as MIDI_NOTE_COLOR, but blue — flags notes whose time ranges
+// overlap on the same pitch (accidental stacks).
+export const MIDI_OVERLAP_NOTE_COLOR = '#8eb4f0';
+
+/** True when two notes share any open time interval (abutting ends do not count). */
+export function notesOverlapInTime(a, b) {
+  return a.startBeat < b.startBeat + b.duration && b.startBeat < a.startBeat + a.duration;
+}
+
+/**
+ * Ids of notes that overlap another note on the same pitch.
+ * Grouped by pitch so cost stays reasonable on busy patterns.
+ */
+export function collectOverlappingNoteIds(notes) {
+  const ids = new Set();
+  if (!notes?.length) return ids;
+
+  const byPitch = new Map();
+  for (const note of notes) {
+    let group = byPitch.get(note.pitch);
+    if (!group) {
+      group = [];
+      byPitch.set(note.pitch, group);
+    }
+    group.push(note);
+  }
+
+  for (const group of byPitch.values()) {
+    if (group.length < 2) continue;
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        if (!notesOverlapInTime(group[i], group[j])) continue;
+        ids.add(group[i].id);
+        ids.add(group[j].id);
+      }
+    }
+  }
+  return ids;
+}
 
 /** @param {string[]} [exclude] colors already used by other tracks */
 export function randomTrackColor(exclude = []) {

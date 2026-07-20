@@ -1,8 +1,31 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import 'tailwindcss';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Dark slate-blue/green palette — sampled from the reference piano roll.
+   Canvas-rendered pieces (grid/keys/notes/velocity) can't use these classes
+   directly — see src/theme.js for the matching values. */
+@theme {
+  --color-panel: #1d262b;
+  --color-surface: #3f484d;
+  --color-surface-hover: #4c565c;
+  --color-surface-active: #5a6570;
+  --color-grid: #34444e;
+  --color-grid-alt: #2e3e48;
+  --color-line: #2a3a44;
+  --color-line-light: #3d4d57;
+  --color-muted: #96a3ab;
+  --color-muted-dim: #6c7981;
+  --color-accent: #6fae78;
+  --color-accent-dim: #4f8858;
+  --color-note-light: #b1dfb9;
+  --color-note: #a7d7af;
+  --color-note-dark: #9ecda7;
+  --color-note-border: #708c75;
+  --color-velocity-line: #598a60;
+  --color-velocity-dot: #ceffd5;
+  --color-playhead: #ffb454;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+}
 
 * {
   box-sizing: border-box;
@@ -137,7 +160,7 @@ input[type='number'].toolbar-compact::-webkit-outer-spin-button {
   }
 
   .daw-toolbar {
-    @apply flex flex-wrap items-end gap-x-1 gap-y-0.5 px-1.5 py-0.5 bg-surface border-b border-line flex-shrink-0 overflow-x-hidden;
+    @apply flex flex-wrap items-end gap-x-1 gap-y-0.5 px-1.5 py-0.5 bg-surface border-b border-line shrink-0 overflow-x-hidden;
   }
 
   .daw-toolbar-primary {
@@ -145,15 +168,15 @@ input[type='number'].toolbar-compact::-webkit-outer-spin-button {
   }
 
   .daw-toolbar-secondary {
-    @apply flex items-end gap-x-1 flex-shrink-0 ml-auto;
+    @apply flex items-end gap-x-1 shrink-0 ml-auto;
   }
 
   .daw-toolbar-divider {
-    @apply h-[1.125rem] w-px bg-muted-dim flex-shrink-0 mb-1.5 mx-0.5;
+    @apply h-[1.125rem] w-px bg-muted-dim shrink-0 mb-1.5 mx-0.5;
   }
 
   .daw-toolbar-menu-btn {
-    @apply flex items-center gap-1 pl-1 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active flex-shrink-0 w-[6.25rem];
+    @apply flex items-center gap-1 pl-1 pr-1 py-0.5 rounded text-xs font-semibold bg-surface-hover hover:bg-surface-active shrink-0 w-[6.25rem];
   }
 
   .daw-toolbar-menu-btn--compact {
@@ -161,6 +184,6 @@ input[type='number'].toolbar-compact::-webkit-outer-spin-button {
   }
 
   .daw-toolbar-icon-btn {
-    @apply w-6 h-6 rounded flex items-center justify-center flex-shrink-0;
+    @apply w-6 h-6 rounded flex items-center justify-center shrink-0;
   }
 }

@@ -1,0 +1,17 @@
+---
+description: Always install and keep npm packages at the latest published versions
+alwaysApply: true
+---
+
+# Package versions — always latest
+
+When adding, updating, or reviewing dependencies in this project:
+
+- **Always use the latest published version** from npm. Prefer `npm install <pkg>@latest`
+  (or `npm install -D <pkg>@latest`) over pinning an older known version from memory.
+- Keep `package.json` version ranges as `"latest"` so installs resolve to current releases.
+- When bumping one package (e.g. Vite, Tailwind), also refresh related peer packages
+  in the same change (`@vitejs/plugin-vue` with `vite`, `@tailwindcss/vite` with
+  `tailwindcss`, etc.) to their latest versions.
+- After changing deps, run install and verify `npm run build` (or `dev`) still works.
+- Do not leave mismatched major lines (e.g. Tailwind v3 package with a v4 plugin).

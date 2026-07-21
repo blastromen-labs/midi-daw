@@ -170,6 +170,9 @@ export function createPattern(name = 'Pattern 1', color = randomPatternColor(), 
     // A pattern may belong to multiple scenes; scenes are shortcuts that
     // launch several patterns together in Live mode.
     sceneIds: [],
+    // When true, clip is omitted from Live view (still plays via scenes).
+    // Use for background / non-improvisational clips (e.g. lights).
+    hiddenFromLive: false,
   };
 }
 
@@ -293,8 +296,14 @@ export function clonePattern(source, patterns) {
   pattern.liveLaunchMode = source.liveLaunchMode ?? pattern.liveLaunchMode;
   pattern.liveSyncGrid = source.liveSyncGrid ?? pattern.liveSyncGrid;
   pattern.cutOthers = source.cutOthers ?? pattern.cutOthers;
+  pattern.hiddenFromLive = !!source.hiddenFromLive;
   pattern.sceneIds = [...normalizePatternSceneIds(source)];
   return pattern;
+}
+
+/** Whether a track or pattern is hidden from Live view (still plays via scenes). */
+export function isHiddenFromLive(item) {
+  return item?.hiddenFromLive === true;
 }
 
 /** Live launch mode for a pattern (`toggle` / `hold` / `oneShot`). */
@@ -464,6 +473,9 @@ export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), pat
     pendingLaunches: [],
     midiOutputId: '',
     midiChannel: 0,
+    // When true, the whole track row is omitted from Live view (patterns still
+    // play via scenes). Prefer over per-pattern hide for background tracks.
+    hiddenFromLive: false,
   };
 }
 
@@ -595,6 +607,9 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     pendingLaunches: [],
     volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
+    // When true, the whole track row is omitted from Live view (patterns still
+    // play via scenes). Prefer over per-pattern hide for background tracks.
+    hiddenFromLive: false,
   };
 }
 

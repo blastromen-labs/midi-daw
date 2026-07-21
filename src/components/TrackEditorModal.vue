@@ -84,6 +84,23 @@
             </label>
             <VolumeSlider wide class="w-full" v-model="draft.volume" title="Drum track volume" />
           </section>
+
+          <section class="border-t border-line pt-4">
+            <h3 class="text-[10px] uppercase tracking-wider text-muted-dim mb-2">Live</h3>
+            <label class="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                v-model="draft.hiddenFromLive"
+                type="checkbox"
+                class="mt-0.5"
+              />
+              <span>
+                <span class="block text-[10px] uppercase tracking-wider text-muted-dim">Hide from Live view</span>
+                <span class="block text-[10px] text-muted mt-0.5 leading-snug">
+                  Hides this entire track row in Live. Patterns still play via scenes — useful for background / lights tracks.
+                </span>
+              </span>
+            </label>
+          </section>
         </div>
 
         <div class="flex items-center gap-2 px-4 py-3 border-t border-line bg-surface/40">
@@ -170,6 +187,7 @@ const draft = reactive({
   midiOutputId: '',
   midiChannel: 0,
   volume: 1,
+  hiddenFromLive: false,
 });
 
 const heading = computed(() => {
@@ -187,6 +205,7 @@ function syncFromInitial() {
   draft.midiOutputId = props.initial.midiOutputId ?? '';
   draft.midiChannel = props.initial.midiChannel ?? 0;
   draft.volume = props.initial.volume ?? 1;
+  draft.hiddenFromLive = !!props.initial.hiddenFromLive;
   initialSnapshot.value = { volume: draft.volume };
   nextTick(() => {
     editorReady.value = true;
@@ -214,6 +233,7 @@ function submit() {
     midiOutputId: draft.midiOutputId,
     midiChannel: draft.midiChannel,
     volume: draft.volume,
+    hiddenFromLive: !!draft.hiddenFromLive,
   });
 }
 

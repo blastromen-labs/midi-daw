@@ -670,6 +670,7 @@ function addPattern(trackId, config = {}) {
   if (config.liveLaunchMode != null) pattern.liveLaunchMode = config.liveLaunchMode;
   if (config.liveSyncGrid != null) pattern.liveSyncGrid = config.liveSyncGrid;
   if (config.cutOthers != null) pattern.cutOthers = config.cutOthers;
+  if (config.hiddenFromLive != null) pattern.hiddenFromLive = !!config.hiddenFromLive;
   if (config.sceneIds !== undefined) {
     pattern.sceneIds = Array.isArray(config.sceneIds) ? [...config.sceneIds] : [];
     normalizePatternSceneIds(pattern);
@@ -969,6 +970,7 @@ function addTrack(kind, config = {}) {
   }
   if (kind === 'drum' && config.volume != null) track.volume = config.volume;
   if (config.category) track.category = config.category;
+  if (config.hiddenFromLive != null) track.hiddenFromLive = !!config.hiddenFromLive;
   project.tracks.push(track);
   activeTrackId.value = track.id;
   if (kind === 'drum') void hydrateDefaultDrumSamples();

@@ -80,6 +80,7 @@ export function deserializeProject(data) {
     track.liveLaunches = null;
     track.pendingLaunches = [];
     track.category = normalizeTrackCategory(track);
+    track.hiddenFromLive = !!track.hiddenFromLive;
     // Migrate legacy track-level launch settings onto each pattern, then drop
     // them from the track so launch mode is always per-pattern going forward.
     const legacyMode = track.liveLaunchMode ?? 'toggle';
@@ -88,6 +89,7 @@ export function deserializeProject(data) {
       pattern.liveLaunchMode = pattern.liveLaunchMode ?? legacyMode;
       pattern.liveSyncGrid = pattern.liveSyncGrid ?? legacyGrid;
       pattern.cutOthers = pattern.cutOthers ?? true;
+      pattern.hiddenFromLive = !!pattern.hiddenFromLive;
       // Migrate legacy sceneId → sceneIds[]; drop stale / unknown scene refs.
       normalizePatternSceneIds(pattern, sceneIds);
     }

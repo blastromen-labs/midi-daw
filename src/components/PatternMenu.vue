@@ -203,6 +203,7 @@ function patternLiveDraft(pattern) {
     liveLaunchMode: pattern?.liveLaunchMode ?? 'toggle',
     liveSyncGrid: pattern?.liveSyncGrid ?? '1/16',
     cutOthers: pattern?.cutOthers !== false,
+    hiddenFromLive: !!pattern?.hiddenFromLive,
     sceneIds: Array.isArray(pattern?.sceneIds)
       ? [...pattern.sceneIds]
       : pattern?.sceneId

@@ -110,7 +110,7 @@
                 </option>
               </select>
             </template>
-            <label class="flex items-start gap-2 cursor-pointer select-none">
+            <label class="flex items-start gap-2 cursor-pointer select-none mb-3">
               <input
                 v-model="draft.cutOthers"
                 type="checkbox"
@@ -120,6 +120,19 @@
                 <span class="block text-[10px] uppercase tracking-wider text-muted-dim">Cut other clips</span>
                 <span class="block text-[10px] text-muted mt-0.5 leading-snug">
                   When off, this clip layers over other patterns on the same track (handy for One Shots).
+                </span>
+              </span>
+            </label>
+            <label class="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                v-model="draft.hiddenFromLive"
+                type="checkbox"
+                class="mt-0.5"
+              />
+              <span>
+                <span class="block text-[10px] uppercase tracking-wider text-muted-dim">Hide from Live view</span>
+                <span class="block text-[10px] text-muted mt-0.5 leading-snug">
+                  Hides this clip in Live. It still plays via scenes — useful for background / lights patterns.
                 </span>
               </span>
             </label>
@@ -209,6 +222,7 @@ const draft = reactive({
   liveLaunchMode: 'toggle',
   liveSyncGrid: '1/16',
   cutOthers: true,
+  hiddenFromLive: false,
   sceneIds: [],
 });
 
@@ -227,6 +241,7 @@ function syncFromInitial() {
   draft.liveLaunchMode = props.initial.liveLaunchMode ?? 'toggle';
   draft.liveSyncGrid = props.initial.liveSyncGrid ?? '1/16';
   draft.cutOthers = props.initial.cutOthers !== false;
+  draft.hiddenFromLive = !!props.initial.hiddenFromLive;
   draft.sceneIds = initialSceneIds(props.initial);
 }
 
@@ -251,6 +266,7 @@ function submit() {
     liveLaunchMode: draft.liveLaunchMode,
     liveSyncGrid: draft.liveSyncGrid,
     cutOthers: draft.cutOthers,
+    hiddenFromLive: !!draft.hiddenFromLive,
     sceneIds: [...draft.sceneIds],
   });
 }

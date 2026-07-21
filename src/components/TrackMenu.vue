@@ -142,6 +142,7 @@ function trackToDraft(track) {
     midiOutputId: track.midiOutputId ?? '',
     midiChannel: track.midiChannel ?? 0,
     volume: track.volume ?? 1,
+    hiddenFromLive: !!track.hiddenFromLive,
   };
 }
 
@@ -173,6 +174,7 @@ function startCreate(kind) {
     midiOutputId: '',
     midiChannel: 0,
     volume: 1,
+    hiddenFromLive: false,
   };
   open.value = false;
   editorOpen.value = true;

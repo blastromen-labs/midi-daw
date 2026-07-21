@@ -93,15 +93,30 @@
           Open Scenes ▾ to create one, then assign patterns (a pattern can be in many scenes)
         </p>
       </div>
+
+      <button
+        type="button"
+        class="h-9 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wider flex-shrink-0 self-start ring-1 transition-colors"
+        :class="showHidden
+          ? 'ring-white/50 bg-surface text-white'
+          : 'ring-line-light bg-surface/60 text-muted-dim hover:ring-white/40 hover:text-white'"
+        :title="showHidden
+          ? 'Showing tracks/patterns marked Hide from Live — click to hide them again'
+          : 'Show tracks and patterns marked Hide from Live (still play via scenes)'"
+        @click="showHidden = !showHidden"
+      >
+        Show hidden
+      </button>
     </div>
 
     <!-- Launch grid — one row per track, one clip button per pattern.
          Shared transport/view/song/help/settings live in AppToolbar. -->
     <div class="flex-1 overflow-auto p-2">
       <div
-        v-for="track in tracks"
+        v-for="track in visibleTracks"
         :key="track.id"
         class="flex items-stretch gap-2 mb-2 last:mb-0"
+        :class="isHiddenFromLive(track) ? 'opacity-55' : ''"
       >
         <div
           class="flex flex-col justify-center gap-0.5 w-36 flex-shrink-0 px-2 py-1.5 rounded-md bg-surface/60"
@@ -110,11 +125,13 @@
             <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: track.color }"></span>
             <span class="truncate text-xs font-semibold">{{ track.name }}</span>
           </div>
-          <span class="text-[9px] text-muted-dim uppercase tracking-wide">{{ track.category }}</span>
+          <span class="text-[9px] text-muted-dim uppercase tracking-wide">
+            {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
+          </span>
         </div>
 
         <div class="flex flex-wrap gap-1.5 flex-1 content-start relative" :data-clip-track="track.id">
-          <template v-for="(pattern, index) in track.patterns" :key="pattern.id">
+          <template v-for="{ pattern, index } in visiblePatternEntries(track)" :key="pattern.id">
             <div
               v-if="isDropBefore(track.id, index)"
               class="w-0.5 h-14 flex-shrink-0 rounded-full bg-white/80 self-center pointer-events-none"
@@ -126,6 +143,7 @@
               :class="[
                 clipStateClass(track, pattern),
                 clipDragClass(track.id, index),
+                isHiddenFromLive(pattern) && !isHiddenFromLive(track) ? 'opacity-55' : '',
               ]"
               :style="clipStyle(track, pattern)"
               :title="clipTitle(track, pattern)"
@@ -168,26 +186,31 @@
             </button>
           </template>
           <div
-            v-if="isDropBefore(track.id, track.patterns.length)"
+            v-if="isDropBefore(track.id, dropEndIndex(track))"
             class="w-0.5 h-14 flex-shrink-0 rounded-full bg-white/80 self-center pointer-events-none"
             aria-hidden="true"
           ></div>
 
-          <div v-if="!track.patterns.length" class="text-xs text-muted-dim px-2 py-4">No patterns</div>
+          <div v-if="!visiblePatternEntries(track).length" class="text-xs text-muted-dim px-2 py-4">
+            {{ track.patterns?.length ? 'No visible patterns' : 'No patterns' }}
+          </div>
         </div>
       </div>
 
-      <div v-if="!tracks.length" class="text-sm text-muted-dim px-2 py-4">No tracks yet</div>
+      <div v-if="!visibleTracks.length" class="text-sm text-muted-dim px-2 py-4">
+        {{ tracks.length ? 'No visible tracks — turn on Show hidden' : 'No tracks yet' }}
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick, onUnmounted } from 'vue';
+import { ref, computed, nextTick, onUnmounted } from 'vue';
 import {
   LIVE_LAUNCH_MODES,
   getLiveLaunch,
   getScenePatternRefs,
+  isHiddenFromLive,
   isPatternPlaying,
   isPatternQueued,
   isPatternStopQueued,
@@ -218,6 +241,31 @@ const emit = defineEmits([
 ]);
 
 const absBeat = useAbsolutePlayheadBeat();
+const showHidden = ref(false);
+
+/** Tracks shown in the clip grid (hidden tracks only when Show hidden is on). */
+const visibleTracks = computed(() =>
+  props.tracks.filter((track) => showHidden.value || !isHiddenFromLive(track))
+);
+
+/**
+ * Visible patterns for a track, with their absolute index in track.patterns
+ * so drag-reorder stays correct when some clips are filtered out.
+ */
+function visiblePatternEntries(track) {
+  const patterns = track?.patterns ?? [];
+  return patterns
+    .map((pattern, index) => ({ pattern, index }))
+    .filter(({ pattern }) => showHidden.value || !isHiddenFromLive(pattern));
+}
+
+/** Drop slot after the last visible clip — maps to end of full patterns array when unfiltered. */
+function dropEndIndex(track) {
+  const entries = visiblePatternEntries(track);
+  if (!entries.length) return 0;
+  // When filtering, "after last visible" inserts after that clip's absolute index.
+  return entries[entries.length - 1].index + 1;
+}
 
 const sceneMenuOpen = ref(false);
 const sceneMenuRootRef = ref(null);
@@ -392,6 +440,7 @@ function dropIndexFromPoint(clientX, clientY, trackId) {
     const index = Number(clipEl.dataset.clipIndex);
     if (!Number.isNaN(index)) {
       const rect = clipEl.getBoundingClientRect();
+      // data-clip-index is the absolute index in track.patterns (not filtered).
       return clientX < rect.left + rect.width / 2 ? index : index + 1;
     }
   }
@@ -403,10 +452,14 @@ function dropIndexFromPoint(clientX, clientY, trackId) {
   if (!clips.length) return 0;
 
   const firstRect = clips[0].getBoundingClientRect();
-  if (clientX < firstRect.left) return 0;
+  if (clientX < firstRect.left) return Number(clips[0].dataset.clipIndex) || 0;
 
-  const lastRect = clips[clips.length - 1].getBoundingClientRect();
-  if (clientX > lastRect.right) return clips.length;
+  const lastClip = clips[clips.length - 1];
+  const lastRect = lastClip.getBoundingClientRect();
+  if (clientX > lastRect.right) {
+    const lastIndex = Number(lastClip.dataset.clipIndex);
+    return Number.isNaN(lastIndex) ? clips.length : lastIndex + 1;
+  }
 
   return null;
 }
@@ -573,24 +626,28 @@ function clipStyle(track, pattern) {
 function clipTitle(track, pattern) {
   const status = clipStatus(track, pattern);
   const mode = patternLaunchMode(pattern);
+  const hiddenNote =
+    isHiddenFromLive(pattern) || isHiddenFromLive(track)
+      ? ' [hidden from Live — still plays via scenes]'
+      : '';
   if (mode === LIVE_LAUNCH_MODES.HOLD) {
     const grid = pattern.liveSyncGrid ?? '1/16';
-    if (status === 'playing') return `${pattern.name} — playing (release to stop)`;
-    if (status === 'arming') return `${pattern.name} — syncing to ${grid} grid…`;
-    return `${pattern.name} — hold to play in sync (${grid} grid)`;
+    if (status === 'playing') return `${pattern.name} — playing (release to stop)${hiddenNote}`;
+    if (status === 'arming') return `${pattern.name} — syncing to ${grid} grid…${hiddenNote}`;
+    return `${pattern.name} — hold to play in sync (${grid} grid)${hiddenNote}`;
   }
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
     const grid = pattern.liveSyncGrid ?? '1/16';
-    if (status === 'playing') return `${pattern.name} — playing once (click to retrigger from the start)`;
-    if (status === 'queued') return `${pattern.name} — queued one shot on ${grid} grid (starts from beginning; click again to cancel)`;
-    if (status === 'armed') return `${pattern.name} — will play once when you press Play (click to un-arm)`;
-    return `${pattern.name} — click to play once from the start (${grid} grid), drag to reorder`;
+    if (status === 'playing') return `${pattern.name} — playing once (click to retrigger from the start)${hiddenNote}`;
+    if (status === 'queued') return `${pattern.name} — queued one shot on ${grid} grid (starts from beginning; click again to cancel)${hiddenNote}`;
+    if (status === 'armed') return `${pattern.name} — will play once when you press Play (click to un-arm)${hiddenNote}`;
+    return `${pattern.name} — click to play once from the start (${grid} grid), drag to reorder${hiddenNote}`;
   }
-  if (status === 'playing') return `${pattern.name} — playing (click to stop when it loops)`;
-  if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)`;
-  if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)`;
-  if (status === 'armed') return `${pattern.name} — will play when you press Play (click to un-arm)`;
-  return `${pattern.name} — click to launch, drag to reorder`;
+  if (status === 'playing') return `${pattern.name} — playing (click to stop when it loops)${hiddenNote}`;
+  if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)${hiddenNote}`;
+  if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)${hiddenNote}`;
+  if (status === 'armed') return `${pattern.name} — will play when you press Play (click to un-arm)${hiddenNote}`;
+  return `${pattern.name} — click to launch, drag to reorder${hiddenNote}`;
 }
 </script>
 

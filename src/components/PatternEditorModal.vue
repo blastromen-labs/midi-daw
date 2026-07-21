@@ -71,19 +71,18 @@
               <option value="toggle">Loop</option>
               <option value="hold">Hold</option>
             </select>
-            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Sync grid</label>
-            <select
-              v-model="draft.liveSyncGrid"
-              class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded"
-              title="Grid the pattern unmute aligns to when you press (Hold mode)"
-            >
-              <option v-for="opt in liveSyncGridOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-            <p class="text-[10px] text-muted-dim mt-1.5 leading-snug">
-              Used in Hold mode: unmute snaps to this grid when you press a clip.
-            </p>
+            <template v-if="draft.liveLaunchMode === 'hold'">
+              <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Sync grid</label>
+              <select
+                v-model="draft.liveSyncGrid"
+                class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded"
+                title="Grid the pattern unmute aligns to when you press"
+              >
+                <option v-for="opt in liveSyncGridOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </template>
           </section>
         </div>
 

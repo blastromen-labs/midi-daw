@@ -315,9 +315,9 @@ export function createLiveLaunch(patternId, overrides = {}) {
     holdMuted: false,
     pendingUnmuteBeat: null,
     stopBeat: null,
-    // Absolute beat when this clip's content beat 0 fires. Set for One Shots so
-    // they always restart from the beginning even when launched mid-bar; Loops
-    // leave this null and phase-lock to the master grid instead.
+    // Absolute beat when this clip's content beat 0 fires. Set for One Shots
+    // and scene-launched Loops so they restart from the beginning; ordinary
+    // Loop clip launches leave this null and phase-lock to the master grid.
     startBeat: null,
     ...overrides,
   };

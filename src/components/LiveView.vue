@@ -483,13 +483,21 @@ onUnmounted(() => {
 function clipProgress(track, pattern) {
   const len = patternLoopEndBeat(pattern);
   if (len <= 0) return 0;
-  // One Shot progress is relative to its launch origin (always starts at 0).
-  if (patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT) {
-    const launch = getLiveLaunch(track, pattern.id);
-    const pending = track.pendingLaunches?.find((p) => p.patternId === pattern.id);
-    const origin = launch?.startBeat ?? pending?.launchBeat;
-    if (origin == null) return 0;
-    return Math.min(1, Math.max(0, (absBeat.value - origin) / len));
+  const launch = getLiveLaunch(track, pattern.id);
+  const pending = track.pendingLaunches?.find((p) => p.patternId === pattern.id);
+  // One Shot / scene-restarted Loops progress relative to their content origin.
+  const origin =
+    launch?.startBeat ??
+    (pending &&
+    (patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT || pending.restartFromStart)
+      ? pending.launchBeat
+      : null);
+  if (origin != null) {
+    const elapsed = absBeat.value - origin;
+    if (patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT) {
+      return Math.min(1, Math.max(0, elapsed / len));
+    }
+    return (((elapsed % len) + len) % len) / len;
   }
   const wrapped = ((absBeat.value % len) + len) % len;
   return wrapped / len;

@@ -74,10 +74,19 @@ function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, sol
     let end = rangeEnd;
     if (launch?.stopBeat != null) end = Math.min(end, launch.stopBeat - 1e-6);
     if (globalCutBeat != null) end = Math.min(end, globalCutBeat - 1e-6);
+    // Pending re-launch of the same clip (scene restart / One Shot retrigger):
+    // end the current sounding segment before that beat so we don't double-schedule.
+    const pendingSelf = pending.find((p) => p.patternId === pattern.id && p.launchBeat != null);
+    if (pendingSelf) end = Math.min(end, pendingSelf.launchBeat - 1e-6);
     if (end >= rangeStart) {
-      const originBeat =
-        patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT ? launch?.startBeat ?? null : null;
-      segments.push({ pattern, rangeStart, rangeEnd: end, originBeat });
+      // Any launch with startBeat set (One Shot or scene-restarted Loop) origins
+      // content beat 0 there; null startBeat → phase-lock below.
+      segments.push({
+        pattern,
+        rangeStart,
+        rangeEnd: end,
+        originBeat: launch?.startBeat ?? null,
+      });
     }
   }
 
@@ -94,12 +103,13 @@ function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, sol
       if (len > 0) end = Math.min(end, p.launchBeat + len - 1e-6);
     }
     if (end >= start) {
+      const restart = isOneShot || p.restartFromStart;
       segments.push({
         pattern,
         rangeStart: start,
         rangeEnd: end,
-        // Pending One Shots use the queued launch beat as their content origin.
-        originBeat: isOneShot ? p.launchBeat : null,
+        // Restart launches (One Shot / scene) use the queued beat as content origin.
+        originBeat: restart ? p.launchBeat : null,
       });
     }
   }
@@ -301,15 +311,26 @@ export class PlaybackEngine {
         const trackLoopLen = patternLoopEndBeat(pattern);
         if (trackLoopLen <= 0) continue;
 
-        // One Shot: content always starts at pattern beat 0 on originBeat, even
-        // when the clip is launched mid-bar. Loops keep phase-locking below.
+        // Content origin: pattern beat 0 maps to originBeat (One Shot / scene
+        // restart). Loops with a null origin keep phase-locking below.
         if (originBeat != null) {
           for (const note of pattern.notes) {
             if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
-            const occurrence = originBeat + note.startBeat;
-            if (occurrence < rangeStart - 0.01 || occurrence > rangeEnd + 1e-9) continue;
-            const noteKey = `n-${track.id}-${pattern.id}-${note.id}-os${originBeat}`;
-            this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
+
+            let iteration = 0;
+            const first = originBeat + note.startBeat;
+            if (first < rangeStart - 0.01) {
+              iteration = Math.floor((rangeStart - first) / trackLoopLen);
+              if (first + iteration * trackLoopLen < rangeStart - 0.01) iteration++;
+            }
+
+            while (true) {
+              const occurrence = first + iteration * trackLoopLen;
+              if (occurrence > rangeEnd + 1e-9) break;
+              const noteKey = `n-${track.id}-${pattern.id}-${note.id}-o${originBeat}-${iteration}`;
+              this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
+              iteration++;
+            }
           }
           continue;
         }

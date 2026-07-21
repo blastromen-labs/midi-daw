@@ -933,8 +933,10 @@ function launchScene(sceneId) {
   activeSceneId.value = sceneId;
 
   if (!playing.value) {
-    const { oneShots } = armSceneLoops(refs, project.tracks);
-    startPlayback();
+    // Start at beat 0 with startBeat stamped so every clip begins at pattern
+    // beat 0, and later switches can wait on each clip's real loop end.
+    const { oneShots } = armSceneLoops(refs, project.tracks, { originBeat: 0 });
+    startPlayback(0);
     if (oneShots.length) {
       queueSceneLaunch(oneShots, getActiveClock().getAbsoluteBeat(), project.tracks);
     }

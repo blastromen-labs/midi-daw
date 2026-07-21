@@ -50,21 +50,53 @@
           </section>
         </div>
 
-        <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-line">
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded text-xs text-muted hover:text-white hover:bg-surface-hover"
-            @click="emit('cancel')"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded text-xs bg-accent hover:bg-accent-dim text-white font-semibold"
-            @click="submit"
-          >
-            Save
-          </button>
+        <div class="flex items-center gap-2 px-4 py-3 border-t border-line bg-surface/40">
+          <div v-if="canDelete" class="flex items-center gap-2 min-w-0 flex-1">
+            <template v-if="!confirmDelete">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded text-xs text-red-400 hover:text-red-300 hover:bg-surface-hover flex-shrink-0"
+                @click="confirmDelete = true"
+              >
+                Delete song
+              </button>
+            </template>
+            <template v-else>
+              <span class="text-xs text-muted truncate">Delete "{{ draft.name.trim() || 'this song' }}"?</span>
+              <button
+                type="button"
+                class="px-2 py-1.5 rounded text-xs text-muted hover:text-white hover:bg-surface-hover flex-shrink-0"
+                @click="confirmDelete = false"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1.5 rounded text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-surface-hover flex-shrink-0"
+                @click="emit('delete')"
+              >
+                Delete
+              </button>
+            </template>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 ml-auto flex-shrink-0">
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded text-xs text-muted hover:text-white hover:bg-surface-hover"
+              @click="emit('cancel')"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded text-xs bg-accent hover:bg-accent-dim text-white font-semibold"
+              :disabled="!draft.name.trim()"
+              @click="submit"
+            >
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -72,17 +104,19 @@
 </template>
 
 <script setup>
-import { reactive, watch } from 'vue';
+import { ref, reactive, watch, onMounted, onUnmounted } from 'vue';
 import { TRACK_ACCENT_COLORS } from '../models/project.js';
 
 const props = defineProps({
   initial: { type: Object, default: () => ({}) },
+  canDelete: { type: Boolean, default: true },
 });
 
-const emit = defineEmits(['save', 'cancel']);
+const emit = defineEmits(['save', 'cancel', 'delete']);
 
 const titleId = 'song-editor-title';
 const accentColors = TRACK_ACCENT_COLORS;
+const confirmDelete = ref(false);
 
 const draft = reactive({
   name: props.initial.name ?? '',
@@ -92,6 +126,7 @@ const draft = reactive({
 watch(
   () => props.initial,
   (initial) => {
+    confirmDelete.value = false;
     draft.name = initial.name ?? '';
     draft.color = initial.color ?? TRACK_ACCENT_COLORS[0];
   },
@@ -103,4 +138,16 @@ function submit() {
   if (!name) return;
   emit('save', { name, color: draft.color });
 }
+
+function onKeyDown(e) {
+  if (e.key !== 'Escape') return;
+  if (confirmDelete.value) {
+    confirmDelete.value = false;
+    return;
+  }
+  emit('cancel');
+}
+
+onMounted(() => window.addEventListener('keydown', onKeyDown));
+onUnmounted(() => window.removeEventListener('keydown', onKeyDown));
 </script>

@@ -20,6 +20,7 @@
         @select-song="selectSong"
         @update-song="updateSong"
         @create-song="createSong"
+        @delete-song="deleteSong"
         @save-song-file="saveSongToFile"
         @load-song-file="loadSongFromFile"
         @load-song-file-error="onLoadSongFileError"
@@ -338,6 +339,28 @@ function updateSong(songId, changes) {
   if (changes.name != null) song.name = changes.name.trim() || song.name;
   if (changes.color != null) song.color = changes.color;
   song.updatedAt = new Date().toISOString();
+  persistSongs();
+}
+
+function deleteSong(songId) {
+  // Keep at least one song so the library / active project never go empty.
+  if (songs.value.length <= 1) return;
+  const idx = songs.value.findIndex((s) => s.id === songId);
+  if (idx === -1) return;
+
+  const wasActive = currentSongId.value === songId;
+  // Discard pending autosave so we don't rewrite the deleted song's project.
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  songs.value.splice(idx, 1);
+
+  if (wasActive) {
+    const next = songs.value[Math.min(idx, songs.value.length - 1)];
+    currentSongId.value = next.id;
+    replaceProject(next.project, { preserveSelection: true });
+  }
   persistSongs();
 }
 

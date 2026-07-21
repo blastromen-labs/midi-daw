@@ -34,6 +34,7 @@
         @select="(id) => emit('select-song', id)"
         @update="(id, changes) => emit('update-song', id, changes)"
         @create="(name) => emit('create-song', name)"
+        @delete="(id) => emit('delete-song', id)"
         @save-file="emit('save-song-file')"
         @load-file="(text) => emit('load-song-file', text)"
         @load-file-error="(msg) => emit('load-song-file-error', msg)"
@@ -90,6 +91,7 @@ const emit = defineEmits([
   'select-song',
   'update-song',
   'create-song',
+  'delete-song',
   'save-song-file',
   'load-song-file',
   'load-song-file-error',

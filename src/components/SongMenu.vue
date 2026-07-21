@@ -114,8 +114,10 @@
     <SongEditorModal
       v-if="editorOpen"
       :initial="editorInitial"
+      :can-delete="songs.length > 1"
       @save="commitEditor"
       @cancel="closeEditor"
+      @delete="deleteActive"
     />
   </div>
 </template>
@@ -132,7 +134,7 @@ const props = defineProps({
   compactNavbar: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['select', 'update', 'create', 'save-file', 'load-file', 'load-file-error']);
+const emit = defineEmits(['select', 'update', 'create', 'delete', 'save-file', 'load-file', 'load-file-error']);
 
 const open = ref(false);
 const creating = ref(false);
@@ -187,6 +189,12 @@ function startEditActive() {
 function commitEditor(values) {
   if (!activeSong.value) return;
   emit('update', activeSong.value.id, values);
+  closeEditor();
+}
+
+function deleteActive() {
+  if (!activeSong.value || props.songs.length <= 1) return;
+  emit('delete', activeSong.value.id);
   closeEditor();
 }
 

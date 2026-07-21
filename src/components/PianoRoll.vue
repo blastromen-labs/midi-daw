@@ -1,7 +1,10 @@
 <template>
   <div ref="rootRef" class="piano-roll flex flex-col bg-panel overflow-hidden h-full">
-    <!-- Roll-only toolbar controls live in AppToolbar via teleport so shared chrome doesn't jump. -->
-    <Teleport to="#daw-roll-toolbar-extras" :disabled="!toolbarActive">
+    <!-- Roll-only toolbar controls live in AppToolbar via teleport so shared chrome doesn't jump.
+         Defer until onMounted: during the initial patch, sibling chrome is still inside a
+         disconnected parent, so document.querySelector('#daw-roll-toolbar-extras') returns null
+         and a failed Teleport permanently breaks the toolbar / view updates. -->
+    <Teleport v-if="rollToolbarTargetReady" to="#daw-roll-toolbar-extras" :disabled="!toolbarActive">
       <div class="daw-toolbar-divider"></div>
 
       <!-- Track: selection dropdown, dedicated edit button, and add-new actions (TrackMenu.vue). -->
@@ -502,6 +505,9 @@ const props = defineProps({
   loopRegion: { type: Object, default: null },
   soloPreview: { type: Object, default: null },
 });
+
+/** Gate for AppToolbar teleport — see template comment on <Teleport>. */
+const rollToolbarTargetReady = ref(false);
 
 const liveBeat = usePlayheadBeat();
 const isFinePointer =
@@ -3078,6 +3084,8 @@ function unbindRollToolbarExtras() {
 }
 
 onMounted(() => {
+  // AppToolbar's #daw-roll-toolbar-extras is in the document now — safe to Teleport.
+  rollToolbarTargetReady.value = true;
   render();
   drawOverlays();
   bindScrollRefTouchGuards();

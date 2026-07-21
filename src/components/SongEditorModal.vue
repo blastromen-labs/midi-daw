@@ -34,6 +34,18 @@
           </section>
 
           <section>
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">BPM</label>
+            <input
+              v-model.number="draft.bpm"
+              type="number"
+              min="40"
+              max="300"
+              class="w-20 text-xs py-1.5 px-2 bg-surface border border-line-light rounded outline-none focus:border-accent text-center"
+              @keydown.enter="submit"
+            />
+          </section>
+
+          <section>
             <span class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Color</span>
             <div class="flex flex-wrap gap-1.5">
               <button
@@ -118,9 +130,20 @@ const titleId = 'song-editor-title';
 const accentColors = TRACK_ACCENT_COLORS;
 const confirmDelete = ref(false);
 
+const DEFAULT_BPM = 120;
+const MIN_BPM = 40;
+const MAX_BPM = 300;
+
+function clampBpm(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_BPM;
+  return Math.max(MIN_BPM, Math.min(MAX_BPM, Math.round(n)));
+}
+
 const draft = reactive({
   name: props.initial.name ?? '',
   color: props.initial.color ?? TRACK_ACCENT_COLORS[0],
+  bpm: clampBpm(props.initial.bpm),
 });
 
 watch(
@@ -129,6 +152,7 @@ watch(
     confirmDelete.value = false;
     draft.name = initial.name ?? '';
     draft.color = initial.color ?? TRACK_ACCENT_COLORS[0];
+    draft.bpm = clampBpm(initial.bpm);
   },
   { deep: true }
 );
@@ -136,7 +160,7 @@ watch(
 function submit() {
   const name = draft.name.trim();
   if (!name) return;
-  emit('save', { name, color: draft.color });
+  emit('save', { name, color: draft.color, bpm: clampBpm(draft.bpm) });
 }
 
 function onKeyDown(e) {

@@ -30,6 +30,7 @@
       <SongMenu
         :songs="songs"
         :active-song-id="activeSongId"
+        :bpm="bpm"
         :compact-navbar="compactNavbar"
         @select="(id) => emit('select-song', id)"
         @update="(id, changes) => emit('update-song', id, changes)"

@@ -338,6 +338,13 @@ function updateSong(songId, changes) {
   if (!song) return;
   if (changes.name != null) song.name = changes.name.trim() || song.name;
   if (changes.color != null) song.color = changes.color;
+  if (changes.bpm != null) {
+    const bpm = Math.max(40, Math.min(300, Math.round(Number(changes.bpm))));
+    if (Number.isFinite(bpm)) {
+      song.project = { ...song.project, bpm };
+      if (songId === currentSongId.value) setBpm(bpm);
+    }
+  }
   song.updatedAt = new Date().toISOString();
   persistSongs();
 }

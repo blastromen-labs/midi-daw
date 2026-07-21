@@ -54,6 +54,7 @@
               />
 
               <span class="flex-1 min-w-0 truncate text-xs">{{ song.name }}</span>
+              <span class="text-[9px] text-muted-dim flex-shrink-0 tabular-nums">{{ songBpm(song) }}</span>
             </div>
           </div>
 
@@ -131,6 +132,8 @@ import SongEditorModal from './SongEditorModal.vue';
 const props = defineProps({
   songs: { type: Array, required: true },
   activeSongId: String,
+  /** Live BPM for the active song (may be ahead of the persisted snapshot). */
+  bpm: { type: Number, default: 120 },
   compactNavbar: { type: Boolean, default: false },
 });
 
@@ -176,11 +179,17 @@ function closeEditor() {
   editorOpen.value = false;
 }
 
+function songBpm(song) {
+  if (song.id === props.activeSongId) return props.bpm;
+  return song.project?.bpm ?? 120;
+}
+
 function startEditActive() {
   if (!activeSong.value) return;
   editorInitial.value = {
     name: activeSong.value.name,
     color: activeSong.value.color,
+    bpm: props.bpm,
   };
   open.value = false;
   editorOpen.value = true;

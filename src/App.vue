@@ -125,6 +125,7 @@ import {
   normalizeDrumTrack,
   normalizeDrumPad,
   LIVE_LAUNCH_MODES,
+  patternLaunchMode,
 } from './models/project.js';
 import {
   loadSongLibrary,
@@ -152,7 +153,15 @@ import { clearSample, hasSample, loadSampleUrl } from './engine/sampler.js';
 import { removeReverbBus } from './engine/reverb.js';
 import { hasFileDrag } from './utils/audioFile.js';
 import { isEditableTarget } from './utils/keyboard.js';
-import { queuePatternToggle, launchPatternImmediately, stopTrackImmediately, holdPatternDown, holdPatternUp } from './engine/liveLauncher.js';
+import {
+  queuePatternToggle,
+  queuePatternOneShot,
+  armOneShotStop,
+  launchPatternImmediately,
+  stopPatternImmediately,
+  holdPatternDown,
+  holdPatternUp,
+} from './engine/liveLauncher.js';
 
 const project = reactive(createProject());
 const songs = ref([]);
@@ -529,7 +538,7 @@ watch(
 watch(
   // Reads projectLoopEndBeat with forPlayback matching the current playing
   // state, not just the edited pattern lengths — otherwise a Live-mode
-  // launch that swaps in a differently-sized pattern (via playingPatternId)
+  // launch that swaps in a differently-sized pattern (via liveLaunches)
   // wouldn't resize the transport's loop/wrap boundary while already playing.
   // In piano-roll mode, playback follows activePatternId instead, so loop
   // length must follow that same source of truth.
@@ -622,6 +631,9 @@ function addPattern(trackId, config = {}) {
     config.color ?? randomPatternColor(usedColors),
     config.patternSteps ?? active?.patternSteps ?? 16
   );
+  if (config.liveLaunchMode != null) pattern.liveLaunchMode = config.liveLaunchMode;
+  if (config.liveSyncGrid != null) pattern.liveSyncGrid = config.liveSyncGrid;
+  if (config.cutOthers != null) pattern.cutOthers = config.cutOthers;
   track.patterns.push(pattern);
   track.activePatternId = pattern.id;
 }
@@ -663,12 +675,11 @@ function deletePattern(trackId, patternId) {
   if (track.activePatternId === patternId) {
     track.activePatternId = track.patterns[Math.max(0, idx - 1)].id;
   }
-  if (track.playingPatternId === patternId) {
-    track.playingPatternId = null;
+  if (track.liveLaunches) {
+    track.liveLaunches = track.liveLaunches.filter((l) => l.patternId !== patternId);
   }
-  if (track.pendingPatternId === patternId) {
-    track.pendingPatternId = null;
-    track.pendingLaunchBeat = null;
+  if (track.pendingLaunches) {
+    track.pendingLaunches = track.pendingLaunches.filter((p) => p.patternId !== patternId);
   }
   if (project.soloPreview?.trackId === trackId && project.soloPreview?.patternId === patternId) {
     project.soloPreview = null;
@@ -681,37 +692,51 @@ function deletePattern(trackId, patternId) {
   }
 }
 
-// Live mode click handling — a clip is a toggle:
+// Live mode click handling — Loop clips toggle; One Shot clips play once:
 //   - stopped transport, different pattern -> launches it and starts playing.
 //   - stopped transport, already-armed pattern -> un-arms it (stays stopped).
-//   - playing transport, different pattern -> arms it to take over once the
-//     current pattern's loop completes.
-//   - playing transport, the pattern that's already playing -> arms the
-//     track to go silent once that same loop completes.
+//   - playing transport, Loop: queue swap / toggle-off at the next boundary.
+//   - playing transport, One Shot: queue a single playthrough, then auto-stop.
 // See engine/liveLauncher.js for the quantizing rule and why patterns
 // phase-lock to the grid instead of restarting from their own beat 0.
 function queueOrLaunchPattern(trackId, patternId) {
   const track = findTrack(trackId);
-  if (!track) return;
+  const pattern = track?.patterns?.find((p) => p.id === patternId);
+  if (!track || !pattern) return;
 
   engageLivePlayback();
 
+  const mode = patternLaunchMode(pattern);
+  const isOneShot = mode === LIVE_LAUNCH_MODES.ONE_SHOT;
+
   if (!playing.value) {
     if (isPatternPlaying(track, patternId)) {
-      stopTrackImmediately(track);
+      // Un-arm only this clip so a layered Loop can keep its armed state.
+      stopPatternImmediately(track, patternId);
     } else {
       launchPatternImmediately(track, patternId);
       startPlayback();
+      // Arm after start so the stop lands one pattern length from the real
+      // absolute start beat (not a stale pre-play position).
+      if (isOneShot) {
+        armOneShotStop(track, patternId, getActiveClock().getAbsoluteBeat());
+      }
     }
     return;
   }
 
-  queuePatternToggle(track, patternId, getActiveClock().getAbsoluteBeat());
+  const absBeat = getActiveClock().getAbsoluteBeat();
+  if (isOneShot) {
+    queuePatternOneShot(track, patternId, absBeat);
+  } else {
+    queuePatternToggle(track, patternId, absBeat);
+  }
 }
 
 function onHoldPatternDown(trackId, patternId) {
   const track = findTrack(trackId);
-  if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.HOLD) return;
+  const pattern = track?.patterns?.find((p) => p.id === patternId);
+  if (!track || patternLaunchMode(pattern) !== LIVE_LAUNCH_MODES.HOLD) return;
 
   project.soloPreview = null;
   engageLivePlayback();
@@ -726,15 +751,23 @@ function onHoldPatternDown(trackId, patternId) {
 
 function onHoldPatternUp(trackId) {
   const track = findTrack(trackId);
-  if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.HOLD) return;
+  if (!track) return;
   holdPatternUp(track);
 }
 
-// Roll-view ▶ on Loop-mode patterns — solo preview for one pattern without
-// sounding every track from the main transport Play button.
+// Roll-view ▶ on Loop / One Shot patterns — solo preview for one pattern
+// without sounding every track from the main transport Play button.
 function onPreviewPattern(trackId, patternId) {
   const track = findTrack(trackId);
-  if (!track || track.liveLaunchMode !== LIVE_LAUNCH_MODES.TOGGLE) return;
+  const pattern = track?.patterns?.find((p) => p.id === patternId);
+  const mode = patternLaunchMode(pattern);
+  if (
+    !track ||
+    !pattern ||
+    (mode !== LIVE_LAUNCH_MODES.TOGGLE && mode !== LIVE_LAUNCH_MODES.ONE_SHOT)
+  ) {
+    return;
+  }
 
   const current = project.soloPreview;
   if (current?.trackId === trackId && current?.patternId === patternId) {

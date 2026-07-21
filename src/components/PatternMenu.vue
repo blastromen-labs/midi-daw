@@ -136,7 +136,12 @@
 
 <script setup>
 import { ref, computed, nextTick, onUnmounted } from 'vue';
-import { LIVE_LAUNCH_MODES, randomPatternColor, patternStepsLabel } from '../models/project.js';
+import {
+  LIVE_LAUNCH_MODES,
+  patternLaunchMode,
+  randomPatternColor,
+  patternStepsLabel,
+} from '../models/project.js';
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 import { contrastTextColor } from '../utils/color.js';
 import { initialLetter } from '../utils/text.js';
@@ -156,7 +161,6 @@ const emit = defineEmits([
   'add-pattern',
   'clone-pattern',
   'update-pattern',
-  'update-track',
   'delete-pattern',
   'hold-pattern-down',
   'hold-pattern-up',
@@ -179,10 +183,12 @@ const editorInitial = ref({});
 
 let holdPointerId = null;
 
-const isHoldMode = computed(() => props.track?.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD);
-
 const activePattern = computed(() =>
   props.track?.patterns?.find((p) => p.id === props.track.activePatternId) ?? null
+);
+
+const isHoldMode = computed(
+  () => patternLaunchMode(activePattern.value) === LIVE_LAUNCH_MODES.HOLD
 );
 
 function defaultPatternName() {
@@ -190,10 +196,11 @@ function defaultPatternName() {
   return `Pattern ${count + 1}`;
 }
 
-function trackLiveDraft() {
+function patternLiveDraft(pattern) {
   return {
-    liveLaunchMode: props.track?.liveLaunchMode ?? 'toggle',
-    liveSyncGrid: props.track?.liveSyncGrid ?? '1/16',
+    liveLaunchMode: pattern?.liveLaunchMode ?? 'toggle',
+    liveSyncGrid: pattern?.liveSyncGrid ?? '1/16',
+    cutOthers: pattern?.cutOthers !== false,
   };
 }
 
@@ -202,7 +209,7 @@ function patternToDraft(pattern) {
     name: pattern.name,
     color: pattern.color,
     patternSteps: pattern.patternSteps ?? 16,
-    ...trackLiveDraft(),
+    ...patternLiveDraft(pattern),
   };
 }
 
@@ -237,7 +244,8 @@ function startCreate() {
     name: defaultPatternName(),
     color: randomPatternColor(props.track?.patterns?.map((p) => p.color) ?? []),
     patternSteps: active?.patternSteps ?? 16,
-    ...trackLiveDraft(),
+    // New patterns inherit the active pattern's launch settings as a starting point.
+    ...patternLiveDraft(active),
   };
   open.value = false;
   editorOpen.value = true;
@@ -257,15 +265,11 @@ function startEditActive() {
 }
 
 function commitEditor(values) {
-  const { liveLaunchMode, liveSyncGrid, ...patternValues } = values;
-
   if (editorMode.value === 'create') {
-    emit('add-pattern', patternValues);
+    emit('add-pattern', values);
   } else if (editorPatternId.value) {
-    emit('update-pattern', editorPatternId.value, patternValues);
+    emit('update-pattern', editorPatternId.value, values);
   }
-
-  emit('update-track', { liveLaunchMode, liveSyncGrid });
   closeEditor();
 }
 
@@ -303,7 +307,7 @@ function patternLaunchStatus(pattern) {
   if (!track) return 'idle';
   if (isHoldMode.value) {
     if (isTrackHoldAudible(track, pattern.id)) return 'playing';
-    if (isTrackHoldMuted(track) && track.playingPatternId === pattern.id && track.holdActive) return 'arming';
+    if (isTrackHoldMuted(track, pattern.id)) return 'arming';
     return 'idle';
   }
   if (props.soloPreview?.trackId === track.id && props.soloPreview?.patternId === pattern.id) {
@@ -322,8 +326,12 @@ function launchButtonClass(pattern) {
 }
 
 function launchButtonTitle(pattern) {
-  if (isHoldMode.value) {
-    return `${pattern.name} — hold to play in sync (${props.track?.liveSyncGrid ?? '1/16'} grid)`;
+  const mode = patternLaunchMode(pattern);
+  if (mode === LIVE_LAUNCH_MODES.HOLD) {
+    return `${pattern.name} — hold to play in sync (${pattern.liveSyncGrid ?? '1/16'} grid)`;
+  }
+  if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
+    return `${pattern.name} — preview this pattern (Live: one shot)`;
   }
   return `${pattern.name} — play this pattern only`;
 }

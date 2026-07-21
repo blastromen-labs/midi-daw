@@ -156,6 +156,12 @@ export function createPattern(name = 'Pattern 1', color = randomPatternColor(), 
     color,
     patternSteps,
     notes,
+    // Live launch settings are per pattern so one track can mix Loop / Hold / One Shot.
+    liveLaunchMode: 'toggle',
+    liveSyncGrid: '1/16',
+    // When true (default), launching this clip stops other clips on the same track.
+    // Set false to layer (e.g. One Shot over a running Loop).
+    cutOthers: true,
   };
 }
 
@@ -176,12 +182,38 @@ export function patternCloneName(patterns, sourceName) {
 /** Clone a pattern's settings and piano-roll notes into a new pattern object. */
 export function clonePattern(source, patterns) {
   const usedColors = patterns.map((p) => p.color);
-  return createPattern(
+  const pattern = createPattern(
     patternCloneName(patterns, source.name),
     randomPatternColor(usedColors),
     source.patternSteps ?? 16,
     cloneNotes(source.notes)
   );
+  pattern.liveLaunchMode = source.liveLaunchMode ?? pattern.liveLaunchMode;
+  pattern.liveSyncGrid = source.liveSyncGrid ?? pattern.liveSyncGrid;
+  pattern.cutOthers = source.cutOthers ?? pattern.cutOthers;
+  return pattern;
+}
+
+/** Live launch mode for a pattern (`toggle` / `hold` / `oneShot`). */
+export function patternLaunchMode(pattern) {
+  return pattern?.liveLaunchMode ?? LIVE_LAUNCH_MODES.TOGGLE;
+}
+
+/** Whether launching this pattern stops other same-track clips (default true). */
+export function patternCutsOthers(pattern) {
+  return pattern?.cutOthers !== false;
+}
+
+/** Empty Live launch slot — one sounding (or held) pattern on a track. */
+export function createLiveLaunch(patternId, overrides = {}) {
+  return {
+    patternId,
+    holdActive: false,
+    holdMuted: false,
+    pendingUnmuteBeat: null,
+    stopBeat: null,
+    ...overrides,
+  };
 }
 
 export function getActivePattern(track) {
@@ -220,54 +252,90 @@ export function getGhostSource(viewingTrack, tracks = []) {
   return { track: sourceTrack, pattern };
 }
 
-// Sentinel for playingPatternId/pendingPatternId meaning "this track is
-// deliberately silent in Live mode" — distinct from `null`, which instead
-// means "no Live-mode override yet, just follow activePatternId" (the
-// default, so plain editing/playback behaves exactly as if Live mode didn't
-// exist until you actually touch it). Clicking a playing clip again in Live
-// mode arms this, toggling the track off once its pattern finishes looping.
+// Legacy sentinel kept for migration of older in-memory / file snapshots.
 export const STOPPED_PATTERN = '__stopped__';
 
-// Which pattern a track plays during transport.
-// Piano-roll mode follows activePatternId (the pattern selected in the main toolbar),
-// except Hold-mode tracks stay silent until their ▶ button is held.
-// Live mode uses playingPatternId independently so you can edit one pattern
-// while another loops; null there means "same as active", and STOPPED_PATTERN
-// silences the track entirely.
-export function getPlayingPattern(track, { useLiveLaunch = true, soloPreview = null } = {}) {
-  if (!track?.patterns?.length) return null;
+function findTrackPattern(track, patternId) {
+  return track?.patterns?.find((p) => p.id === patternId) ?? null;
+}
+
+function isHoldLaunchAudible(launch) {
+  return !!launch?.holdActive && !launch.holdMuted;
+}
+
+/** Patterns that should sound right now (may be more than one when cutOthers is off). */
+export function getPlayingPatterns(track, { useLiveLaunch = true, soloPreview = null } = {}) {
+  if (!track?.patterns?.length) return [];
   if (!useLiveLaunch && soloPreview) {
-    if (soloPreview.trackId !== track.id) return null;
-    return track.patterns.find((p) => p.id === soloPreview.patternId) ?? null;
+    if (soloPreview.trackId !== track.id) return [];
+    const pattern = findTrackPattern(track, soloPreview.patternId);
+    return pattern ? [pattern] : [];
   }
-  // Hold-mode clips only sound while pointer-down (holdActive). Unlike toggle
-  // clips, null playingPatternId must not fall back to activePatternId or
-  // pressing Play would trigger the pattern with no hold — use the ▶ button.
-  if (track.liveLaunchMode === LIVE_LAUNCH_MODES.HOLD && !track.holdActive) return null;
-  if (!useLiveLaunch) return getActivePattern(track);
-  if (track.playingPatternId === STOPPED_PATTERN) return null;
-  const id = track.playingPatternId ?? track.activePatternId;
-  return track.patterns.find((p) => p.id === id) ?? track.patterns[0];
+  if (!useLiveLaunch) {
+    const active = getActivePattern(track);
+    if (!active) return [];
+    if (patternLaunchMode(active) === LIVE_LAUNCH_MODES.HOLD) {
+      const hold = track.liveLaunches?.find(
+        (l) => l.patternId === active.id && isHoldLaunchAudible(l)
+      );
+      if (!hold) return [];
+    }
+    return [active];
+  }
+
+  // null = no Live override yet → follow active Loop only (Hold / One Shot stay silent).
+  if (track.liveLaunches == null) {
+    const active = getActivePattern(track);
+    if (!active) return [];
+    const mode = patternLaunchMode(active);
+    if (mode === LIVE_LAUNCH_MODES.HOLD || mode === LIVE_LAUNCH_MODES.ONE_SHOT) return [];
+    return [active];
+  }
+
+  const patterns = [];
+  for (const launch of track.liveLaunches) {
+    // Hold stays silent until the sync unmute; still counts as "playing" for UI via isPatternPlaying.
+    if (launch.holdActive && launch.holdMuted) continue;
+    const pattern = findTrackPattern(track, launch.patternId);
+    if (pattern) patterns.push(pattern);
+  }
+  return patterns;
 }
 
-// A pattern is "playing" if it's the one currently sounding for its track —
-// each track only ever has one playing pattern at a time (playingPatternId
-// is a single field), which is what guarantees two clips on the same track
-// can never sound simultaneously in Live mode.
+// Primary sounding pattern — longest concurrent clip (used for transport loop sizing).
+export function getPlayingPattern(track, opts = {}) {
+  const patterns = getPlayingPatterns(track, opts);
+  if (!patterns.length) return null;
+  return patterns.reduce((best, p) =>
+    patternLoopEndBeat(p) >= patternLoopEndBeat(best) ? p : best
+  );
+}
+
 export function isPatternPlaying(track, patternId) {
-  return getPlayingPattern(track)?.id === patternId;
+  if (!track || !patternId) return false;
+  if (track.liveLaunches == null) {
+    return getPlayingPatterns(track).some((p) => p.id === patternId);
+  }
+  return track.liveLaunches.some((l) => l.patternId === patternId);
 }
 
-// A pattern is "queued" once Live mode has armed it to replace the playing
-// pattern once its loop completes — see engine/liveLauncher.js.
+export function getLiveLaunch(track, patternId) {
+  return track?.liveLaunches?.find((l) => l.patternId === patternId) ?? null;
+}
+
 export function isPatternQueued(track, patternId) {
-  return track?.pendingPatternId === patternId;
+  return !!track?.pendingLaunches?.some((p) => p.patternId === patternId);
 }
 
-// True once Live mode has armed the track to go silent (rather than switch
-// to another pattern) once the currently playing pattern's loop completes.
+/** True when this clip is armed to stop at a boundary (toggle-off or one-shot end). */
+export function isPatternStopQueued(track, patternId) {
+  const launch = getLiveLaunch(track, patternId);
+  return launch?.stopBeat != null;
+}
+
+/** @deprecated Use isPatternStopQueued — kept for call sites that mean "any stop on track". */
 export function isTrackStopQueued(track) {
-  return track?.pendingPatternId === STOPPED_PATTERN;
+  return !!track?.liveLaunches?.some((l) => l.stopBeat != null);
 }
 
 export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), patternSteps = 16) {
@@ -282,15 +350,11 @@ export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), pat
     activePatternId: pattern.id,
     ghostTrackId: null,
     ghostPatternId: null,
-    // Live mode fields — see engine/liveLauncher.js. playingPatternId is the
-    // pattern actually sounding right now (null = follow activePatternId);
-    // pendingPatternId/pendingLaunchBeat describe a queued-but-not-yet-live
-    // launch waiting for the current pattern's loop to complete.
-    liveLaunchMode: LIVE_LAUNCH_MODES.TOGGLE,
-    liveSyncGrid: '1/16',
-    playingPatternId: null,
-    pendingPatternId: null,
-    pendingLaunchBeat: null,
+    // Live mode runtime — see engine/liveLauncher.js.
+    // liveLaunches: null = follow activePatternId; [] = silent; [...] = sounding clips
+    // (multiple when a clip has cutOthers: false). pendingLaunches = queued starts.
+    liveLaunches: null,
+    pendingLaunches: [],
     midiOutputId: '',
     midiChannel: 0,
   };
@@ -420,11 +484,8 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     activePatternId: pattern.id,
     ghostTrackId: null,
     ghostPatternId: null,
-    liveLaunchMode: LIVE_LAUNCH_MODES.TOGGLE,
-    liveSyncGrid: '1/16',
-    playingPatternId: null,
-    pendingPatternId: null,
-    pendingLaunchBeat: null,
+    liveLaunches: null,
+    pendingLaunches: [],
     volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
   };
@@ -501,7 +562,9 @@ export function trackLoopEndBeat(track) {
 }
 
 export function trackPlayingLoopEndBeat(track, { useLiveLaunch = true, soloPreview = null } = {}) {
-  return patternLoopEndBeat(getPlayingPattern(track, { useLiveLaunch, soloPreview }));
+  const patterns = getPlayingPatterns(track, { useLiveLaunch, soloPreview });
+  if (!patterns.length) return 0;
+  return Math.max(...patterns.map(patternLoopEndBeat));
 }
 
 export function projectLoopEndBeat(tracks, { forPlayback = false, useLiveLaunch = true, soloPreview = null } = {}) {
@@ -522,7 +585,7 @@ export function createProject() {
   return {
     bpm: 120,
     // 'roll': piano-roll editing — playback follows each track's activePatternId.
-    // 'live': session grid — playback follows playingPatternId / queued launches.
+    // 'live': session grid — playback follows liveLaunches / pendingLaunches.
     sessionView: 'roll',
     sendMidiClock: false,
     clockOutputId: '',
@@ -576,12 +639,14 @@ export function snapOptionLabel(entry, compact = false) {
   return entry.label.slice(2);
 }
 
-/** How a pattern is triggered in Live mode — configured per track in the piano roll. */
+/** How a pattern is triggered in Live mode — configured per pattern. */
 export const LIVE_LAUNCH_MODES = {
   /** One click toggles loop on/off (default Live clip behavior). */
   TOGGLE: 'toggle',
   /** Hold to hear: loops muted in sync until the next grid line, then audibly while held. */
   HOLD: 'hold',
+  /** One click plays the pattern through once, then the track goes silent. */
+  ONE_SHOT: 'oneShot',
 };
 
 /** Grid the hold-to-play unmute aligns to when you press a clip. */
@@ -593,8 +658,8 @@ export const LIVE_SYNC_GRID_OPTIONS = [
   { label: 'Track', value: 'track', beats: null },
 ];
 
-export function liveSyncGridBeats(track, pattern) {
-  const grid = track?.liveSyncGrid ?? '1/16';
+export function liveSyncGridBeats(pattern) {
+  const grid = pattern?.liveSyncGrid ?? '1/16';
   const opt = LIVE_SYNC_GRID_OPTIONS.find((o) => o.value === grid);
   if (opt?.beats != null) return opt.beats;
   return patternLoopEndBeat(pattern);

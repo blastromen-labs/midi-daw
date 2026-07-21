@@ -70,12 +70,13 @@
             >
               <option value="toggle">Loop</option>
               <option value="hold">Hold</option>
+              <option value="oneShot">One Shot</option>
             </select>
             <template v-if="draft.liveLaunchMode === 'hold'">
               <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Sync grid</label>
               <select
                 v-model="draft.liveSyncGrid"
-                class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded"
+                class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded mb-3"
                 title="Grid the pattern unmute aligns to when you press"
               >
                 <option v-for="opt in liveSyncGridOptions" :key="opt.value" :value="opt.value">
@@ -83,6 +84,19 @@
                 </option>
               </select>
             </template>
+            <label class="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                v-model="draft.cutOthers"
+                type="checkbox"
+                class="mt-0.5"
+              />
+              <span>
+                <span class="block text-[10px] uppercase tracking-wider text-muted-dim">Cut other clips</span>
+                <span class="block text-[10px] text-muted mt-0.5 leading-snug">
+                  When off, this clip layers over other patterns on the same track (handy for One Shots).
+                </span>
+              </span>
+            </label>
           </section>
         </div>
 
@@ -166,6 +180,7 @@ const draft = reactive({
   patternSteps: barLengthOptions[0].steps,
   liveLaunchMode: 'toggle',
   liveSyncGrid: '1/16',
+  cutOthers: true,
 });
 
 const heading = computed(() => (props.mode === 'create' ? 'New pattern' : 'Edit pattern'));
@@ -176,6 +191,7 @@ function syncFromInitial() {
   draft.patternSteps = props.initial.patternSteps ?? barLengthOptions[0].steps;
   draft.liveLaunchMode = props.initial.liveLaunchMode ?? 'toggle';
   draft.liveSyncGrid = props.initial.liveSyncGrid ?? '1/16';
+  draft.cutOthers = props.initial.cutOthers !== false;
 }
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
@@ -189,6 +205,7 @@ function submit() {
     patternSteps: draft.patternSteps,
     liveLaunchMode: draft.liveLaunchMode,
     liveSyncGrid: draft.liveSyncGrid,
+    cutOthers: draft.cutOthers,
   });
 }
 

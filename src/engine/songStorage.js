@@ -20,6 +20,9 @@ const PERSISTED_PROJECT_SCALAR_KEYS = [
 
 /** Fields stripped before persisting — Live-mode runtime only. */
 const EPHEMERAL_TRACK_FIELDS = [
+  'liveLaunches',
+  'pendingLaunches',
+  // Legacy scalars from older builds.
   'playingPatternId',
   'pendingPatternId',
   'pendingLaunchBeat',
@@ -59,15 +62,26 @@ export function deserializeProject(data) {
   project.soloPreview = null;
   project.tracks = project.tracks ?? [];
   for (const track of project.tracks) {
-    track.playingPatternId = null;
-    track.pendingPatternId = null;
-    track.pendingLaunchBeat = null;
-    track.holdActive = false;
-    track.holdMuted = false;
-    track.pendingUnmuteBeat = null;
-    track.liveLaunchMode = track.liveLaunchMode ?? 'toggle';
-    track.liveSyncGrid = track.liveSyncGrid ?? '1/16';
+    track.liveLaunches = null;
+    track.pendingLaunches = [];
     track.category = normalizeTrackCategory(track);
+    // Migrate legacy track-level launch settings onto each pattern, then drop
+    // them from the track so launch mode is always per-pattern going forward.
+    const legacyMode = track.liveLaunchMode ?? 'toggle';
+    const legacyGrid = track.liveSyncGrid ?? '1/16';
+    for (const pattern of track.patterns ?? []) {
+      pattern.liveLaunchMode = pattern.liveLaunchMode ?? legacyMode;
+      pattern.liveSyncGrid = pattern.liveSyncGrid ?? legacyGrid;
+      pattern.cutOthers = pattern.cutOthers ?? true;
+    }
+    delete track.liveLaunchMode;
+    delete track.liveSyncGrid;
+    delete track.playingPatternId;
+    delete track.pendingPatternId;
+    delete track.pendingLaunchBeat;
+    delete track.holdActive;
+    delete track.holdMuted;
+    delete track.pendingUnmuteBeat;
   }
   return project;
 }

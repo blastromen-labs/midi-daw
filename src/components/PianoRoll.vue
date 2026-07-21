@@ -30,7 +30,6 @@
           @add-pattern="(config) => emit('add-pattern', activeTrackId, config)"
           @clone-pattern="(id) => emit('clone-pattern', activeTrackId, id)"
           @update-pattern="(id, changes) => emit('update-pattern', activeTrackId, id, changes)"
-          @update-track="(changes) => emit('update-track', activeTrackId, changes)"
           @delete-pattern="(id) => emit('delete-pattern', activeTrackId, id)"
           @hold-pattern-down="(id) => emit('hold-pattern-down', activeTrackId, id)"
           @hold-pattern-up="() => emit('hold-pattern-up', activeTrackId)"

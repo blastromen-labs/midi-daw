@@ -10,7 +10,13 @@ import { playSample, resumeSamplerAudio } from './sampler.js';
 import { padPlaybackOpts } from './padPlayback.js';
 import { transport } from './clock.js';
 import { getActiveClock } from './activeClock.js';
-import { getPlayingPattern, patternLoopEndBeat, STOPPED_PATTERN } from '../models/project.js';
+import {
+  getLiveLaunch,
+  getPlayingPatterns,
+  LIVE_LAUNCH_MODES,
+  patternLaunchMode,
+  patternLoopEndBeat,
+} from '../models/project.js';
 import { commitDuePatternLaunches, commitDueUnmutes, clearPendingLaunches } from './liveLauncher.js';
 
 // When notes are placed back-to-back (e.g. repeated 16th notes on the same
@@ -37,48 +43,56 @@ const SCHEDULE_WINDOW_SLACK_SEC = 0.05;
 // within one 16th of the tick snapshot are fired immediately instead.
 const MAX_LATE_NOTE_GRACE_SEC = 0.15;
 
-// Splits a track's [rangeStart, rangeEnd) schedule window around a pending
-// Live-mode launch boundary, so each pattern is only ever scheduled for the
-// span it's actually sounding during:
-//   - no queued launch, or its boundary is beyond this window  -> one segment
-//     for the currently-playing pattern across the whole window.
-//   - boundary falls inside this window                        -> two segments:
-//     the outgoing pattern up to the boundary, and the incoming (pending)
-//     pattern from the boundary onward.
+// Builds schedule segments for every pattern sounding (or about to sound) on
+// a track in [rangeStart, rangeEnd). Supports concurrent clips when cutOthers
+// is false, and clips each launch at its own stopBeat / pending cut boundary.
 //
-// The second segment matters because commitDuePatternLaunches (which flips
-// playingPatternId) only runs once per scheduler tick, checked against the
-// *current* beat with no lookahead — unlike every other note, which gets
-// scheduled SCHEDULE_AHEAD_SEC (clock.js) ahead of when it actually sounds.
-// Without this, the incoming pattern's first note(s) only get scheduled once
-// promotion happens to run on a tick at or after the boundary, by which point
-// the audio timestamp for a beat-0 note can already be so close to (or
-// behind) "now" that it misses the scheduler's own "not too late" tolerance
-// and gets silently dropped — the queued pattern's opening note(s) go missing.
-// Splitting the window lets the incoming pattern be scheduled ahead of time,
-// exactly like the outgoing one, so both sides of the switch get the same
-// timing guarantees.
+// Pending starts are included ahead of commitDuePatternLaunches because that
+// commit only runs against the *current* beat with no lookahead — without
+// pre-scheduling the incoming pattern, its opening notes can miss the
+// scheduler's late-note tolerance (same reason as the old single-pending split).
 function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, soloPreview) {
-  const currentPattern = getPlayingPattern(track, { useLiveLaunch, soloPreview });
-  const launchBeat = track.pendingLaunchBeat;
-
-  if (
-    !useLiveLaunch ||
-    track.pendingPatternId == null ||
-    launchBeat == null ||
-    launchBeat > rangeEnd
-  ) {
-    return [{ pattern: currentPattern, rangeStart, rangeEnd }];
+  if (!useLiveLaunch) {
+    const patterns = getPlayingPatterns(track, { useLiveLaunch, soloPreview });
+    return patterns.map((pattern) => ({ pattern, rangeStart, rangeEnd }));
   }
 
-  const segments = [
-    { pattern: currentPattern, rangeStart, rangeEnd: Math.min(rangeEnd, launchBeat - 1e-6) },
-  ];
+  const segments = [];
+  const pending = track.pendingLaunches ?? [];
 
-  const nextPattern =
-    track.pendingPatternId === STOPPED_PATTERN ? null : track.patterns?.find((p) => p.id === track.pendingPatternId);
-  if (nextPattern) {
-    segments.push({ pattern: nextPattern, rangeStart: Math.max(rangeStart, launchBeat), rangeEnd });
+  // Soonest beat at which a cutOthers pending launch will wipe other clips.
+  let globalCutBeat = null;
+  for (const p of pending) {
+    if (!p.cutOthers) continue;
+    if (p.launchBeat == null || p.launchBeat > rangeEnd) continue;
+    if (globalCutBeat == null || p.launchBeat < globalCutBeat) globalCutBeat = p.launchBeat;
+  }
+
+  const sounding = getPlayingPatterns(track, { useLiveLaunch, soloPreview });
+  for (const pattern of sounding) {
+    const launch = getLiveLaunch(track, pattern.id);
+    let end = rangeEnd;
+    if (launch?.stopBeat != null) end = Math.min(end, launch.stopBeat - 1e-6);
+    if (globalCutBeat != null) end = Math.min(end, globalCutBeat - 1e-6);
+    if (end >= rangeStart) {
+      segments.push({ pattern, rangeStart, rangeEnd: end });
+    }
+  }
+
+  for (const p of pending) {
+    if (!p.patternId || p.launchBeat == null || p.launchBeat > rangeEnd) continue;
+    const pattern = track.patterns?.find((pat) => pat.id === p.patternId);
+    if (!pattern) continue;
+    const start = Math.max(rangeStart, p.launchBeat);
+    let end = rangeEnd;
+    // One Shot: schedule only through one length from the launch boundary.
+    if (patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT) {
+      const len = patternLoopEndBeat(pattern);
+      if (len > 0) end = Math.min(end, p.launchBeat + len - 1e-6);
+    }
+    if (end >= start) {
+      segments.push({ pattern, rangeStart: start, rangeEnd: end });
+    }
   }
 
   return segments;
@@ -248,7 +262,7 @@ export class PlaybackEngine {
     const useLiveLaunch = this.project.sessionView === 'live';
     const soloPreview = useLiveLaunch ? null : this.project.soloPreview ?? null;
     // Promote any Live-mode launches whose bar has arrived before scheduling
-    // this pass's notes, so playingPatternId/pendingPatternId (and the Live
+    // this pass's notes, so liveLaunches / pendingLaunches (and the Live
     // view's queued/playing indicators) flip at the right time. The note
     // scheduling below doesn't depend on this having run yet — it reaches
     // across a pending boundary itself via trackSchedulingSegments — this is
@@ -265,7 +279,6 @@ export class PlaybackEngine {
 
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
-      if (useLiveLaunch && track.holdMuted) continue;
 
       for (const { pattern, rangeStart, rangeEnd } of trackSchedulingSegments(
         track,
@@ -292,7 +305,8 @@ export class PlaybackEngine {
             let cycle = Math.floor((occurrence - loopStart) / transportLoopLen + 1e-9);
 
             while (occurrence <= rangeEnd + 1e-9) {
-              const noteKey = `n-${track.id}-${note.id}-t${cycle}`;
+              // Include pattern id so layered same-track clips can't collide in the dedupe set.
+              const noteKey = `n-${track.id}-${pattern.id}-${note.id}-t${cycle}`;
               this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
               cycle++;
               occurrence += transportLoopLen;
@@ -310,7 +324,7 @@ export class PlaybackEngine {
             const occurrence = note.startBeat + iteration * trackLoopLen;
             if (occurrence > rangeEnd + 1e-9) break;
 
-            const noteKey = `n-${track.id}-${note.id}-${iteration}`;
+            const noteKey = `n-${track.id}-${pattern.id}-${note.id}-${iteration}`;
             this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
             iteration++;
           }

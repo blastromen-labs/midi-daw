@@ -22,6 +22,7 @@
       <template v-if="activeTrack">
         <PatternMenu
           :track="activeTrack"
+          :tracks="tracks"
           :playing="playing"
           :solo-preview="soloPreview"
           :scenes="scenes"

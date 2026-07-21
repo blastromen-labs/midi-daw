@@ -170,7 +170,11 @@ export function createPattern(name = 'Pattern 1', color = randomPatternColor(), 
     // A pattern may belong to multiple scenes; scenes are shortcuts that
     // launch several patterns together in Live mode.
     sceneIds: [],
-    // When true, clip is omitted from Live view (still plays via scenes).
+    // Cross-track pattern links (empty = none). Kept bidirectional — if A lists
+    // B then B lists A — so Live enable/stop on either clip drives the whole
+    // group (including patterns hidden from Live, e.g. lights).
+    linkedPatternIds: [],
+    // When true, clip is omitted from Live view (still plays via scenes / links).
     // Use for background / non-improvisational clips (e.g. lights).
     hiddenFromLive: false,
   };
@@ -270,6 +274,152 @@ export function removePatternFromScene(pattern, sceneId) {
   pattern.sceneIds = pattern.sceneIds.filter((id) => id !== sceneId);
 }
 
+/**
+ * Normalize `linkedPatternIds: string[]` — drop self, duplicates, and ids not
+ * in `validPatternIds` when that set is provided.
+ * @param {object} pattern
+ * @param {Set<string>|null} [validPatternIds]
+ * @returns {string[]}
+ */
+export function normalizePatternLinkedIds(pattern, validPatternIds = null) {
+  if (!pattern) return [];
+  const raw = Array.isArray(pattern.linkedPatternIds) ? pattern.linkedPatternIds : [];
+  const seen = new Set();
+  const ids = [];
+  for (const id of raw) {
+    if (typeof id !== 'string' || !id || id === pattern.id || seen.has(id)) continue;
+    if (validPatternIds && !validPatternIds.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  pattern.linkedPatternIds = ids;
+  return ids;
+}
+
+/** Find a pattern by id across all tracks. */
+export function findPatternRef(tracks, patternId) {
+  if (!patternId) return null;
+  for (const track of tracks ?? []) {
+    const pattern = track?.patterns?.find((p) => p.id === patternId);
+    if (pattern) return { track, pattern };
+  }
+  return null;
+}
+
+/** Every pattern id currently present in the project. */
+export function collectPatternIds(tracks) {
+  const ids = new Set();
+  for (const track of tracks ?? []) {
+    for (const pattern of track.patterns ?? []) {
+      if (pattern?.id) ids.add(pattern.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Resolve the bidirectional link group for a pattern (self + transitive links).
+ * @returns {{ track: object, pattern: object }[]}
+ */
+export function getLinkedPatternGroup(tracks, patternId) {
+  const start = findPatternRef(tracks, patternId);
+  if (!start) return [];
+
+  const byId = new Map();
+  for (const track of tracks ?? []) {
+    for (const pattern of track.patterns ?? []) {
+      if (pattern?.id) byId.set(pattern.id, { track, pattern });
+    }
+  }
+
+  const group = [];
+  const visited = new Set();
+  const queue = [patternId];
+  while (queue.length) {
+    const id = queue.shift();
+    if (!id || visited.has(id)) continue;
+    visited.add(id);
+    const ref = byId.get(id);
+    if (!ref) continue;
+    group.push(ref);
+    for (const linkedId of normalizePatternLinkedIds(ref.pattern)) {
+      if (!visited.has(linkedId)) queue.push(linkedId);
+    }
+  }
+  return group;
+}
+
+/** Add a bidirectional link between two patterns (no-op if same / missing). */
+export function linkPatterns(patternA, patternB) {
+  if (!patternA || !patternB || patternA.id === patternB.id) return;
+  normalizePatternLinkedIds(patternA);
+  normalizePatternLinkedIds(patternB);
+  if (!patternA.linkedPatternIds.includes(patternB.id)) {
+    patternA.linkedPatternIds.push(patternB.id);
+  }
+  if (!patternB.linkedPatternIds.includes(patternA.id)) {
+    patternB.linkedPatternIds.push(patternA.id);
+  }
+}
+
+/** Remove a bidirectional link between two patterns. */
+export function unlinkPatterns(patternA, patternB) {
+  if (!patternA || !patternB) return;
+  normalizePatternLinkedIds(patternA);
+  normalizePatternLinkedIds(patternB);
+  patternA.linkedPatternIds = patternA.linkedPatternIds.filter((id) => id !== patternB.id);
+  patternB.linkedPatternIds = patternB.linkedPatternIds.filter((id) => id !== patternA.id);
+}
+
+/**
+ * Replace a pattern's links with `linkedPatternIds`, keeping both sides in sync.
+ * Drops self-links and unknown ids; never links two patterns on the same track.
+ */
+export function setPatternLinks(tracks, patternId, linkedPatternIds) {
+  const primary = findPatternRef(tracks, patternId);
+  if (!primary) return;
+
+  const validIds = collectPatternIds(tracks);
+  const desired = [];
+  const seen = new Set();
+  for (const id of Array.isArray(linkedPatternIds) ? linkedPatternIds : []) {
+    if (typeof id !== 'string' || !id || id === patternId || seen.has(id)) continue;
+    if (!validIds.has(id)) continue;
+    const other = findPatternRef(tracks, id);
+    // Cross-track only — same-track links fight cutOthers / Live grid semantics.
+    if (!other || other.track.id === primary.track.id) continue;
+    seen.add(id);
+    desired.push(id);
+  }
+
+  const previous = [...normalizePatternLinkedIds(primary.pattern)];
+  for (const id of previous) {
+    if (desired.includes(id)) continue;
+    const other = findPatternRef(tracks, id);
+    if (other) unlinkPatterns(primary.pattern, other.pattern);
+    else {
+      primary.pattern.linkedPatternIds = primary.pattern.linkedPatternIds.filter((x) => x !== id);
+    }
+  }
+  for (const id of desired) {
+    if (previous.includes(id)) continue;
+    const other = findPatternRef(tracks, id);
+    if (other) linkPatterns(primary.pattern, other.pattern);
+  }
+  normalizePatternLinkedIds(primary.pattern, validIds);
+}
+
+/** Remove every link pointing at a deleted pattern. */
+export function clearLinksToPattern(tracks, patternId) {
+  if (!patternId) return;
+  for (const track of tracks ?? []) {
+    for (const pattern of track.patterns ?? []) {
+      normalizePatternLinkedIds(pattern);
+      pattern.linkedPatternIds = pattern.linkedPatternIds.filter((id) => id !== patternId);
+    }
+  }
+}
+
 /** Deep-copy notes with fresh ids (pattern clone, shift-drag duplicate, etc.). */
 export function cloneNotes(notes) {
   return (notes ?? []).map((n) => ({ ...n, id: uid() }));
@@ -298,6 +448,9 @@ export function clonePattern(source, patterns) {
   pattern.cutOthers = source.cutOthers ?? pattern.cutOthers;
   pattern.hiddenFromLive = !!source.hiddenFromLive;
   pattern.sceneIds = [...normalizePatternSceneIds(source)];
+  // Clones start unlinked — copying pairs would silently attach the new clip
+  // to the source's partners without an explicit edit.
+  pattern.linkedPatternIds = [];
   return pattern;
 }
 

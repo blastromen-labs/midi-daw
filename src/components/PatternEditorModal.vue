@@ -5,7 +5,7 @@
       @mousedown.self="emit('cancel')"
     >
       <div
-        class="w-full max-w-sm bg-panel border border-line rounded-lg shadow-xl overflow-hidden"
+        class="w-full max-w-md bg-panel border border-line rounded-lg shadow-xl overflow-hidden"
         role="dialog"
         :aria-labelledby="titleId"
         @mousedown.stop
@@ -123,7 +123,7 @@
                 </span>
               </span>
             </label>
-            <label class="flex items-start gap-2 cursor-pointer select-none">
+            <label class="flex items-start gap-2 cursor-pointer select-none mb-3">
               <input
                 v-model="draft.hiddenFromLive"
                 type="checkbox"
@@ -132,10 +132,41 @@
               <span>
                 <span class="block text-[10px] uppercase tracking-wider text-muted-dim">Hide from Live view</span>
                 <span class="block text-[10px] text-muted mt-0.5 leading-snug">
-                  Hides this clip in Live. It still plays via scenes — useful for background / lights patterns.
+                  Hides this clip in Live. It still plays via scenes or linked patterns — useful for lights.
                 </span>
               </span>
             </label>
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Linked patterns</label>
+            <div
+              v-if="linkableGroups.length"
+              class="rounded border border-line-light bg-surface/40 divide-y divide-line/60 max-h-44 overflow-y-auto"
+              title="Enable or stop this pattern in Live also controls the linked patterns (and vice versa)"
+            >
+              <div v-for="group in linkableGroups" :key="group.trackId">
+                <div class="px-2 py-1 text-[10px] text-muted-dim truncate bg-surface/50">
+                  {{ group.trackName }}
+                </div>
+                <label
+                  v-for="item in group.patterns"
+                  :key="item.id"
+                  class="flex items-center gap-2 px-2 py-1.5 cursor-pointer select-none hover:bg-surface-hover/60"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="draft.linkedPatternIds.includes(item.id)"
+                    @change="toggleLinked(item.id, $event.target.checked)"
+                  />
+                  <span
+                    class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/50"
+                    :style="{ background: item.color }"
+                  />
+                  <span class="text-xs truncate">{{ item.name }}</span>
+                </label>
+              </div>
+            </div>
+            <p v-else class="text-[10px] text-muted-dim leading-snug">
+              No other-track patterns to link — add a pattern on another track first.
+            </p>
           </section>
         </div>
 
@@ -205,6 +236,12 @@ const props = defineProps({
   canDelete: { type: Boolean, default: true },
   /** Project scenes for optional multi-scene assignment. */
   scenes: { type: Array, default: () => [] },
+  /** All tracks — used to pick cross-track linked patterns. */
+  tracks: { type: Array, default: () => [] },
+  /** Owning track id (exclude same-track patterns from the link list). */
+  trackId: { type: String, default: null },
+  /** Pattern being edited (null when creating) — excluded from the link list. */
+  patternId: { type: String, default: null },
 });
 
 const emit = defineEmits(['save', 'cancel', 'delete']);
@@ -224,14 +261,37 @@ const draft = reactive({
   cutOthers: true,
   hiddenFromLive: false,
   sceneIds: [],
+  linkedPatternIds: [],
 });
 
 const heading = computed(() => (props.mode === 'create' ? 'New pattern' : 'Edit pattern'));
+
+/** Other-track patterns grouped for the link checklist. */
+const linkableGroups = computed(() => {
+  const groups = [];
+  for (const track of props.tracks ?? []) {
+    if (!track || track.id === props.trackId) continue;
+    const patterns = (track.patterns ?? [])
+      .filter((p) => p?.id && p.id !== props.patternId)
+      .map((p) => ({ id: p.id, name: p.name, color: p.color }));
+    if (!patterns.length) continue;
+    groups.push({
+      trackId: track.id,
+      trackName: track.name || 'Track',
+      patterns,
+    });
+  }
+  return groups;
+});
 
 function initialSceneIds(initial) {
   if (Array.isArray(initial?.sceneIds)) return [...initial.sceneIds];
   if (initial?.sceneId) return [initial.sceneId];
   return [];
+}
+
+function initialLinkedIds(initial) {
+  return Array.isArray(initial?.linkedPatternIds) ? [...initial.linkedPatternIds] : [];
 }
 
 function syncFromInitial() {
@@ -243,6 +303,7 @@ function syncFromInitial() {
   draft.cutOthers = props.initial.cutOthers !== false;
   draft.hiddenFromLive = !!props.initial.hiddenFromLive;
   draft.sceneIds = initialSceneIds(props.initial);
+  draft.linkedPatternIds = initialLinkedIds(props.initial);
 }
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
@@ -253,6 +314,15 @@ function toggleScene(sceneId, checked) {
     if (!draft.sceneIds.includes(sceneId)) draft.sceneIds.push(sceneId);
   } else {
     draft.sceneIds = draft.sceneIds.filter((id) => id !== sceneId);
+  }
+}
+
+function toggleLinked(patternId, checked) {
+  if (!patternId) return;
+  if (checked) {
+    if (!draft.linkedPatternIds.includes(patternId)) draft.linkedPatternIds.push(patternId);
+  } else {
+    draft.linkedPatternIds = draft.linkedPatternIds.filter((id) => id !== patternId);
   }
 }
 
@@ -268,6 +338,7 @@ function submit() {
     cutOthers: draft.cutOthers,
     hiddenFromLive: !!draft.hiddenFromLive,
     sceneIds: [...draft.sceneIds],
+    linkedPatternIds: [...draft.linkedPatternIds],
   });
 }
 

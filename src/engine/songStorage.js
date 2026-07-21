@@ -2,6 +2,10 @@ import {
   uid,
   normalizeTrackCategory,
   normalizePatternSceneIds,
+  normalizePatternLinkedIds,
+  collectPatternIds,
+  findPatternRef,
+  linkPatterns,
   randomTrackColor,
 } from '../models/project.js';
 import { sanitizeFilename } from '../utils/filename.js';
@@ -76,6 +80,7 @@ export function deserializeProject(data) {
     : [];
   const sceneIds = new Set(project.scenes.map((s) => s.id));
   project.tracks = project.tracks ?? [];
+  const patternIds = collectPatternIds(project.tracks);
   for (const track of project.tracks) {
     track.liveLaunches = null;
     track.pendingLaunches = [];
@@ -92,6 +97,8 @@ export function deserializeProject(data) {
       pattern.hiddenFromLive = !!pattern.hiddenFromLive;
       // Migrate legacy sceneId → sceneIds[]; drop stale / unknown scene refs.
       normalizePatternSceneIds(pattern, sceneIds);
+      // Drop stale / unknown linked-pattern refs.
+      normalizePatternLinkedIds(pattern, patternIds);
     }
     delete track.liveLaunchMode;
     delete track.liveSyncGrid;
@@ -101,6 +108,19 @@ export function deserializeProject(data) {
     delete track.holdActive;
     delete track.holdMuted;
     delete track.pendingUnmuteBeat;
+  }
+  // Drop same-track links and mirror remaining pairs so either side can edit.
+  for (const track of project.tracks) {
+    for (const pattern of track.patterns ?? []) {
+      const ids = [...(pattern.linkedPatternIds ?? [])];
+      pattern.linkedPatternIds = [];
+      for (const linkedId of ids) {
+        const other = findPatternRef(project.tracks, linkedId);
+        if (!other || other.track.id === track.id) continue;
+        linkPatterns(pattern, other.pattern);
+      }
+      normalizePatternLinkedIds(pattern, patternIds);
+    }
   }
   return project;
 }

@@ -127,6 +127,9 @@
       :mode="editorMode"
       :initial="editorInitial"
       :scenes="scenes"
+      :tracks="tracks"
+      :track-id="track?.id ?? null"
+      :pattern-id="editorPatternId"
       :can-delete="(track?.patterns?.length ?? 0) > 1"
       @save="commitEditor"
       @delete="confirmDelete"
@@ -150,6 +153,8 @@ import PatternEditorModal from './PatternEditorModal.vue';
 
 const props = defineProps({
   track: { type: Object, default: null },
+  /** All project tracks — for cross-track linked pattern picking. */
+  tracks: { type: Array, default: () => [] },
   playing: { type: Boolean, default: false },
   soloPreview: { type: Object, default: null },
   /** Show Load/Save MIDI controls (MIDI synth tracks only). */
@@ -209,6 +214,9 @@ function patternLiveDraft(pattern) {
       : pattern?.sceneId
         ? [pattern.sceneId]
         : [],
+    linkedPatternIds: Array.isArray(pattern?.linkedPatternIds)
+      ? [...pattern.linkedPatternIds]
+      : [],
   };
 }
 
@@ -254,6 +262,8 @@ function startCreate() {
     patternSteps: active?.patternSteps ?? 16,
     // New patterns inherit the active pattern's launch settings as a starting point.
     ...patternLiveDraft(active),
+    // Links are explicit — don't inherit the active pattern's partners.
+    linkedPatternIds: [],
   };
   open.value = false;
   editorOpen.value = true;

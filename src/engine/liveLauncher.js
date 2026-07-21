@@ -127,6 +127,18 @@ function cancelPendingForPattern(track, patternId) {
   track.pendingLaunches = ensurePendingList(track).filter((p) => p.patternId !== patternId);
 }
 
+/** Cancel a queued launch for this pattern (no-op if none). */
+export function cancelPendingPattern(track, patternId) {
+  if (!track || !patternId) return;
+  cancelPendingForPattern(track, patternId);
+}
+
+/** Clear a queued toggle-off / one-shot stop on this pattern. */
+export function cancelQueuedStop(track, patternId) {
+  const launch = getLiveLaunch(track, patternId);
+  if (launch) launch.stopBeat = null;
+}
+
 function queuePendingLaunch(track, patternId, launchBeat, cutOthers, { restartFromStart = false } = {}) {
   cancelPendingForPattern(track, patternId);
   ensurePendingList(track).push({ patternId, launchBeat, cutOthers, restartFromStart });
@@ -164,14 +176,18 @@ export function queuePatternToggle(track, patternId, currentAbsBeat) {
   }
 
   if (isCurrentlyPlayingThis) {
-    materializeFollowActive(track);
-    const current = getLiveLaunch(track, patternId);
-    const quantizeBeats = Math.max(patternLoopEndBeat(targetPattern), BEATS_PER_BAR);
-    if (current) {
-      current.stopBeat = nextBoundaryBeat(currentAbsBeat, quantizeBeats);
-    }
+    queuePatternStop(track, patternId, currentAbsBeat);
     return;
   }
+
+  queuePatternStart(track, patternId, currentAbsBeat);
+}
+
+/** Queue a Loop start at the next shared loop/bar boundary (no-op if missing). */
+export function queuePatternStart(track, patternId, currentAbsBeat) {
+  if (!track) return;
+  const targetPattern = findPattern(track, patternId);
+  if (!targetPattern) return;
 
   const cutOthers = patternCutsOthers(targetPattern);
   const quantizeBeats = Math.max(
@@ -180,6 +196,20 @@ export function queuePatternToggle(track, patternId, currentAbsBeat) {
     BEATS_PER_BAR
   );
   queuePendingLaunch(track, patternId, nextBoundaryBeat(currentAbsBeat, quantizeBeats), cutOthers);
+}
+
+/** Queue a Loop stop at the next loop/bar boundary (no-op if not sounding). */
+export function queuePatternStop(track, patternId, currentAbsBeat) {
+  if (!track) return;
+  const targetPattern = findPattern(track, patternId);
+  if (!targetPattern) return;
+
+  materializeFollowActive(track);
+  const current = getLiveLaunch(track, patternId);
+  const quantizeBeats = Math.max(patternLoopEndBeat(targetPattern), BEATS_PER_BAR);
+  if (current) {
+    current.stopBeat = nextBoundaryBeat(currentAbsBeat, quantizeBeats);
+  }
 }
 
 function isPatternPending(track, patternId) {

@@ -131,6 +131,8 @@ import {
   createScene,
   clonePattern as clonePatternModel,
   clearSceneFromPatterns,
+  clearLinksToPattern,
+  setPatternLinks,
   addPatternToScene,
   removePatternFromScene,
   normalizePatternSceneIds,
@@ -139,7 +141,6 @@ import {
   randomTrackColor,
   randomPatternColor,
   getActivePattern,
-  isPatternPlaying,
   projectLoopEndBeat,
   reorderPatterns as reorderTrackPatterns,
   syncUidCounter,
@@ -178,15 +179,16 @@ import { removeReverbBus } from './engine/reverb.js';
 import { hasFileDrag } from './utils/audioFile.js';
 import { isEditableTarget } from './utils/keyboard.js';
 import {
-  queuePatternToggle,
-  queuePatternOneShot,
-  launchPatternImmediately,
-  stopPatternImmediately,
-  holdPatternDown,
-  holdPatternUp,
   queueSceneLaunch,
   armSceneLoops,
+  holdPatternUp,
 } from './engine/liveLauncher.js';
+import {
+  resolveClipIntent,
+  runLinkedClipIntent,
+  holdLinkedPatternsDown,
+  holdLinkedPatternsUp,
+} from './engine/linkedLauncher.js';
 
 const project = reactive(createProject());
 const songs = ref([]);
@@ -677,6 +679,9 @@ function addPattern(trackId, config = {}) {
   }
   track.patterns.push(pattern);
   track.activePatternId = pattern.id;
+  if (config.linkedPatternIds !== undefined) {
+    setPatternLinks(project.tracks, pattern.id, config.linkedPatternIds);
+  }
 }
 
 function clonePattern(trackId, sourcePatternId) {
@@ -702,8 +707,12 @@ function updatePattern(trackId, patternId, changes) {
   const track = findTrack(trackId);
   const pattern = track?.patterns?.find((p) => p.id === patternId);
   if (!pattern) return;
-  Object.assign(pattern, changes);
+  const { linkedPatternIds, ...rest } = changes ?? {};
+  Object.assign(pattern, rest);
   if (changes?.sceneIds !== undefined) normalizePatternSceneIds(pattern);
+  if (linkedPatternIds !== undefined) {
+    setPatternLinks(project.tracks, patternId, linkedPatternIds);
+  }
 }
 
 function deletePattern(trackId, patternId) {
@@ -713,6 +722,7 @@ function deletePattern(trackId, patternId) {
   const idx = track.patterns.findIndex((p) => p.id === patternId);
   if (idx === -1) return;
 
+  clearLinksToPattern(project.tracks, patternId);
   track.patterns.splice(idx, 1);
 
   if (track.activePatternId === patternId) {
@@ -740,8 +750,8 @@ function deletePattern(trackId, patternId) {
 //   - stopped transport, already-armed pattern -> un-arms it (stays stopped).
 //   - playing transport, Loop: queue swap / toggle-off at the next boundary.
 //   - playing transport, One Shot: queue a single playthrough, then auto-stop.
-// See engine/liveLauncher.js for the quantizing rule and why patterns
-// phase-lock to the grid instead of restarting from their own beat 0.
+// Linked patterns (edit pattern → Linked patterns) receive the same start/stop
+// intent, including clips hidden from Live. See engine/linkedLauncher.js.
 function queueOrLaunchPattern(trackId, patternId) {
   const track = findTrack(trackId);
   const pattern = track?.patterns?.find((p) => p.id === patternId);
@@ -751,34 +761,17 @@ function queueOrLaunchPattern(trackId, patternId) {
   activeSceneId.value = null;
   engageLivePlayback();
 
-  const mode = patternLaunchMode(pattern);
-  const isOneShot = mode === LIVE_LAUNCH_MODES.ONE_SHOT;
-
-  if (!playing.value) {
-    if (isPatternPlaying(track, patternId)) {
-      // Un-arm only this clip so a layered Loop can keep its armed state.
-      stopPatternImmediately(track, patternId);
-      return;
-    }
-    if (isOneShot) {
-      // Same as Hold: start transport first, then quantize to the sync grid
-      // so getAbsoluteBeat() isn't a stale pre-play position.
-      startPlayback();
-      queuePatternOneShot(track, patternId, getActiveClock().getAbsoluteBeat());
-      return;
-    }
-    launchPatternImmediately(track, patternId);
-    startPlayback();
-    return;
-  }
-
-  const absBeat = getActiveClock().getAbsoluteBeat();
-  if (isOneShot) {
-    queuePatternOneShot(track, patternId, absBeat);
-  } else {
-    queuePatternToggle(track, patternId, absBeat);
-  }
+  const intent = resolveClipIntent(track, pattern, playing.value);
+  runLinkedClipIntent(project.tracks, patternId, intent, {
+    transportPlaying: playing.value,
+    startPlayback: () => startPlayback(),
+    getAbsBeat: () => getActiveClock().getAbsoluteBeat(),
+  });
 }
+
+// Remember which pattern started a Hold gesture so release can fan out to
+// its link group (hold-up events only carry the track id today).
+let activeHoldPatternId = null;
 
 function onHoldPatternDown(trackId, patternId) {
   const track = findTrack(trackId);
@@ -793,10 +786,17 @@ function onHoldPatternDown(trackId, patternId) {
   // Read abs beat only after the transport is running — otherwise
   // getAbsoluteBeat() returns a stale wrapped position and the unmute
   // boundary may never arrive (silence forever while the playhead moves).
-  holdPatternDown(track, patternId, getActiveClock().getAbsoluteBeat());
+  activeHoldPatternId = patternId;
+  holdLinkedPatternsDown(project.tracks, patternId, getActiveClock().getAbsoluteBeat());
 }
 
 function onHoldPatternUp(trackId) {
+  const patternId = activeHoldPatternId;
+  activeHoldPatternId = null;
+  if (patternId) {
+    holdLinkedPatternsUp(project.tracks, patternId);
+    return;
+  }
   const track = findTrack(trackId);
   if (!track) return;
   holdPatternUp(track);

@@ -79,10 +79,14 @@ export const TRACK_CATEGORIES = [
   'Pluck',
   'Keys',
   'Choir',
+  'Vocals',
   'Chord',
   'FX',
   'Noise',
   'Atmos',
+  'Lights',
+  'Video',
+  'Visuals',
 ];
 
 export function defaultTrackCategory(kind = 'midi') {

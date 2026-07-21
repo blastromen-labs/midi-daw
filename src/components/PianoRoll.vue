@@ -419,6 +419,14 @@
         />
       </div>
     </template>
+
+    <NoteVelocityModal
+      v-if="velocityEditor"
+      :initial-velocity="velocityEditor.initialVelocity"
+      :note-count="velocityEditor.noteIds.length"
+      @apply="applyVelocityEditor"
+      @cancel="velocityEditor = null"
+    />
   </div>
 </template>
 
@@ -457,6 +465,7 @@ import { beatToX as beatToGridX } from '../utils/grid.js';
 import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import VelocityLane from './VelocityLane.vue';
+import NoteVelocityModal from './NoteVelocityModal.vue';
 import DrumPadList from './DrumPadList.vue';
 import DrumPadMuteStrip from './DrumPadMuteStrip.vue';
 import DrumEventLaneControls from './DrumEventLaneControls.vue';
@@ -562,8 +571,11 @@ const fitViewMode = ref('all');
 // Independent from `snap` (grid/placement resolution) so you can e.g. place
 // 1/32-length notes while snapping their position to a 1/16 grid.
 const noteLength = ref(0.25);
-// Click-to-stamp duration for new notes only — does not change the Len control.
+// Click-to-stamp duration/velocity for new notes only — does not change the Len control.
 const stampDuration = ref(null);
+const stampVelocity = ref(null);
+/** Double-click note editor: `{ noteIds, initialVelocity }` or null. */
+const velocityEditor = ref(null);
 watch(noteLength, () => {
   stampDuration.value = null;
 });
@@ -1249,7 +1261,7 @@ function startErasePaint(beat, pitch) {
 
 function startPaintAdd(pitch, cellBeat) {
   noteHistory.beginGroup();
-  const note = createNote(pitch, cellBeat, placementDuration(), 100);
+  const note = createNote(pitch, cellBeat, placementDuration(), placementVelocity());
   emitNotes([...getNotes(), note]);
   clearSelection();
   startDrawPreview(note.pitch, note.velocity);
@@ -1273,7 +1285,7 @@ function beginSingleNoteResize(note) {
 // pointer — same resize path as tablet long-press length draw / edge grab.
 function startLengthDraw(pitch, cellBeat) {
   noteHistory.beginGroup();
-  const note = createNote(pitch, cellBeat, placementDuration(), 100);
+  const note = createNote(pitch, cellBeat, placementDuration(), placementVelocity());
   emitNotes([...getNotes(), note]);
   clearSelection();
   startDrawPreview(note.pitch, note.velocity);
@@ -1364,9 +1376,48 @@ function placementDuration() {
   return stampDuration.value ?? noteLength.value;
 }
 
+function placementVelocity() {
+  return stampVelocity.value ?? PREVIEW_VELOCITY;
+}
+
 function stampNoteDuration(note) {
-  if (!note?.duration) return;
-  stampDuration.value = note.duration;
+  if (!note) return;
+  if (note.duration) stampDuration.value = note.duration;
+  if (note.velocity != null) {
+    stampVelocity.value = Math.max(0, Math.min(127, note.velocity));
+  }
+}
+
+function openVelocityEditor(note) {
+  if (!note) return;
+  // Cancel any drag started by the first click of the double-click.
+  drag.value = null;
+  noteHistory.endGroup();
+
+  const keepSelection = selectedNoteIds.value.has(note.id) && selectedNoteIds.value.size > 1;
+  if (!keepSelection) selectedNoteIds.value = new Set([note.id]);
+
+  const noteIds = keepSelection
+    ? getNotes().filter((n) => selectedNoteIds.value.has(n.id)).map((n) => n.id)
+    : [note.id];
+
+  stampNoteDuration(note);
+  velocityEditor.value = {
+    noteIds,
+    initialVelocity: note.velocity ?? PREVIEW_VELOCITY,
+  };
+}
+
+function applyVelocityEditor(velocity) {
+  const editor = velocityEditor.value;
+  if (!editor) return;
+  const ids = new Set(editor.noteIds);
+  const v = Math.max(0, Math.min(127, Math.round(velocity)));
+  noteHistory.beginGroup();
+  emitNotes(getNotes().map((n) => (ids.has(n.id) ? { ...n, velocity: v } : n)));
+  noteHistory.endGroup();
+  stampVelocity.value = v;
+  velocityEditor.value = null;
 }
 
 function finalizeResizeStamp() {
@@ -1383,6 +1434,10 @@ function onMobileMultiMouseDown(e) {
   const existing = findNoteAt(rawBeat, pitch);
 
   if (existing && selectedNoteIds.value.has(existing.id)) {
+    if (e.detail === 2) {
+      openVelocityEditor(existing);
+      return;
+    }
     stampNoteDuration(existing);
     drag.value = {
       type: 'pendingSelect',
@@ -1437,6 +1492,10 @@ function onToolModeDown(e) {
   if (tool === 'select') {
     const existing = findNoteAt(rawBeat, pitch);
     if (existing) {
+      if (e.detail === 2) {
+        openVelocityEditor(existing);
+        return;
+      }
       stampNoteDuration(existing);
       drag.value = {
         type: 'pendingSelect',
@@ -1460,6 +1519,10 @@ function onToolModeDown(e) {
   // Shift + empty drag stretches one long note instead of painting cells.
   const existing = findNoteAt(rawBeat, pitch);
   if (existing) {
+    if (e.detail === 2) {
+      openVelocityEditor(existing);
+      return;
+    }
     stampNoteDuration(existing);
     return;
   }
@@ -1738,8 +1801,12 @@ function onMouseDown(e) {
   }
 
   // Grabbing any note's body moves it (and the rest of the selection, if
-  // it's part of one).
+  // it's part of one). Double-click opens the exact velocity editor.
   if (existing) {
+    if (e.detail === 2) {
+      openVelocityEditor(existing);
+      return;
+    }
     stampNoteDuration(existing);
     startMoveDrag(existing, e.clientX, e.clientY);
     return;
@@ -1994,7 +2061,7 @@ function onMouseMove(e) {
     drag.value.lastCell = cellKey;
 
     if (!findNoteAt(rawBeat, pitch)) {
-      const note = createNote(pitch, cellBeat, placementDuration(), 100);
+      const note = createNote(pitch, cellBeat, placementDuration(), placementVelocity());
       emitNotes([...getNotes(), note]);
       if (!props.playing && isDrumTrack.value) {
         startDrawPreview(note.pitch, note.velocity);
@@ -2983,6 +3050,7 @@ function isPianoRollChromeTarget(target) {
 }
 
 function onDocumentMouseDown(e) {
+  if (velocityEditor.value) return;
   if (selectedNoteIds.value.size === 0) return;
   if (!isPianoRollChromeTarget(e.target)) {
     clearSelection();

@@ -6,13 +6,7 @@
       :height="height"
       class="block cursor-ns-resize touch-none"
       @mousedown="onMouseDown"
-      @mousemove="onMouseMove"
-      @mouseup="onMouseUp"
-      @mouseleave="onMouseUp"
       @touchstart="onTouchStart"
-      @touchmove="onTouchMove"
-      @touchend="onMouseUp"
-      @touchcancel="onMouseUp"
     ></canvas>
   </div>
 </template>
@@ -108,8 +102,17 @@ function findNoteNear(x) {
   return best;
 }
 
+function pointerToLocal(clientX, clientY) {
+  const rect = canvas.value.getBoundingClientRect();
+  return {
+    x: clientX - rect.left,
+    // Clamp Y so dragging past the lane edges still maps to min/max velocity.
+    y: Math.max(0, Math.min(props.height, clientY - rect.top)),
+  };
+}
+
 function applyValueAtY(y) {
-  if (!drag.value) return;
+  if (!drag.value || drag.value.type !== 'group') return;
   const newAnchorValue = yToValue(y);
   const delta = newAnchorValue - drag.value.anchorOrigValue;
 
@@ -142,15 +145,18 @@ function paintSegment(x0, y0, x1, y1) {
   );
 }
 
-function onMouseDown(e) {
-  const rect = canvas.value.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
+function startDragAt(clientX, clientY) {
+  const { x, y } = pointerToLocal(clientX, clientY);
   const note = findNoteNear(x);
 
-  if (note && props.selectedNoteIds.has(note.id) && props.selectedNoteIds.size > 1) {
-    const group = props.notes.filter((n) => props.selectedNoteIds.has(n.id));
+  // Hitting a handle locks to Y-only edits for that note (or the multi-selection).
+  // Paint mode is only for freehand strokes that start in empty space — otherwise a
+  // mostly-vertical drag with slight X jitter hitching nearby notes feels "stuck".
+  if (note) {
+    const group =
+      props.selectedNoteIds.has(note.id) && props.selectedNoteIds.size > 1
+        ? props.notes.filter((n) => props.selectedNoteIds.has(n.id))
+        : [note];
     drag.value = {
       type: 'group',
       anchorOrigValue: noteValue(note),
@@ -164,11 +170,9 @@ function onMouseDown(e) {
   paintSegment(x, y, x, y);
 }
 
-function onMouseMove(e) {
+function moveDragTo(clientX, clientY) {
   if (!drag.value) return;
-  const rect = canvas.value.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  const { x, y } = pointerToLocal(clientX, clientY);
 
   if (drag.value.type === 'group') {
     applyValueAtY(y);
@@ -178,6 +182,16 @@ function onMouseMove(e) {
   paintSegment(drag.value.lastX, drag.value.lastY, x, y);
   drag.value.lastX = x;
   drag.value.lastY = y;
+}
+
+function onMouseDown(e) {
+  if (e.button !== 0) return;
+  startDragAt(e.clientX, e.clientY);
+}
+
+function onWindowMouseMove(e) {
+  if (!drag.value) return;
+  moveDragTo(e.clientX, e.clientY);
 }
 
 function onMouseUp() {
@@ -193,14 +207,15 @@ function onTouchStart(e) {
   const point = touchPoint(e);
   if (!point) return;
   e.preventDefault();
-  onMouseDown({ clientX: point.clientX, clientY: point.clientY });
+  startDragAt(point.clientX, point.clientY);
 }
 
-function onTouchMove(e) {
+function onWindowTouchMove(e) {
+  if (!drag.value) return;
   const point = touchPoint(e);
   if (!point) return;
   e.preventDefault();
-  onMouseMove({ clientX: point.clientX, clientY: point.clientY });
+  moveDragTo(point.clientX, point.clientY);
 }
 
 function render() {
@@ -297,10 +312,18 @@ watch(
 
 onMounted(render);
 
+// Track moves on window so vertical drags past the short lane edges keep updating
+// (canvas-only mousemove + mouseleave previously froze / ended the gesture).
+window.addEventListener('mousemove', onWindowMouseMove);
 window.addEventListener('mouseup', onMouseUp);
+window.addEventListener('touchmove', onWindowTouchMove, { passive: false });
 window.addEventListener('touchend', onMouseUp);
+window.addEventListener('touchcancel', onMouseUp);
 onUnmounted(() => {
+  window.removeEventListener('mousemove', onWindowMouseMove);
   window.removeEventListener('mouseup', onMouseUp);
+  window.removeEventListener('touchmove', onWindowTouchMove);
   window.removeEventListener('touchend', onMouseUp);
+  window.removeEventListener('touchcancel', onMouseUp);
 });
 </script>

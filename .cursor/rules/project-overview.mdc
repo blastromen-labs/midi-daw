@@ -66,23 +66,27 @@ src/
                        and turns them into actual MIDI Note On/Off + clock bytes,
                        plus drum synth triggers. Owns note dedup and the
                        note-off timing-safety margins (see comments in file).
+    liveLauncher.js    Live clip quantization + scene batch launch (shared
+                       boundary so scene patterns land together).
     midi.js            Web MIDI API wrapper: device enumeration (with live
                        hotplug updates), sending messages (always as an
                        ABSOLUTE performance.now()-based timestamp — see
                        toAbsoluteTimestamp), and listening to MIDI inputs.
     drumSynth.js        Built-in Web Audio drum sounds (no samples).
   models/
-    project.js         Plain-data project/track/note model + factory functions.
-                       No engine or Vue logic — just shape + small pure helpers.
+    project.js         Plain-data project/track/note/pattern/scene model +
+                       factory functions. Scenes are optional named groups;
+                       patterns opt in via pattern.sceneId.
   composables/
     usePlayheadBeat.js  Vue composables that sample the active clock via
                        requestAnimationFrame, fully decoupled from the audio
                        scheduler's own timer — see "Performant" above.
   components/          Vue UI: TransportBar, DrumSequencer, PianoRoll,
-                       MidiRouteSelect. Read props/emit events; delegate all
-                       playback/MIDI decisions to engine/.
+                       LiveView (clip grid + scene buttons), MidiRouteSelect.
+                       Read props/emit events; delegate all playback/MIDI
+                       decisions to engine/.
   App.vue              Wires project state (reactive) to the engine singletons
-                       and owns sync-mode switching.
+                       and owns sync-mode switching + scene CRUD/launch.
 ```
 
 ## Key invariants to preserve

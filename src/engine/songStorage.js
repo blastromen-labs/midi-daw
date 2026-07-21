@@ -16,6 +16,7 @@ const PERSISTED_PROJECT_SCALAR_KEYS = [
   'clockInputId',
   'markerBeat',
   'loopRegion',
+  'scenes',
 ];
 
 /** Fields stripped before persisting — Live-mode runtime only. */
@@ -60,6 +61,15 @@ export function deserializeProject(data) {
   project.markerBeat = project.markerBeat ?? null;
   project.loopRegion = project.loopRegion ?? null;
   project.soloPreview = null;
+  project.scenes = Array.isArray(project.scenes)
+    ? project.scenes
+        .filter((s) => s && typeof s.id === 'string')
+        .map((s) => ({
+          id: s.id,
+          name: (typeof s.name === 'string' && s.name.trim()) || 'Scene',
+        }))
+    : [];
+  const sceneIds = new Set(project.scenes.map((s) => s.id));
   project.tracks = project.tracks ?? [];
   for (const track of project.tracks) {
     track.liveLaunches = null;
@@ -73,6 +83,9 @@ export function deserializeProject(data) {
       pattern.liveLaunchMode = pattern.liveLaunchMode ?? legacyMode;
       pattern.liveSyncGrid = pattern.liveSyncGrid ?? legacyGrid;
       pattern.cutOthers = pattern.cutOthers ?? true;
+      // Drop stale scene refs (deleted scene / older songs without scenes).
+      pattern.sceneId =
+        pattern.sceneId && sceneIds.has(pattern.sceneId) ? pattern.sceneId : null;
     }
     delete track.liveLaunchMode;
     delete track.liveSyncGrid;

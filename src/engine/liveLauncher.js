@@ -344,3 +344,154 @@ export function clearPendingLaunches(tracks) {
       .map((l) => createLiveLaunch(l.patternId));
   }
 }
+
+/**
+ * Scene launch is exclusive: anything sounding (or queued) that is not in the
+ * scene stops at `stopBeat`, so only the scene's patterns continue after the
+ * shared boundary. Clears pending launches — the scene re-queues its own.
+ */
+function cutNonSceneOnTrack(track, scenePatternIds, stopBeat) {
+  if (!track) return;
+
+  track.pendingLaunches = [];
+
+  if (track.liveLaunches == null) {
+    // Follow-active: materialize so we can keep a scene member or stop a
+    // non-scene active Loop at the scene boundary (same as a manual toggle-off).
+    const active =
+      track.patterns?.find((p) => p.id === track.activePatternId) ?? track.patterns?.[0];
+    if (!active || patternLaunchMode(active) !== LIVE_LAUNCH_MODES.TOGGLE) {
+      track.liveLaunches = [];
+      return;
+    }
+    if (scenePatternIds.has(active.id)) {
+      track.liveLaunches = [createLiveLaunch(active.id)];
+      return;
+    }
+    track.liveLaunches = [createLiveLaunch(active.id, { stopBeat })];
+    return;
+  }
+
+  for (const launch of track.liveLaunches) {
+    if (scenePatternIds.has(launch.patternId)) {
+      // Keep scene members that were mid toggle-off.
+      if (launch.stopBeat != null) launch.stopBeat = null;
+      continue;
+    }
+    launch.stopBeat = stopBeat;
+  }
+}
+
+/**
+ * Queue every launchable pattern in a scene onto one shared quantize boundary
+ * so they land together. Cuts any playing/queued clip that is not in the scene
+ * at that same boundary (scene replaces the current Live set).
+ * Hold patterns are skipped — they need a press-and-hold gesture.
+ *
+ * @param {{ track: object, pattern: object }[]} refs
+ * @param {number} currentAbsBeat
+ * @param {object[]} [allTracks] every project track (needed to silence non-scene clips)
+ * @returns {{ queued: number, skippedPlaying: number }}
+ */
+export function queueSceneLaunch(refs, currentAbsBeat, allTracks = []) {
+  const launchable = [];
+  for (const { track, pattern } of refs ?? []) {
+    if (!track || !pattern) continue;
+    const mode = patternLaunchMode(pattern);
+    if (mode === LIVE_LAUNCH_MODES.HOLD) continue;
+    launchable.push({ track, pattern, mode });
+  }
+  if (!launchable.length) return { queued: 0, skippedPlaying: 0 };
+
+  const scenePatternIds = new Set(launchable.map(({ pattern }) => pattern.id));
+  const tracks = allTracks.length ? allTracks : [...new Set(launchable.map(({ track }) => track))];
+
+  // Shared grid = max of every track's currently-playing length and every
+  // target pattern's length, so scene start *and* non-scene cuts land together.
+  let quantizeBeats = BEATS_PER_BAR;
+  for (const track of tracks) {
+    quantizeBeats = Math.max(quantizeBeats, playingQuantizeBeats(track));
+  }
+  for (const { pattern } of launchable) {
+    quantizeBeats = Math.max(quantizeBeats, patternLoopEndBeat(pattern));
+  }
+  const launchBeat = nextBoundaryBeat(currentAbsBeat, quantizeBeats);
+
+  for (const track of tracks) {
+    cutNonSceneOnTrack(track, scenePatternIds, launchBeat);
+  }
+
+  // Multiple patterns on the same track in one scene must layer — otherwise
+  // each cutOthers commit would wipe the previous clip at the shared boundary.
+  const countByTrack = new Map();
+  for (const { track } of launchable) {
+    countByTrack.set(track, (countByTrack.get(track) ?? 0) + 1);
+  }
+
+  let queued = 0;
+  let skippedPlaying = 0;
+  for (const { track, pattern, mode } of launchable) {
+    const launch = getLiveLaunch(track, pattern.id);
+    const isPlaying = !!launch;
+
+    // Loops already sounding: keep them. One Shots always re-queue from start.
+    if (mode === LIVE_LAUNCH_MODES.TOGGLE && isPlaying) {
+      skippedPlaying += 1;
+      continue;
+    }
+
+    const cutOthers =
+      (countByTrack.get(track) ?? 0) > 1 ? false : patternCutsOthers(pattern);
+    // Shared scene boundary so every clip lands together (overrides per-pattern
+    // One Shot sync-grid — that's the point of a scene shortcut).
+    queuePendingLaunch(track, pattern.id, launchBeat, cutOthers);
+    queued += 1;
+  }
+  return { queued, skippedPlaying };
+}
+
+/**
+ * Arm every Loop in a scene immediately (transport stopped), silencing every
+ * track first so nothing outside the scene is armed when Play starts.
+ * One Shots are left for the caller to queue after Play starts.
+ *
+ * @param {{ track: object, pattern: object }[]} refs
+ * @param {object[]} [allTracks]
+ * @returns {{ loops: { track: object, pattern: object }[], oneShots: { track: object, pattern: object }[] }}
+ */
+export function armSceneLoops(refs, allTracks = []) {
+  const loops = [];
+  const oneShots = [];
+  for (const { track, pattern } of refs ?? []) {
+    if (!track || !pattern) continue;
+    const mode = patternLaunchMode(pattern);
+    if (mode === LIVE_LAUNCH_MODES.HOLD) continue;
+    if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
+      oneShots.push({ track, pattern });
+      continue;
+    }
+    loops.push({ track, pattern });
+  }
+
+  // Exclusive arm: clear every track, then put only scene Loops back.
+  for (const track of allTracks) {
+    track.liveLaunches = [];
+    track.pendingLaunches = [];
+  }
+
+  const countByTrack = new Map();
+  for (const { track } of loops) {
+    countByTrack.set(track, (countByTrack.get(track) ?? 0) + 1);
+  }
+  for (const { track, pattern } of loops) {
+    if ((countByTrack.get(track) ?? 0) > 1) {
+      if (track.liveLaunches == null) track.liveLaunches = [];
+      removeLaunch(track, pattern.id);
+      track.liveLaunches.push(createLiveLaunch(pattern.id));
+      track.pendingLaunches = [];
+    } else {
+      launchPatternImmediately(track, pattern.id);
+    }
+  }
+  return { loops, oneShots };
+}

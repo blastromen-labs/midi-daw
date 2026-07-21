@@ -1,5 +1,100 @@
 <template>
   <div class="live-view flex flex-col h-full bg-panel overflow-hidden">
+    <!-- Scenes — batch-launch shortcuts for patterns assigned via Edit pattern. -->
+    <div class="flex items-stretch gap-2 px-2 pt-2 pb-1 border-b border-line/60 flex-shrink-0">
+      <div class="relative flex items-center w-36 flex-shrink-0" ref="sceneMenuRootRef">
+        <button
+          ref="sceneMenuTriggerRef"
+          type="button"
+          class="w-full h-9 px-2 rounded-md text-left text-xs font-medium ring-1 ring-line-light bg-surface/60 hover:ring-white/40 flex items-center gap-1.5"
+          title="Edit or create scenes"
+          @click="toggleSceneMenu"
+        >
+          <span class="truncate flex-1 min-w-0 uppercase tracking-wider text-muted-dim text-[10px] font-semibold">Scenes</span>
+          <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
+        </button>
+
+        <Teleport to="body">
+          <div
+            v-if="sceneMenuOpen"
+            ref="sceneMenuPanelRef"
+            class="fixed z-50 w-56 bg-panel border border-line rounded-md shadow-lg overflow-hidden"
+            :style="sceneMenuStyle"
+          >
+            <div class="max-h-64 overflow-y-auto py-1">
+              <div
+                v-for="scene in scenes"
+                :key="scene.id"
+                class="flex items-center gap-1 px-1 hover:bg-surface-hover"
+              >
+                <button
+                  type="button"
+                  class="flex-1 min-w-0 text-left text-xs px-1.5 py-1.5 truncate"
+                  :title="`Edit ${scene.name}`"
+                  @click="onEditScene(scene.id)"
+                >
+                  {{ scene.name }}
+                </button>
+                <button
+                  type="button"
+                  class="w-7 h-7 flex-shrink-0 rounded text-sm text-muted hover:text-white hover:bg-surface-active"
+                  title="Edit scene"
+                  @click="onEditScene(scene.id)"
+                >
+                  ✎
+                </button>
+              </div>
+              <div v-if="!scenes.length" class="px-2 py-2 text-xs text-muted-dim">
+                No scenes yet
+              </div>
+            </div>
+            <div class="border-t border-line">
+              <button
+                type="button"
+                class="w-full text-left text-xs px-2 py-1.5 hover:bg-surface-hover text-muted hover:text-white"
+                title="Add scene"
+                @click="onAddScene"
+              >
+                + New Scene
+              </button>
+            </div>
+          </div>
+        </Teleport>
+      </div>
+
+      <div class="flex flex-wrap gap-1.5 flex-1 content-start min-w-0">
+        <button
+          v-for="scene in scenes"
+          :key="scene.id"
+          type="button"
+          class="scene-btn relative h-9 min-w-[5.5rem] px-3 pr-5 rounded-md text-left text-xs font-medium transition-transform active:scale-[0.97]"
+          :class="sceneStateClass(scene)"
+          :title="sceneTitle(scene)"
+          @click="emit('launch-scene', scene.id)"
+        >
+          <span class="block truncate">{{ scene.name }}</span>
+          <span
+            v-if="sceneStatus(scene) === 'playing'"
+            class="absolute top-1 right-1 text-[10px] leading-none"
+          >▶</span>
+          <span
+            v-else-if="sceneStatus(scene) === 'queued'"
+            class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+          ></span>
+          <span
+            v-else-if="sceneStatus(scene) === 'armed'"
+            class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
+          >▶</span>
+        </button>
+        <p
+          v-if="!scenes.length"
+          class="text-[10px] text-muted-dim self-center px-1"
+        >
+          Open Scenes ▾ to create one, then assign patterns in Edit pattern
+        </p>
+      </div>
+    </div>
+
     <!-- Launch grid — one row per track, one clip button per pattern.
          Shared transport/view/song/help/settings live in AppToolbar. -->
     <div class="flex-1 overflow-auto p-2">
@@ -93,10 +188,11 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted } from 'vue';
+import { ref, nextTick, onUnmounted } from 'vue';
 import {
   LIVE_LAUNCH_MODES,
   getLiveLaunch,
+  getScenePatternRefs,
   isPatternPlaying,
   isPatternQueued,
   isPatternStopQueued,
@@ -107,8 +203,10 @@ import {
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
+
 const props = defineProps({
   tracks: { type: Array, required: true },
+  scenes: { type: Array, default: () => [] },
   playing: Boolean,
 });
 
@@ -117,14 +215,66 @@ const emit = defineEmits([
   'hold-pattern-down',
   'hold-pattern-up',
   'reorder-patterns',
+  'launch-scene',
+  'add-scene',
+  'edit-scene',
 ]);
 
 const absBeat = useAbsolutePlayheadBeat();
+
+const sceneMenuOpen = ref(false);
+const sceneMenuRootRef = ref(null);
+const sceneMenuTriggerRef = ref(null);
+const sceneMenuPanelRef = ref(null);
+const sceneMenuStyle = ref({});
 
 const CLICK_DRAG_THRESHOLD_PX = 5;
 const drag = ref(null);
 let suppressNextClick = false;
 let holdPointerId = null;
+
+function updateSceneMenuPosition() {
+  const el = sceneMenuTriggerRef.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  sceneMenuStyle.value = { top: rect.bottom + 4 + 'px', left: rect.left + 'px' };
+}
+
+function toggleSceneMenu() {
+  sceneMenuOpen.value = !sceneMenuOpen.value;
+  if (sceneMenuOpen.value) nextTick(updateSceneMenuPosition);
+}
+
+function onAddScene() {
+  sceneMenuOpen.value = false;
+  emit('add-scene');
+}
+
+function onEditScene(sceneId) {
+  sceneMenuOpen.value = false;
+  emit('edit-scene', sceneId);
+}
+
+function onSceneMenuPointerDown(e) {
+  if (!sceneMenuOpen.value) return;
+  const insideTrigger = sceneMenuRootRef.value?.contains(e.target);
+  const insidePanel = sceneMenuPanelRef.value?.contains(e.target);
+  if (!insideTrigger && !insidePanel) sceneMenuOpen.value = false;
+}
+
+function onSceneMenuWindowChange() {
+  if (sceneMenuOpen.value) updateSceneMenuPosition();
+}
+
+function onSceneMenuKeyDown(e) {
+  if (sceneMenuOpen.value && e.key === 'Escape') sceneMenuOpen.value = false;
+}
+
+window.addEventListener('mousedown', onSceneMenuPointerDown);
+window.addEventListener('touchstart', onSceneMenuPointerDown);
+window.addEventListener('scroll', onSceneMenuWindowChange, true);
+window.addEventListener('resize', onSceneMenuWindowChange);
+window.addEventListener('keydown', onSceneMenuKeyDown);
 
 function isHoldPattern(pattern) {
   return patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.HOLD;
@@ -142,6 +292,60 @@ function launchModeLabel(pattern) {
   if (mode === LIVE_LAUNCH_MODES.HOLD) return 'Hold — press and hold to play';
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) return 'One Shot — plays once';
   return 'Loop — toggles on/off';
+}
+
+function sceneLaunchableRefs(scene) {
+  return getScenePatternRefs(props.tracks, scene.id).filter(
+    ({ pattern }) => patternLaunchMode(pattern) !== LIVE_LAUNCH_MODES.HOLD
+  );
+}
+
+function sceneStatus(scene) {
+  const refs = sceneLaunchableRefs(scene);
+  if (!refs.length) return 'empty';
+
+  let playingCount = 0;
+  let queuedCount = 0;
+  let armedCount = 0;
+  for (const { track, pattern } of refs) {
+    if (isPatternQueued(track, pattern.id)) {
+      queuedCount += 1;
+      continue;
+    }
+    if (isPatternPlaying(track, pattern.id)) {
+      if (props.playing) playingCount += 1;
+      else armedCount += 1;
+    }
+  }
+
+  if (queuedCount > 0) return 'queued';
+  if (playingCount > 0 && playingCount === refs.length) return 'playing';
+  if (armedCount > 0 && armedCount === refs.length) return 'armed';
+  if (playingCount > 0 || armedCount > 0) return 'partial';
+  return 'idle';
+}
+
+function sceneStateClass(scene) {
+  const status = sceneStatus(scene);
+  if (status === 'playing') return 'ring-2 ring-white/90 bg-accent/80 text-white';
+  if (status === 'queued') return 'ring-2 ring-white/60 animate-pulse bg-accent/50 text-white';
+  if (status === 'armed') return 'ring-2 ring-white/40 bg-accent/40 text-white';
+  if (status === 'partial') return 'ring-1 ring-white/40 bg-surface text-white';
+  if (status === 'empty') return 'ring-1 ring-line-light bg-surface/40 text-muted';
+  return 'ring-1 ring-line-light bg-surface hover:ring-white/40 text-white';
+}
+
+function sceneTitle(scene) {
+  const refs = sceneLaunchableRefs(scene);
+  const status = sceneStatus(scene);
+  if (!refs.length) {
+    return `${scene.name} — no Loop / One Shot patterns assigned (edit a pattern → Scene)`;
+  }
+  const names = refs.map(({ pattern }) => pattern.name).join(', ');
+  if (status === 'playing') return `${scene.name} — playing (${names})`;
+  if (status === 'queued') return `${scene.name} — queued (${names})`;
+  if (status === 'armed') return `${scene.name} — armed, will play on Play (${names})`;
+  return `${scene.name} — launch ${refs.length} pattern${refs.length === 1 ? '' : 's'}: ${names}`;
 }
 
 function onClipPointerDown(e, track, fromIndex, patternId) {
@@ -263,6 +467,11 @@ onUnmounted(() => {
   window.removeEventListener('pointermove', onDragMove);
   window.removeEventListener('pointerup', onDragEnd);
   window.removeEventListener('pointercancel', onDragEnd);
+  window.removeEventListener('mousedown', onSceneMenuPointerDown);
+  window.removeEventListener('touchstart', onSceneMenuPointerDown);
+  window.removeEventListener('scroll', onSceneMenuWindowChange, true);
+  window.removeEventListener('resize', onSceneMenuWindowChange);
+  window.removeEventListener('keydown', onSceneMenuKeyDown);
 });
 
 function clipProgress(track, pattern) {
@@ -359,7 +568,8 @@ function clipTitle(track, pattern) {
 </script>
 
 <style scoped>
-.clip {
+.clip,
+.scene-btn {
   touch-action: none;
   user-select: none;
 }

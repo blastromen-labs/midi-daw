@@ -44,6 +44,7 @@
           :marker-beat="project.markerBeat"
           :loop-region="project.loopRegion"
           :solo-preview="project.soloPreview"
+          :scenes="project.scenes"
           @update-notes="updateNotes"
           @select-track="activeTrackId = $event"
           @select-pattern="selectPattern"
@@ -69,14 +70,29 @@
         <LiveView
           v-show="viewMode === 'live'"
           :tracks="project.tracks"
+          :scenes="project.scenes"
           :playing="playing"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
           @reorder-patterns="reorderPatterns"
+          @launch-scene="launchScene"
+          @add-scene="startCreateScene"
+          @edit-scene="startEditScene"
         />
       </div>
     </div>
+
+    <SceneEditorModal
+      v-if="sceneEditorOpen"
+      :mode="sceneEditorMode"
+      :initial="sceneEditorInitial"
+      :tracks="project.tracks"
+      :scenes="project.scenes"
+      @save="commitSceneEditor"
+      @cancel="closeSceneEditor"
+      @delete="confirmDeleteScene"
+    />
 
     <div
       v-if="midiError"
@@ -104,13 +120,18 @@ import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
 import AppToolbar from './components/AppToolbar.vue';
 import PianoRoll from './components/PianoRoll.vue';
 import LiveView from './components/LiveView.vue';
+import SceneEditorModal from './components/SceneEditorModal.vue';
 import {
   createProject,
   createMidiTrack,
   createDrumTrack,
   createDrumPad,
   createPattern,
+  createScene,
   clonePattern as clonePatternModel,
+  clearSceneFromPatterns,
+  defaultSceneName,
+  getScenePatternRefs,
   randomTrackColor,
   randomPatternColor,
   getActivePattern,
@@ -159,6 +180,8 @@ import {
   stopPatternImmediately,
   holdPatternDown,
   holdPatternUp,
+  queueSceneLaunch,
+  armSceneLoops,
 } from './engine/liveLauncher.js';
 
 const project = reactive(createProject());
@@ -168,6 +191,10 @@ const playing = ref(false);
 // 'roll': piano roll editor (default). 'live': session-style launch grid —
 // toggled via Tab or the View control in either view's toolbar.
 const viewMode = ref('roll');
+const sceneEditorOpen = ref(false);
+const sceneEditorMode = ref('create');
+const sceneEditorId = ref(null);
+const sceneEditorInitial = ref({ name: '' });
 // Sync/clock routing is global — not per-song (scheduler still reads project.*).
 const syncSettings = reactive({
   syncMode: 'internal',
@@ -632,6 +659,7 @@ function addPattern(trackId, config = {}) {
   if (config.liveLaunchMode != null) pattern.liveLaunchMode = config.liveLaunchMode;
   if (config.liveSyncGrid != null) pattern.liveSyncGrid = config.liveSyncGrid;
   if (config.cutOthers != null) pattern.cutOthers = config.cutOthers;
+  if (config.sceneId !== undefined) pattern.sceneId = config.sceneId || null;
   track.patterns.push(pattern);
   track.activePatternId = pattern.id;
 }
@@ -786,6 +814,109 @@ function onPreviewPattern(trackId, patternId) {
 function reorderPatterns(trackId, fromIndex, toIndex) {
   const track = findTrack(trackId);
   if (track) reorderTrackPatterns(track, fromIndex, toIndex);
+}
+
+function ensureScenes() {
+  if (!Array.isArray(project.scenes)) project.scenes = [];
+  return project.scenes;
+}
+
+function scenePatternIds(sceneId) {
+  return getScenePatternRefs(project.tracks, sceneId).map(({ pattern }) => pattern.id);
+}
+
+/** Apply scene membership from the editor — patterns in the list join the scene; others leave it. */
+function applyScenePatternMembership(sceneId, patternIds) {
+  if (!sceneId) return;
+  const wanted = new Set(patternIds ?? []);
+  for (const track of project.tracks) {
+    for (const pattern of track.patterns ?? []) {
+      if (wanted.has(pattern.id)) {
+        pattern.sceneId = sceneId;
+      } else if (pattern.sceneId === sceneId) {
+        pattern.sceneId = null;
+      }
+    }
+  }
+}
+
+function startCreateScene() {
+  sceneEditorMode.value = 'create';
+  sceneEditorId.value = null;
+  sceneEditorInitial.value = {
+    name: defaultSceneName(ensureScenes()),
+    sceneId: null,
+    patternIds: [],
+  };
+  sceneEditorOpen.value = true;
+}
+
+function startEditScene(sceneId) {
+  const scene = ensureScenes().find((s) => s.id === sceneId);
+  if (!scene) return;
+  sceneEditorMode.value = 'edit';
+  sceneEditorId.value = scene.id;
+  sceneEditorInitial.value = {
+    name: scene.name,
+    sceneId: scene.id,
+    patternIds: scenePatternIds(scene.id),
+  };
+  sceneEditorOpen.value = true;
+}
+
+function closeSceneEditor() {
+  sceneEditorOpen.value = false;
+  sceneEditorId.value = null;
+}
+
+function commitSceneEditor(values) {
+  const name = values?.name?.trim();
+  if (!name) return;
+  const scenes = ensureScenes();
+  const patternIds = Array.isArray(values.patternIds) ? values.patternIds : [];
+  if (sceneEditorMode.value === 'create') {
+    const scene = createScene(name);
+    scenes.push(scene);
+    applyScenePatternMembership(scene.id, patternIds);
+  } else if (sceneEditorId.value) {
+    const scene = scenes.find((s) => s.id === sceneEditorId.value);
+    if (scene) scene.name = name;
+    applyScenePatternMembership(sceneEditorId.value, patternIds);
+  }
+  closeSceneEditor();
+}
+
+function confirmDeleteScene() {
+  const sceneId = sceneEditorId.value;
+  if (!sceneId) return;
+  const scenes = ensureScenes();
+  const idx = scenes.findIndex((s) => s.id === sceneId);
+  if (idx === -1) return;
+  scenes.splice(idx, 1);
+  clearSceneFromPatterns(project.tracks, sceneId);
+  closeSceneEditor();
+}
+
+// Scene button — launch every assigned Loop / One Shot on one shared quantize
+// boundary, and cut anything else that is playing/queued (exclusive scene).
+function launchScene(sceneId) {
+  const refs = getScenePatternRefs(project.tracks, sceneId).filter(
+    ({ pattern }) => patternLaunchMode(pattern) !== LIVE_LAUNCH_MODES.HOLD
+  );
+  if (!refs.length) return;
+
+  engageLivePlayback();
+
+  if (!playing.value) {
+    const { oneShots } = armSceneLoops(refs, project.tracks);
+    startPlayback();
+    if (oneShots.length) {
+      queueSceneLaunch(oneShots, getActiveClock().getAbsoluteBeat(), project.tracks);
+    }
+    return;
+  }
+
+  queueSceneLaunch(refs, getActiveClock().getAbsoluteBeat(), project.tracks);
 }
 
 function updateTrack(trackId, changes) {

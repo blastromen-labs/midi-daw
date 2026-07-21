@@ -24,6 +24,7 @@
           :track="activeTrack"
           :playing="playing"
           :solo-preview="soloPreview"
+          :scenes="scenes"
           :midi-io-enabled="activeTrack.kind === 'midi'"
           :compact-navbar="compactNavbar"
           @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
@@ -503,6 +504,7 @@ const props = defineProps({
   markerBeat: { type: Number, default: null },
   loopRegion: { type: Object, default: null },
   soloPreview: { type: Object, default: null },
+  scenes: { type: Array, default: () => [] },
 });
 
 /** Gate for AppToolbar teleport — see template comment on <Teleport>. */

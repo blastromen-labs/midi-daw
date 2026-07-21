@@ -63,6 +63,17 @@
 
           <section class="border-t border-line pt-4">
             <h3 class="text-[10px] uppercase tracking-wider text-muted-dim mb-2">Live</h3>
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Scene</label>
+            <select
+              v-model="draft.sceneId"
+              class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded mb-3"
+              title="Optional — assign this pattern to a scene so Live mode can launch it with others"
+            >
+              <option value="">None</option>
+              <option v-for="scene in scenes" :key="scene.id" :value="scene.id">
+                {{ scene.name }}
+              </option>
+            </select>
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Launch mode</label>
             <select
               v-model="draft.liveLaunchMode"
@@ -168,6 +179,8 @@ const props = defineProps({
     required: true,
   },
   canDelete: { type: Boolean, default: true },
+  /** Project scenes for the optional Scene assignment dropdown. */
+  scenes: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(['save', 'cancel', 'delete']);
@@ -185,6 +198,7 @@ const draft = reactive({
   liveLaunchMode: 'toggle',
   liveSyncGrid: '1/16',
   cutOthers: true,
+  sceneId: '',
 });
 
 const heading = computed(() => (props.mode === 'create' ? 'New pattern' : 'Edit pattern'));
@@ -196,6 +210,7 @@ function syncFromInitial() {
   draft.liveLaunchMode = props.initial.liveLaunchMode ?? 'toggle';
   draft.liveSyncGrid = props.initial.liveSyncGrid ?? '1/16';
   draft.cutOthers = props.initial.cutOthers !== false;
+  draft.sceneId = props.initial.sceneId || '';
 }
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
@@ -210,6 +225,7 @@ function submit() {
     liveLaunchMode: draft.liveLaunchMode,
     liveSyncGrid: draft.liveSyncGrid,
     cutOthers: draft.cutOthers,
+    sceneId: draft.sceneId || null,
   });
 }
 

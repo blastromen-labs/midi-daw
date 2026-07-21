@@ -166,7 +166,54 @@ export function createPattern(name = 'Pattern 1', color = randomPatternColor(), 
     // When true (default), launching this clip stops other clips on the same track.
     // Set false to layer (e.g. One Shot over a running Loop).
     cutOthers: true,
+    // Optional membership in a project-level Scene (null = not in any scene).
+    // A pattern does not have to belong to a scene; scenes are shortcuts that
+    // launch several patterns together in Live mode.
+    sceneId: null,
   };
+}
+
+/** Project-level named group of patterns for Live-mode batch launch. */
+export function createScene(name = 'Scene 1') {
+  return {
+    id: uid(),
+    name,
+  };
+}
+
+/** Default name for a newly added scene. */
+export function defaultSceneName(scenes = []) {
+  const count = scenes.length + 1;
+  const base = `Scene ${count}`;
+  if (!scenes.some((s) => s.name === base)) return base;
+  let i = count + 1;
+  while (scenes.some((s) => s.name === `Scene ${i}`)) i++;
+  return `Scene ${i}`;
+}
+
+/**
+ * Resolve every pattern assigned to a scene across all tracks.
+ * @returns {{ track: object, pattern: object }[]}
+ */
+export function getScenePatternRefs(tracks, sceneId) {
+  if (!sceneId) return [];
+  const refs = [];
+  for (const track of tracks ?? []) {
+    for (const pattern of track.patterns ?? []) {
+      if (pattern.sceneId === sceneId) refs.push({ track, pattern });
+    }
+  }
+  return refs;
+}
+
+/** Clear scene membership when a scene is deleted. */
+export function clearSceneFromPatterns(tracks, sceneId) {
+  if (!sceneId) return;
+  for (const track of tracks ?? []) {
+    for (const pattern of track.patterns ?? []) {
+      if (pattern.sceneId === sceneId) pattern.sceneId = null;
+    }
+  }
 }
 
 /** Deep-copy notes with fresh ids (pattern clone, shift-drag duplicate, etc.). */
@@ -195,6 +242,7 @@ export function clonePattern(source, patterns) {
   pattern.liveLaunchMode = source.liveLaunchMode ?? pattern.liveLaunchMode;
   pattern.liveSyncGrid = source.liveSyncGrid ?? pattern.liveSyncGrid;
   pattern.cutOthers = source.cutOthers ?? pattern.cutOthers;
+  pattern.sceneId = source.sceneId ?? null;
   return pattern;
 }
 
@@ -607,6 +655,8 @@ export function createProject() {
     loopRegion: null,
     // Roll-view ▶ preview — { trackId, patternId } or null; not persisted.
     soloPreview: null,
+    // Named pattern groups for Live-mode scene launch (patterns opt in via sceneId).
+    scenes: [],
     tracks: [
       createDrumTrack('Drums 1', TRACK_ACCENT_COLORS[3], 16),
       createMidiTrack('Synth 1', TRACK_ACCENT_COLORS[1], 32),

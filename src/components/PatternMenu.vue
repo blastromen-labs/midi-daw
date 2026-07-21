@@ -126,6 +126,7 @@
       v-if="editorOpen"
       :mode="editorMode"
       :initial="editorInitial"
+      :scenes="scenes"
       :can-delete="(track?.patterns?.length ?? 0) > 1"
       @save="commitEditor"
       @delete="confirmDelete"
@@ -154,6 +155,7 @@ const props = defineProps({
   /** Show Load/Save MIDI controls (MIDI synth tracks only). */
   midiIoEnabled: { type: Boolean, default: false },
   compactNavbar: { type: Boolean, default: false },
+  scenes: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
@@ -201,6 +203,7 @@ function patternLiveDraft(pattern) {
     liveLaunchMode: pattern?.liveLaunchMode ?? 'toggle',
     liveSyncGrid: pattern?.liveSyncGrid ?? '1/16',
     cutOthers: pattern?.cutOthers !== false,
+    sceneId: pattern?.sceneId ?? null,
   };
 }
 

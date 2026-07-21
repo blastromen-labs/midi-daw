@@ -1,21 +1,7 @@
 <template>
-  <div ref="rootRef" class="piano-roll flex flex-col bg-panel rounded-lg border border-line overflow-hidden h-full">
-    <!-- Toolbar — transport, song/track/pattern controls, snap/tools, and view toggle. -->
-    <div
-      class="daw-toolbar"
-      @mousedown="onToolbarMouseDown"
-      @touchstart="onToolbarMouseDown"
-    >
-      <div class="daw-toolbar-primary">
-      <TransportToolbar
-        :playing="playing"
-        :bpm="bpm"
-        :sync-mode="syncMode"
-        :clock-input-id="clockInputId"
-        @toggle-play="onTogglePlay"
-        @bpm-change="(v) => $emit('bpm-change', v)"
-      />
-
+  <div ref="rootRef" class="piano-roll flex flex-col bg-panel overflow-hidden h-full">
+    <!-- Roll-only toolbar controls live in AppToolbar via teleport so shared chrome doesn't jump. -->
+    <Teleport to="#daw-roll-toolbar-extras" :disabled="!toolbarActive">
       <div class="daw-toolbar-divider"></div>
 
       <!-- Track: selection dropdown, dedicated edit button, and add-new actions (TrackMenu.vue). -->
@@ -112,48 +98,7 @@
         @copy="copySelection"
         @paste="pasteClipboard"
       />
-      </div>
-
-      <div class="daw-toolbar-divider"></div>
-
-      <div class="daw-toolbar-secondary">
-      <ViewToggleButton
-        mode="roll"
-        @view-mode-change="(v) => $emit('view-mode-change', v)"
-      />
-
-      <div class="daw-toolbar-divider"></div>
-
-      <SongMenu
-        :songs="songs"
-        :active-song-id="activeSongId"
-        :compact-navbar="compactNavbar"
-        @select="(id) => $emit('select-song', id)"
-        @update="(id, changes) => $emit('update-song', id, changes)"
-        @create="(name) => $emit('create-song', name)"
-        @save-file="$emit('save-song-file')"
-        @load-file="(text) => $emit('load-song-file', text)"
-        @load-file-error="(msg) => $emit('load-song-file-error', msg)"
-      />
-
-      <div class="daw-toolbar-divider"></div>
-
-      <SettingsToolbarButton
-        :sync-mode="syncMode"
-        :clock-input-id="clockInputId"
-        :send-midi-clock="sendMidiClock"
-        :clock-output-id="clockOutputId"
-        :compact-navbar="compactNavbar"
-        :midi-inputs="midiInputs"
-        :midi-outputs="midiOutputs"
-        @sync-mode-change="(v) => $emit('sync-mode-change', v)"
-        @clock-input-change="(v) => $emit('clock-input-change', v)"
-        @toggle-clock="$emit('toggle-clock')"
-        @clock-output-change="(v) => $emit('clock-output-change', v)"
-        @compact-navbar-change="(v) => $emit('compact-navbar-change', v)"
-      />
-      </div>
-    </div>
+    </Teleport>
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
     <div class="flex flex-shrink-0 border-b border-line bg-surface/90">
@@ -516,14 +461,10 @@ import DrumPadList from './DrumPadList.vue';
 import DrumPadMuteStrip from './DrumPadMuteStrip.vue';
 import DrumEventLaneControls from './DrumEventLaneControls.vue';
 import TrackMenu from './TrackMenu.vue';
-import SongMenu from './SongMenu.vue';
-import SettingsToolbarButton from './SettingsToolbarButton.vue';
 import ToolbarField from './ToolbarField.vue';
 import EditToolBar from './EditToolBar.vue';
 import PatternMenu from './PatternMenu.vue';
 import GhostSourceControls from './GhostSourceControls.vue';
-import ViewToggleButton from './ViewToggleButton.vue';
-import TransportToolbar from './TransportToolbar.vue';
 import TouchScrollbar from './TouchScrollbar.vue';
 import VolumeSlider from './VolumeSlider.vue';
 
@@ -540,19 +481,13 @@ const NOTE_CORNER_RADIUS = THEME.note.cornerRadius;
 const PASTE_MARKER_COLOR = '#b794f6';
 
 const props = defineProps({
-  songs: { type: Array, default: () => [] },
-  activeSongId: String,
+  /** When false, roll toolbar extras stay unteleported (hidden with the roll view). */
+  toolbarActive: { type: Boolean, default: true },
   tracks: { type: Array, required: true },
   activeTrackId: String,
   playing: Boolean,
-  midiOutputs: { type: Array, default: () => [] },
-  // Transport — merged in here so this toolbar is the app's only nav bar.
   bpm: Number,
-  sendMidiClock: Boolean,
-  clockOutputId: String,
-  syncMode: { type: String, default: 'internal' },
-  clockInputId: { type: String, default: '' },
-  midiInputs: { type: Array, default: () => [] },
+  midiOutputs: { type: Array, default: () => [] },
   compactNavbar: { type: Boolean, default: false },
   markerBeat: { type: Number, default: null },
   loopRegion: { type: Object, default: null },
@@ -579,25 +514,12 @@ const emit = defineEmits([
   'rename-pad',
   'update-track',
   'delete-track',
-  'toggle-play',
   'marker-change',
   'loop-region-change',
   'bpm-change',
-  'toggle-clock',
-  'clock-output-change',
-  'sync-mode-change',
-  'clock-input-change',
-  'compact-navbar-change',
-  'view-mode-change',
   'hold-pattern-down',
   'hold-pattern-up',
   'preview-pattern',
-  'select-song',
-  'update-song',
-  'create-song',
-  'save-song-file',
-  'load-song-file',
-  'load-song-file-error',
 ]);
 
 const ROW_HEIGHT = 20;
@@ -833,11 +755,6 @@ watch(
 function setMarkerBeat(beat) {
   pasteMarkerBeat.value = beat;
   emit('marker-change', beat);
-}
-
-function onTogglePlay() {
-  const fromBeat = hasMarker.value ? pasteMarkerBeat.value : undefined;
-  emit('toggle-play', fromBeat);
 }
 
 const hasSelection = computed(() => selectedNoteIds.value.size > 0);
@@ -3060,6 +2977,8 @@ window.addEventListener('keydown', onKeyDown);
 function isPianoRollChromeTarget(target) {
   if (!target) return false;
   if (rootRef.value?.contains(target)) return true;
+  // Shared AppToolbar host for teleported roll controls (+ tool picker popovers).
+  if (target.closest?.('[data-piano-roll-chrome]')) return true;
   return !!target.closest?.('[data-piano-roll-toolbar-popover]');
 }
 
@@ -3074,10 +2993,27 @@ window.addEventListener('touchstart', onDocumentMouseDown);
 
 let gridViewportObserver = null;
 
+let rollToolbarExtrasEl = null;
+
+function bindRollToolbarExtras() {
+  rollToolbarExtrasEl = document.getElementById('daw-roll-toolbar-extras');
+  if (!rollToolbarExtrasEl) return;
+  rollToolbarExtrasEl.addEventListener('mousedown', onToolbarMouseDown);
+  rollToolbarExtrasEl.addEventListener('touchstart', onToolbarMouseDown);
+}
+
+function unbindRollToolbarExtras() {
+  if (!rollToolbarExtrasEl) return;
+  rollToolbarExtrasEl.removeEventListener('mousedown', onToolbarMouseDown);
+  rollToolbarExtrasEl.removeEventListener('touchstart', onToolbarMouseDown);
+  rollToolbarExtrasEl = null;
+}
+
 onMounted(() => {
   render();
   drawOverlays();
   bindScrollRefTouchGuards();
+  bindRollToolbarExtras();
   // Drum tracks have few, short rows — no need to center-scroll those; MIDI
   // tracks default to scrolling roughly around middle C.
   if (scrollRef.value && !isDrumTrack.value) {
@@ -3094,6 +3030,7 @@ onUnmounted(() => {
   gridViewportObserver?.disconnect();
   gridViewportObserver = null;
   unbindScrollRefTouchGuards();
+  unbindRollToolbarExtras();
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('mousedown', onDocumentMouseDown);
   window.removeEventListener('touchstart', onDocumentMouseDown);

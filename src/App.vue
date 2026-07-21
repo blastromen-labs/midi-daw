@@ -1,21 +1,44 @@
 <template>
   <div class="daw daw-shell" tabindex="0" @keydown="onKeyDown">
-    <div class="flex-1 flex flex-col min-h-0">
+    <div class="flex-1 flex flex-col min-h-0 bg-panel rounded-lg border border-line overflow-hidden">
+      <AppToolbar
+        :view-mode="viewMode"
+        :playing="playing"
+        :bpm="project.bpm"
+        :sync-mode="syncSettings.syncMode"
+        :clock-input-id="syncSettings.clockInputId"
+        :send-midi-clock="syncSettings.sendMidiClock"
+        :clock-output-id="syncSettings.clockOutputId"
+        :compact-navbar="globalSettings.compactNavbar"
+        :midi-inputs="midiInputs"
+        :midi-outputs="midiOutputs"
+        :songs="songs"
+        :active-song-id="currentSongId"
+        @toggle-play="togglePlay"
+        @bpm-change="setBpm"
+        @view-mode-change="viewMode = $event"
+        @select-song="selectSong"
+        @update-song="updateSong"
+        @create-song="createSong"
+        @save-song-file="saveSongToFile"
+        @load-song-file="loadSongFromFile"
+        @load-song-file-error="onLoadSongFileError"
+        @sync-mode-change="syncSettings.syncMode = $event"
+        @clock-input-change="syncSettings.clockInputId = $event"
+        @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
+        @clock-output-change="syncSettings.clockOutputId = $event"
+        @compact-navbar-change="globalSettings.compactNavbar = $event"
+      />
+
       <div class="flex-1 min-h-0">
         <PianoRoll
           v-show="viewMode === 'roll'"
-          :songs="songs"
-          :active-song-id="currentSongId"
+          :toolbar-active="viewMode === 'roll'"
           :tracks="project.tracks"
           :active-track-id="activeTrackId"
           :playing="playing"
-          :midi-outputs="midiOutputs"
           :bpm="project.bpm"
-          :send-midi-clock="syncSettings.sendMidiClock"
-          :clock-output-id="syncSettings.clockOutputId"
-          :sync-mode="syncSettings.syncMode"
-          :clock-input-id="syncSettings.clockInputId"
-          :midi-inputs="midiInputs"
+          :midi-outputs="midiOutputs"
           :compact-navbar="globalSettings.compactNavbar"
           :marker-beat="project.markerBeat"
           :loop-region="project.loopRegion"
@@ -35,59 +58,22 @@
           @remove-pad="removePad"
           @rename-pad="renamePad"
           @delete-track="removeTrack"
-          @toggle-play="togglePlay"
           @marker-change="project.markerBeat = $event"
           @loop-region-change="setLoopRegion"
           @bpm-change="setBpm"
-          @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
-          @clock-output-change="syncSettings.clockOutputId = $event"
-          @sync-mode-change="syncSettings.syncMode = $event"
-          @clock-input-change="syncSettings.clockInputId = $event"
-          @compact-navbar-change="globalSettings.compactNavbar = $event"
-          @view-mode-change="viewMode = $event"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
           @preview-pattern="onPreviewPattern"
-          @select-song="selectSong"
-          @update-song="updateSong"
-          @create-song="createSong"
-          @save-song-file="saveSongToFile"
-          @load-song-file="loadSongFromFile"
-          @load-song-file-error="onLoadSongFileError"
         />
         <LiveView
           v-show="viewMode === 'live'"
-          :songs="songs"
-          :active-song-id="currentSongId"
           :tracks="project.tracks"
           :playing="playing"
-          :bpm="project.bpm"
-          :sync-mode="syncSettings.syncMode"
-          :clock-input-id="syncSettings.clockInputId"
-          :send-midi-clock="syncSettings.sendMidiClock"
-          :clock-output-id="syncSettings.clockOutputId"
-          :midi-inputs="midiInputs"
-          :midi-outputs="midiOutputs"
-          :compact-navbar="globalSettings.compactNavbar"
-          @toggle-play="togglePlay"
-          @bpm-change="setBpm"
-          @sync-mode-change="syncSettings.syncMode = $event"
-          @clock-input-change="syncSettings.clockInputId = $event"
-          @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
-          @clock-output-change="syncSettings.clockOutputId = $event"
-          @compact-navbar-change="globalSettings.compactNavbar = $event"
-          @view-mode-change="viewMode = $event"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
           @edit-pattern="editPattern"
           @reorder-patterns="reorderPatterns"
-          @select-song="selectSong"
-          @update-song="updateSong"
-          @create-song="createSong"
-          @save-song-file="saveSongToFile"
-          @load-song-file="loadSongFromFile"
-          @load-song-file-error="onLoadSongFileError"
         />
       </div>
     </div>
@@ -115,6 +101,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
+import AppToolbar from './components/AppToolbar.vue';
 import PianoRoll from './components/PianoRoll.vue';
 import LiveView from './components/LiveView.vue';
 import {

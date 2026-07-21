@@ -76,7 +76,7 @@ src/
   models/
     project.js         Plain-data project/track/note/pattern/scene model +
                        factory functions. Scenes are optional named groups;
-                       patterns opt in via pattern.sceneId.
+                       patterns opt in via pattern.sceneIds (may be in many).
   composables/
     usePlayheadBeat.js  Vue composables that sample the active clock via
                        requestAnimationFrame, fully decoupled from the audio

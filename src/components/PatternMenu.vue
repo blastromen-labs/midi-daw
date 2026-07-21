@@ -203,7 +203,11 @@ function patternLiveDraft(pattern) {
     liveLaunchMode: pattern?.liveLaunchMode ?? 'toggle',
     liveSyncGrid: pattern?.liveSyncGrid ?? '1/16',
     cutOthers: pattern?.cutOthers !== false,
-    sceneId: pattern?.sceneId ?? null,
+    sceneIds: Array.isArray(pattern?.sceneIds)
+      ? [...pattern.sceneIds]
+      : pattern?.sceneId
+        ? [pattern.sceneId]
+        : [],
   };
 }
 

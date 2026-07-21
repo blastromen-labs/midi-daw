@@ -1,4 +1,9 @@
-import { uid, normalizeTrackCategory, randomTrackColor } from '../models/project.js';
+import {
+  uid,
+  normalizeTrackCategory,
+  normalizePatternSceneIds,
+  randomTrackColor,
+} from '../models/project.js';
 import { sanitizeFilename } from '../utils/filename.js';
 
 const SONGS_KEY = 'midi-daw:songs';
@@ -83,9 +88,8 @@ export function deserializeProject(data) {
       pattern.liveLaunchMode = pattern.liveLaunchMode ?? legacyMode;
       pattern.liveSyncGrid = pattern.liveSyncGrid ?? legacyGrid;
       pattern.cutOthers = pattern.cutOthers ?? true;
-      // Drop stale scene refs (deleted scene / older songs without scenes).
-      pattern.sceneId =
-        pattern.sceneId && sceneIds.has(pattern.sceneId) ? pattern.sceneId : null;
+      // Migrate legacy sceneId → sceneIds[]; drop stale / unknown scene refs.
+      normalizePatternSceneIds(pattern, sceneIds);
     }
     delete track.liveLaunchMode;
     delete track.liveSyncGrid;

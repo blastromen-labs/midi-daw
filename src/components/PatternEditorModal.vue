@@ -63,17 +63,28 @@
 
           <section class="border-t border-line pt-4">
             <h3 class="text-[10px] uppercase tracking-wider text-muted-dim mb-2">Live</h3>
-            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Scene</label>
-            <select
-              v-model="draft.sceneId"
-              class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded mb-3"
-              title="Optional — assign this pattern to a scene so Live mode can launch it with others"
+            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Scenes</label>
+            <div
+              v-if="scenes.length"
+              class="rounded border border-line-light bg-surface/40 divide-y divide-line/60 mb-3 max-h-36 overflow-y-auto"
+              title="Optional — assign this pattern to one or more scenes so Live mode can launch it with others"
             >
-              <option value="">None</option>
-              <option v-for="scene in scenes" :key="scene.id" :value="scene.id">
-                {{ scene.name }}
-              </option>
-            </select>
+              <label
+                v-for="scene in scenes"
+                :key="scene.id"
+                class="flex items-center gap-2 px-2 py-1.5 cursor-pointer select-none hover:bg-surface-hover/60"
+              >
+                <input
+                  type="checkbox"
+                  :checked="draft.sceneIds.includes(scene.id)"
+                  @change="toggleScene(scene.id, $event.target.checked)"
+                />
+                <span class="text-xs truncate">{{ scene.name }}</span>
+              </label>
+            </div>
+            <p v-else class="text-[10px] text-muted-dim mb-3 leading-snug">
+              No scenes yet — create one from Live ▸ Scenes.
+            </p>
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Launch mode</label>
             <select
               v-model="draft.liveLaunchMode"
@@ -179,7 +190,7 @@ const props = defineProps({
     required: true,
   },
   canDelete: { type: Boolean, default: true },
-  /** Project scenes for the optional Scene assignment dropdown. */
+  /** Project scenes for optional multi-scene assignment. */
   scenes: { type: Array, default: () => [] },
 });
 
@@ -198,10 +209,16 @@ const draft = reactive({
   liveLaunchMode: 'toggle',
   liveSyncGrid: '1/16',
   cutOthers: true,
-  sceneId: '',
+  sceneIds: [],
 });
 
 const heading = computed(() => (props.mode === 'create' ? 'New pattern' : 'Edit pattern'));
+
+function initialSceneIds(initial) {
+  if (Array.isArray(initial?.sceneIds)) return [...initial.sceneIds];
+  if (initial?.sceneId) return [initial.sceneId];
+  return [];
+}
 
 function syncFromInitial() {
   draft.name = props.initial.name ?? '';
@@ -210,10 +227,19 @@ function syncFromInitial() {
   draft.liveLaunchMode = props.initial.liveLaunchMode ?? 'toggle';
   draft.liveSyncGrid = props.initial.liveSyncGrid ?? '1/16';
   draft.cutOthers = props.initial.cutOthers !== false;
-  draft.sceneId = props.initial.sceneId || '';
+  draft.sceneIds = initialSceneIds(props.initial);
 }
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
+
+function toggleScene(sceneId, checked) {
+  if (!sceneId) return;
+  if (checked) {
+    if (!draft.sceneIds.includes(sceneId)) draft.sceneIds.push(sceneId);
+  } else {
+    draft.sceneIds = draft.sceneIds.filter((id) => id !== sceneId);
+  }
+}
 
 function submit() {
   const name = draft.name.trim();
@@ -225,7 +251,7 @@ function submit() {
     liveLaunchMode: draft.liveLaunchMode,
     liveSyncGrid: draft.liveSyncGrid,
     cutOthers: draft.cutOthers,
-    sceneId: draft.sceneId || null,
+    sceneIds: [...draft.sceneIds],
   });
 }
 

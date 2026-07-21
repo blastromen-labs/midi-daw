@@ -166,10 +166,10 @@ export function createPattern(name = 'Pattern 1', color = randomPatternColor(), 
     // When true (default), launching this clip stops other clips on the same track.
     // Set false to layer (e.g. One Shot over a running Loop).
     cutOthers: true,
-    // Optional membership in a project-level Scene (null = not in any scene).
-    // A pattern does not have to belong to a scene; scenes are shortcuts that
+    // Optional membership in project-level Scenes (empty = not in any scene).
+    // A pattern may belong to multiple scenes; scenes are shortcuts that
     // launch several patterns together in Live mode.
-    sceneId: null,
+    sceneIds: [],
   };
 }
 
@@ -192,6 +192,42 @@ export function defaultSceneName(scenes = []) {
 }
 
 /**
+ * Normalize pattern scene membership to `sceneIds: string[]`.
+ * Migrates legacy single `sceneId` and drops stale/duplicate ids.
+ * @param {object} pattern
+ * @param {Set<string>|null} [validSceneIds] when provided, filter to existing scenes
+ * @returns {string[]}
+ */
+export function normalizePatternSceneIds(pattern, validSceneIds = null) {
+  if (!pattern) return [];
+  const fromArray = Array.isArray(pattern.sceneIds) ? pattern.sceneIds : null;
+  const legacy = pattern.sceneId && typeof pattern.sceneId === 'string' ? [pattern.sceneId] : [];
+  const raw = fromArray ?? legacy;
+  const seen = new Set();
+  const ids = [];
+  for (const id of raw) {
+    if (typeof id !== 'string' || !id || seen.has(id)) continue;
+    if (validSceneIds && !validSceneIds.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  pattern.sceneIds = ids;
+  delete pattern.sceneId;
+  return ids;
+}
+
+/** Whether a pattern is a member of the given scene. */
+export function patternInScene(pattern, sceneId) {
+  if (!pattern || !sceneId) return false;
+  const ids = Array.isArray(pattern.sceneIds)
+    ? pattern.sceneIds
+    : pattern.sceneId
+      ? [pattern.sceneId]
+      : [];
+  return ids.includes(sceneId);
+}
+
+/**
  * Resolve every pattern assigned to a scene across all tracks.
  * @returns {{ track: object, pattern: object }[]}
  */
@@ -200,20 +236,35 @@ export function getScenePatternRefs(tracks, sceneId) {
   const refs = [];
   for (const track of tracks ?? []) {
     for (const pattern of track.patterns ?? []) {
-      if (pattern.sceneId === sceneId) refs.push({ track, pattern });
+      if (patternInScene(pattern, sceneId)) refs.push({ track, pattern });
     }
   }
   return refs;
 }
 
-/** Clear scene membership when a scene is deleted. */
+/** Remove a scene id from every pattern when that scene is deleted. */
 export function clearSceneFromPatterns(tracks, sceneId) {
   if (!sceneId) return;
   for (const track of tracks ?? []) {
     for (const pattern of track.patterns ?? []) {
-      if (pattern.sceneId === sceneId) pattern.sceneId = null;
+      normalizePatternSceneIds(pattern);
+      pattern.sceneIds = pattern.sceneIds.filter((id) => id !== sceneId);
     }
   }
+}
+
+/** Ensure `sceneId` is in the pattern's scene list (no-op if already present). */
+export function addPatternToScene(pattern, sceneId) {
+  if (!pattern || !sceneId) return;
+  normalizePatternSceneIds(pattern);
+  if (!pattern.sceneIds.includes(sceneId)) pattern.sceneIds.push(sceneId);
+}
+
+/** Remove `sceneId` from the pattern's scene list. */
+export function removePatternFromScene(pattern, sceneId) {
+  if (!pattern || !sceneId) return;
+  normalizePatternSceneIds(pattern);
+  pattern.sceneIds = pattern.sceneIds.filter((id) => id !== sceneId);
 }
 
 /** Deep-copy notes with fresh ids (pattern clone, shift-drag duplicate, etc.). */
@@ -242,7 +293,7 @@ export function clonePattern(source, patterns) {
   pattern.liveLaunchMode = source.liveLaunchMode ?? pattern.liveLaunchMode;
   pattern.liveSyncGrid = source.liveSyncGrid ?? pattern.liveSyncGrid;
   pattern.cutOthers = source.cutOthers ?? pattern.cutOthers;
-  pattern.sceneId = source.sceneId ?? null;
+  pattern.sceneIds = [...normalizePatternSceneIds(source)];
   return pattern;
 }
 
@@ -655,7 +706,7 @@ export function createProject() {
     loopRegion: null,
     // Roll-view ▶ preview — { trackId, patternId } or null; not persisted.
     soloPreview: null,
-    // Named pattern groups for Live-mode scene launch (patterns opt in via sceneId).
+    // Named pattern groups for Live-mode scene launch (patterns opt in via sceneIds).
     scenes: [],
     tracks: [
       createDrumTrack('Drums 1', TRACK_ACCENT_COLORS[3], 16),

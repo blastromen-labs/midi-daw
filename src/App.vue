@@ -71,6 +71,7 @@
           v-show="viewMode === 'live'"
           :tracks="project.tracks"
           :scenes="project.scenes"
+          :active-scene-id="activeSceneId"
           :playing="playing"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
@@ -130,6 +131,9 @@ import {
   createScene,
   clonePattern as clonePatternModel,
   clearSceneFromPatterns,
+  addPatternToScene,
+  removePatternFromScene,
+  normalizePatternSceneIds,
   defaultSceneName,
   getScenePatternRefs,
   randomTrackColor,
@@ -195,6 +199,9 @@ const sceneEditorOpen = ref(false);
 const sceneEditorMode = ref('create');
 const sceneEditorId = ref(null);
 const sceneEditorInitial = ref({ name: '' });
+// Which scene button last claimed Live playback. Shared patterns must not light
+// up every scene that contains them — only this id shows as playing/queued.
+const activeSceneId = ref(null);
 // Sync/clock routing is global — not per-song (scheduler still reads project.*).
 const syncSettings = reactive({
   syncMode: 'internal',
@@ -477,7 +484,10 @@ function bindPlayingListener(clock) {
   if (playingUnsub) playingUnsub();
   playingUnsub = clock.onTick((type) => {
     if (type === 'start') playing.value = true;
-    if (type === 'stop') playing.value = false;
+    if (type === 'stop') {
+      playing.value = false;
+      activeSceneId.value = null;
+    }
   });
 }
 
@@ -621,6 +631,7 @@ function stopPlayback() {
   if (project.syncMode === 'external') return; // Stop is driven by the incoming clock
   playback.stop();
   playing.value = false;
+  activeSceneId.value = null;
   project.soloPreview = null;
   project.sessionView = 'roll';
 }
@@ -659,7 +670,10 @@ function addPattern(trackId, config = {}) {
   if (config.liveLaunchMode != null) pattern.liveLaunchMode = config.liveLaunchMode;
   if (config.liveSyncGrid != null) pattern.liveSyncGrid = config.liveSyncGrid;
   if (config.cutOthers != null) pattern.cutOthers = config.cutOthers;
-  if (config.sceneId !== undefined) pattern.sceneId = config.sceneId || null;
+  if (config.sceneIds !== undefined) {
+    pattern.sceneIds = Array.isArray(config.sceneIds) ? [...config.sceneIds] : [];
+    normalizePatternSceneIds(pattern);
+  }
   track.patterns.push(pattern);
   track.activePatternId = pattern.id;
 }
@@ -686,7 +700,9 @@ function renamePattern(trackId, patternId, name) {
 function updatePattern(trackId, patternId, changes) {
   const track = findTrack(trackId);
   const pattern = track?.patterns?.find((p) => p.id === patternId);
-  if (pattern) Object.assign(pattern, changes);
+  if (!pattern) return;
+  Object.assign(pattern, changes);
+  if (changes?.sceneIds !== undefined) normalizePatternSceneIds(pattern);
 }
 
 function deletePattern(trackId, patternId) {
@@ -730,6 +746,8 @@ function queueOrLaunchPattern(trackId, patternId) {
   const pattern = track?.patterns?.find((p) => p.id === patternId);
   if (!track || !pattern) return;
 
+  // Manual clip launch leaves scene mode — only scene buttons claim a scene.
+  activeSceneId.value = null;
   engageLivePlayback();
 
   const mode = patternLaunchMode(pattern);
@@ -825,16 +843,20 @@ function scenePatternIds(sceneId) {
   return getScenePatternRefs(project.tracks, sceneId).map(({ pattern }) => pattern.id);
 }
 
-/** Apply scene membership from the editor — patterns in the list join the scene; others leave it. */
+/**
+ * Apply scene membership from the editor for one scene only.
+ * Patterns in the list gain this sceneId; patterns that leave lose only this sceneId
+ * (membership in other scenes is preserved).
+ */
 function applyScenePatternMembership(sceneId, patternIds) {
   if (!sceneId) return;
   const wanted = new Set(patternIds ?? []);
   for (const track of project.tracks) {
     for (const pattern of track.patterns ?? []) {
       if (wanted.has(pattern.id)) {
-        pattern.sceneId = sceneId;
-      } else if (pattern.sceneId === sceneId) {
-        pattern.sceneId = null;
+        addPatternToScene(pattern, sceneId);
+      } else {
+        removePatternFromScene(pattern, sceneId);
       }
     }
   }
@@ -894,11 +916,13 @@ function confirmDeleteScene() {
   if (idx === -1) return;
   scenes.splice(idx, 1);
   clearSceneFromPatterns(project.tracks, sceneId);
+  if (activeSceneId.value === sceneId) activeSceneId.value = null;
   closeSceneEditor();
 }
 
 // Scene button — launch every assigned Loop / One Shot on one shared quantize
 // boundary, and cut anything else that is playing/queued (exclusive scene).
+// Claims activeSceneId so shared patterns don't light up other scenes in the UI.
 function launchScene(sceneId) {
   const refs = getScenePatternRefs(project.tracks, sceneId).filter(
     ({ pattern }) => patternLaunchMode(pattern) !== LIVE_LAUNCH_MODES.HOLD
@@ -906,6 +930,7 @@ function launchScene(sceneId) {
   if (!refs.length) return;
 
   engageLivePlayback();
+  activeSceneId.value = sceneId;
 
   if (!playing.value) {
     const { oneShots } = armSceneLoops(refs, project.tracks);

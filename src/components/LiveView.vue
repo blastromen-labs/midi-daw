@@ -90,7 +90,7 @@
           v-if="!scenes.length"
           class="text-[10px] text-muted-dim self-center px-1"
         >
-          Open Scenes ▾ to create one, then assign patterns in Edit pattern
+          Open Scenes ▾ to create one, then assign patterns (a pattern can be in many scenes)
         </p>
       </div>
     </div>
@@ -207,6 +207,8 @@ import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
 const props = defineProps({
   tracks: { type: Array, required: true },
   scenes: { type: Array, default: () => [] },
+  /** Scene id last launched via a scene button; only this scene shows playing UI. */
+  activeSceneId: { type: String, default: null },
   playing: Boolean,
 });
 
@@ -303,6 +305,10 @@ function sceneLaunchableRefs(scene) {
 function sceneStatus(scene) {
   const refs = sceneLaunchableRefs(scene);
   if (!refs.length) return 'empty';
+
+  // Only the scene that was last launched may show playing/queued/armed.
+  // Shared patterns would otherwise light up every scene that contains them.
+  if (scene.id !== props.activeSceneId) return 'idle';
 
   let playingCount = 0;
   let queuedCount = 0;

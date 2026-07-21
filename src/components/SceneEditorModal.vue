@@ -94,7 +94,7 @@
                     :key="entry.patternId"
                     :value="entry.patternId"
                   >
-                    {{ entry.patternName }}{{ entry.otherSceneName ? ` (in ${entry.otherSceneName})` : '' }}
+                    {{ entry.patternName }}{{ entry.otherSceneLabel ? ` (${entry.otherSceneLabel})` : '' }}
                   </option>
                 </optgroup>
               </select>
@@ -108,7 +108,7 @@
               </button>
             </div>
             <p class="text-[10px] text-muted mt-1.5 leading-snug">
-              A pattern can only be in one scene. Adding one that already belongs elsewhere moves it here.
+              The same pattern can belong to multiple scenes.
             </p>
           </section>
         </div>
@@ -218,6 +218,21 @@ function launchModeLabel(pattern) {
   return 'Loop';
 }
 
+function patternSceneIds(pattern) {
+  if (Array.isArray(pattern?.sceneIds)) return pattern.sceneIds;
+  if (pattern?.sceneId) return [pattern.sceneId];
+  return [];
+}
+
+function otherScenesLabel(pattern, editingSceneId, sceneNameById) {
+  const names = patternSceneIds(pattern)
+    .filter((id) => id !== editingSceneId)
+    .map((id) => sceneNameById.get(id) ?? 'another scene');
+  if (!names.length) return null;
+  if (names.length === 1) return `also in ${names[0]}`;
+  return `also in ${names.join(', ')}`;
+}
+
 function entryFor(patternId) {
   const hit = patternIndex.value.get(patternId);
   if (!hit) return null;
@@ -230,7 +245,7 @@ function entryFor(patternId) {
     trackName: track.name,
     launchModeShort: launchModeShort(pattern),
     launchModeLabel: launchModeLabel(pattern),
-    otherSceneName: null,
+    otherSceneLabel: null,
   };
 }
 
@@ -246,14 +261,12 @@ const availableEntries = computed(() => {
   for (const track of props.tracks ?? []) {
     for (const pattern of track.patterns ?? []) {
       if (inScene.has(pattern.id)) continue;
-      const otherSceneId =
-        pattern.sceneId && pattern.sceneId !== editingSceneId ? pattern.sceneId : null;
       entries.push({
         patternId: pattern.id,
         patternName: pattern.name,
         trackId: track.id,
         trackName: track.name,
-        otherSceneName: otherSceneId ? sceneNameById.get(otherSceneId) ?? 'another scene' : null,
+        otherSceneLabel: otherScenesLabel(pattern, editingSceneId, sceneNameById),
       });
     }
   }

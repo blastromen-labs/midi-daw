@@ -1340,6 +1340,30 @@ function startPaintAdd(pitch, cellBeat) {
   return note;
 }
 
+// Shared by Shift+drag length draw and tablet long-press length draw.
+function beginSingleNoteResize(note) {
+  selectedNoteIds.value = new Set([note.id]);
+  drag.value = {
+    type: 'resize',
+    anchorNoteId: note.id,
+    anchorOrigStartBeat: note.startBeat,
+    anchorOrigDuration: note.duration,
+    origDurations: new Map([[note.id, note.duration]]),
+  };
+}
+
+// Shift + drag on empty space: place one note, then stretch its duration with the
+// pointer — same resize path as tablet long-press length draw / edge grab.
+function startLengthDraw(pitch, cellBeat) {
+  noteHistory.beginGroup();
+  const note = createNote(pitch, cellBeat, placementDuration(), 100);
+  emitNotes([...getNotes(), note]);
+  clearSelection();
+  startDrawPreview(note.pitch, note.velocity);
+  beginSingleNoteResize(note);
+  return note;
+}
+
 function clearSelection() {
   selectedNoteIds.value = new Set();
 }
@@ -1516,9 +1540,15 @@ function onToolModeDown(e) {
   }
 
   // Pen — stamp length from an existing note, or draw on empty cells.
+  // Shift + empty drag stretches one long note instead of painting cells.
   const existing = findNoteAt(rawBeat, pitch);
   if (existing) {
     stampNoteDuration(existing);
+    return;
+  }
+
+  if (e.shiftKey) {
+    startLengthDraw(pitch, cellBeat);
     return;
   }
 
@@ -1576,13 +1606,7 @@ function isMobileDoubleTapNote(existing) {
 
 function startMobileLengthDraw(note) {
   stampNoteDuration(note);
-  drag.value = {
-    type: 'resize',
-    anchorNoteId: note.id,
-    anchorOrigStartBeat: note.startBeat,
-    anchorOrigDuration: note.duration,
-    origDurations: new Map([[note.id, note.duration]]),
-  };
+  beginSingleNoteResize(note);
   if (mobileTouchSession) mobileTouchSession.kind = 'lengthDraw';
 }
 
@@ -1807,6 +1831,11 @@ function onMouseDown(e) {
   // Clicking empty space places a note — right-click-drag (above) erases,
   // Cmd/Ctrl-drag (above) marquee-selects, so a single click tool is enough
   // without a separate Draw/Select/Erase mode switcher. Hold-drag paints more.
+  // Shift + drag stretches one long note instead of painting across cells.
+  if (e.shiftKey) {
+    startLengthDraw(pitch, cellBeat);
+    return;
+  }
   startPaintAdd(pitch, cellBeat);
 }
 

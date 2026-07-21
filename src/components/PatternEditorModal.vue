@@ -72,12 +72,16 @@
               <option value="hold">Hold</option>
               <option value="oneShot">One Shot</option>
             </select>
-            <template v-if="draft.liveLaunchMode === 'hold'">
+            <template v-if="draft.liveLaunchMode === 'hold' || draft.liveLaunchMode === 'oneShot'">
               <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Sync grid</label>
               <select
                 v-model="draft.liveSyncGrid"
                 class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded mb-3"
-                title="Grid the pattern unmute aligns to when you press"
+                :title="
+                  draft.liveLaunchMode === 'hold'
+                    ? 'Grid the pattern unmute aligns to when you press'
+                    : 'Grid the one-shot launch aligns to when you click'
+                "
               >
                 <option v-for="opt in liveSyncGridOptions" :key="opt.value" :value="opt.value">
                   {{ opt.label }}

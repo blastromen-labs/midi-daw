@@ -40,7 +40,6 @@
               @pointerup="onClipPointerUp($event, track)"
               @pointercancel="onClipPointerUp($event, track)"
               @click="onClipClick(track.id, pattern.id, pattern.liveLaunchMode)"
-              @dblclick="$emit('edit-pattern', track.id, pattern.id)"
             >
               <span class="block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
               <span class="flex items-center gap-1 min-w-0 mt-0.5 pr-3">
@@ -52,9 +51,9 @@
               </span>
 
               <span
-                v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping' || clipStatus(track, pattern) === 'arming'"
+                v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping' || clipStatus(track, pattern) === 'arming' || clipStatus(track, pattern) === 'queued'"
                 class="absolute left-0 bottom-0 h-0.5 bg-white/80"
-                :style="{ width: clipProgress(pattern) * 100 + '%' }"
+                :style="{ width: clipProgress(track, pattern) * 100 + '%' }"
               ></span>
               <span
                 v-if="clipStatus(track, pattern) === 'playing'"
@@ -97,6 +96,7 @@
 import { ref, onUnmounted } from 'vue';
 import {
   LIVE_LAUNCH_MODES,
+  getLiveLaunch,
   isPatternPlaying,
   isPatternQueued,
   isPatternStopQueued,
@@ -116,7 +116,6 @@ const emit = defineEmits([
   'trigger-pattern',
   'hold-pattern-down',
   'hold-pattern-up',
-  'edit-pattern',
   'reorder-patterns',
 ]);
 
@@ -266,9 +265,17 @@ onUnmounted(() => {
   window.removeEventListener('pointercancel', onDragEnd);
 });
 
-function clipProgress(pattern) {
+function clipProgress(track, pattern) {
   const len = patternLoopEndBeat(pattern);
   if (len <= 0) return 0;
+  // One Shot progress is relative to its launch origin (always starts at 0).
+  if (patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT) {
+    const launch = getLiveLaunch(track, pattern.id);
+    const pending = track.pendingLaunches?.find((p) => p.patternId === pattern.id);
+    const origin = launch?.startBeat ?? pending?.launchBeat;
+    if (origin == null) return 0;
+    return Math.min(1, Math.max(0, (absBeat.value - origin) / len));
+  }
   const wrapped = ((absBeat.value % len) + len) % len;
   return wrapped / len;
 }
@@ -285,6 +292,10 @@ function clipStatus(track, pattern) {
     return 'idle';
   }
 
+  // Queued first so a One Shot retrigger shows as queued while the current
+  // playthrough is still audible.
+  if (isPatternQueued(track, pattern.id)) return 'queued';
+
   const isCurrent = isPatternPlaying(track, pattern.id);
   if (isCurrent && props.playing) {
     // One Shot always has an auto-stop at the end of the shot — that's normal
@@ -297,7 +308,6 @@ function clipStatus(track, pattern) {
     }
     return 'playing';
   }
-  if (isPatternQueued(track, pattern.id)) return 'queued';
   if (isCurrent) return 'armed';
   return 'idle';
 }
@@ -331,19 +341,20 @@ function clipTitle(track, pattern) {
     const grid = pattern.liveSyncGrid ?? '1/16';
     if (status === 'playing') return `${pattern.name} — playing (release to stop)`;
     if (status === 'arming') return `${pattern.name} — syncing to ${grid} grid…`;
-    return `${pattern.name} — hold to play in sync (${grid} grid), double-click to edit`;
+    return `${pattern.name} — hold to play in sync (${grid} grid)`;
   }
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
-    if (status === 'playing') return `${pattern.name} — playing once`;
-    if (status === 'queued') return `${pattern.name} — queued one shot (click again to cancel)`;
+    const grid = pattern.liveSyncGrid ?? '1/16';
+    if (status === 'playing') return `${pattern.name} — playing once (click to retrigger from the start)`;
+    if (status === 'queued') return `${pattern.name} — queued one shot on ${grid} grid (starts from beginning; click again to cancel)`;
     if (status === 'armed') return `${pattern.name} — will play once when you press Play (click to un-arm)`;
-    return `${pattern.name} — click to play once, drag to reorder, double-click to edit`;
+    return `${pattern.name} — click to play once from the start (${grid} grid), drag to reorder`;
   }
   if (status === 'playing') return `${pattern.name} — playing (click to stop when it loops)`;
   if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)`;
   if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)`;
   if (status === 'armed') return `${pattern.name} — will play when you press Play (click to un-arm)`;
-  return `${pattern.name} — click to launch, drag to reorder, double-click to edit`;
+  return `${pattern.name} — click to launch, drag to reorder`;
 }
 </script>
 

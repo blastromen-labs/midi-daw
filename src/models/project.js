@@ -212,6 +212,10 @@ export function createLiveLaunch(patternId, overrides = {}) {
     holdMuted: false,
     pendingUnmuteBeat: null,
     stopBeat: null,
+    // Absolute beat when this clip's content beat 0 fires. Set for One Shots so
+    // they always restart from the beginning even when launched mid-bar; Loops
+    // leave this null and phase-lock to the master grid instead.
+    startBeat: null,
     ...overrides,
   };
 }
@@ -649,7 +653,7 @@ export const LIVE_LAUNCH_MODES = {
   ONE_SHOT: 'oneShot',
 };
 
-/** Grid the hold-to-play unmute aligns to when you press a clip. */
+/** Grid Hold unmute / One Shot launch aligns to when you trigger a clip. */
 export const LIVE_SYNC_GRID_OPTIONS = [
   { label: '1/16', value: '1/16', beats: 0.25 },
   { label: '1/8', value: '1/8', beats: 0.5 },

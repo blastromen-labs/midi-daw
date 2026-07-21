@@ -73,7 +73,6 @@
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
-          @edit-pattern="editPattern"
           @reorder-patterns="reorderPatterns"
         />
       </div>
@@ -156,7 +155,6 @@ import { isEditableTarget } from './utils/keyboard.js';
 import {
   queuePatternToggle,
   queuePatternOneShot,
-  armOneShotStop,
   launchPatternImmediately,
   stopPatternImmediately,
   holdPatternDown,
@@ -713,15 +711,17 @@ function queueOrLaunchPattern(trackId, patternId) {
     if (isPatternPlaying(track, patternId)) {
       // Un-arm only this clip so a layered Loop can keep its armed state.
       stopPatternImmediately(track, patternId);
-    } else {
-      launchPatternImmediately(track, patternId);
-      startPlayback();
-      // Arm after start so the stop lands one pattern length from the real
-      // absolute start beat (not a stale pre-play position).
-      if (isOneShot) {
-        armOneShotStop(track, patternId, getActiveClock().getAbsoluteBeat());
-      }
+      return;
     }
+    if (isOneShot) {
+      // Same as Hold: start transport first, then quantize to the sync grid
+      // so getAbsoluteBeat() isn't a stale pre-play position.
+      startPlayback();
+      queuePatternOneShot(track, patternId, getActiveClock().getAbsoluteBeat());
+      return;
+    }
+    launchPatternImmediately(track, patternId);
+    startPlayback();
     return;
   }
 
@@ -781,13 +781,6 @@ function onPreviewPattern(trackId, patternId) {
   if (!playing.value) {
     startPlayback(undefined, { keepSoloPreview: true });
   }
-}
-
-function editPattern(trackId, patternId) {
-  const track = findTrack(trackId);
-  if (track) track.activePatternId = patternId;
-  activeTrackId.value = trackId;
-  viewMode.value = 'roll';
 }
 
 function reorderPatterns(trackId, fromIndex, toIndex) {

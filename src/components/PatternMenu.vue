@@ -331,7 +331,7 @@ function launchButtonTitle(pattern) {
     return `${pattern.name} — hold to play in sync (${pattern.liveSyncGrid ?? '1/16'} grid)`;
   }
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
-    return `${pattern.name} — preview this pattern (Live: one shot)`;
+    return `${pattern.name} — preview this pattern (Live: one shot on ${pattern.liveSyncGrid ?? '1/16'} grid)`;
   }
   return `${pattern.name} — play this pattern only`;
 }

@@ -54,7 +54,7 @@ const MAX_LATE_NOTE_GRACE_SEC = 0.15;
 function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, soloPreview) {
   if (!useLiveLaunch) {
     const patterns = getPlayingPatterns(track, { useLiveLaunch, soloPreview });
-    return patterns.map((pattern) => ({ pattern, rangeStart, rangeEnd }));
+    return patterns.map((pattern) => ({ pattern, rangeStart, rangeEnd, originBeat: null }));
   }
 
   const segments = [];
@@ -75,7 +75,9 @@ function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, sol
     if (launch?.stopBeat != null) end = Math.min(end, launch.stopBeat - 1e-6);
     if (globalCutBeat != null) end = Math.min(end, globalCutBeat - 1e-6);
     if (end >= rangeStart) {
-      segments.push({ pattern, rangeStart, rangeEnd: end });
+      const originBeat =
+        patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT ? launch?.startBeat ?? null : null;
+      segments.push({ pattern, rangeStart, rangeEnd: end, originBeat });
     }
   }
 
@@ -85,13 +87,20 @@ function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, sol
     if (!pattern) continue;
     const start = Math.max(rangeStart, p.launchBeat);
     let end = rangeEnd;
+    const isOneShot = patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT;
     // One Shot: schedule only through one length from the launch boundary.
-    if (patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT) {
+    if (isOneShot) {
       const len = patternLoopEndBeat(pattern);
       if (len > 0) end = Math.min(end, p.launchBeat + len - 1e-6);
     }
     if (end >= start) {
-      segments.push({ pattern, rangeStart: start, rangeEnd: end });
+      segments.push({
+        pattern,
+        rangeStart: start,
+        rangeEnd: end,
+        // Pending One Shots use the queued launch beat as their content origin.
+        originBeat: isOneShot ? p.launchBeat : null,
+      });
     }
   }
 
@@ -280,7 +289,7 @@ export class PlaybackEngine {
     for (const track of this.project.tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
 
-      for (const { pattern, rangeStart, rangeEnd } of trackSchedulingSegments(
+      for (const { pattern, rangeStart, rangeEnd, originBeat } of trackSchedulingSegments(
         track,
         absBeat,
         endAbsBeat,
@@ -291,6 +300,19 @@ export class PlaybackEngine {
 
         const trackLoopLen = patternLoopEndBeat(pattern);
         if (trackLoopLen <= 0) continue;
+
+        // One Shot: content always starts at pattern beat 0 on originBeat, even
+        // when the clip is launched mid-bar. Loops keep phase-locking below.
+        if (originBeat != null) {
+          for (const note of pattern.notes) {
+            if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;
+            const occurrence = originBeat + note.startBeat;
+            if (occurrence < rangeStart - 0.01 || occurrence > rangeEnd + 1e-9) continue;
+            const noteKey = `n-${track.id}-${pattern.id}-${note.id}-os${originBeat}`;
+            this._maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock);
+          }
+          continue;
+        }
 
         for (const note of pattern.notes) {
           if (note.startBeat < 0 || note.startBeat >= trackLoopLen) continue;

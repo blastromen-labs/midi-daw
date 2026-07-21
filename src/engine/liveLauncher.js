@@ -146,7 +146,11 @@ function isPatternPending(track, patternId) {
   return ensurePendingList(track).some((p) => p.patternId === patternId);
 }
 
-// One Shot click while transport is running.
+// One Shot click while transport is running — launches on the pattern's sync
+// grid (same options as Hold), then plays through once from pattern beat 0
+// (not phase-locked — see originBeat scheduling in scheduler.js).
+// Clicking again while it's already sounding re-queues a fresh playthrough
+// from the start; clicking while still queued cancels that queue.
 export function queuePatternOneShot(track, patternId, currentAbsBeat) {
   if (!track) return;
 
@@ -158,15 +162,8 @@ export function queuePatternOneShot(track, patternId, currentAbsBeat) {
     return;
   }
 
-  // Already playing through once — leave the armed auto-stop alone.
-  if (getLiveLaunch(track, patternId)) return;
-
   const cutOthers = patternCutsOthers(targetPattern);
-  const quantizeBeats = Math.max(
-    playingQuantizeBeats(track),
-    patternLoopEndBeat(targetPattern),
-    BEATS_PER_BAR
-  );
+  const quantizeBeats = liveSyncGridBeats(targetPattern);
   queuePendingLaunch(track, patternId, nextBoundaryBeat(currentAbsBeat, quantizeBeats), cutOthers);
 }
 
@@ -295,13 +292,20 @@ function isHoldLaunchAudible(launch) {
 
 function commitLaunch(track, pending) {
   const { patternId, cutOthers, launchBeat } = pending;
+  const pattern = findPattern(track, patternId);
+  // One Shot records the absolute launch beat so the scheduler can map pattern
+  // beat 0 → launchBeat (restart from the start) instead of phase-locking.
+  const launch = createLiveLaunch(
+    patternId,
+    patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT ? { startBeat: launchBeat } : {}
+  );
   if (cutOthers) {
-    track.liveLaunches = [createLiveLaunch(patternId)];
+    track.liveLaunches = [launch];
   } else {
     materializeFollowActive(track);
     if (track.liveLaunches == null) track.liveLaunches = [];
     removeLaunch(track, patternId);
-    track.liveLaunches.push(createLiveLaunch(patternId));
+    track.liveLaunches.push(launch);
   }
   armOneShotStop(track, patternId, launchBeat);
 }

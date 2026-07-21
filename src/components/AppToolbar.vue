@@ -43,6 +43,8 @@
 
       <div class="daw-toolbar-divider"></div>
 
+      <SupportToolbarButton />
+
       <HelpToolbarButton />
 
       <SettingsToolbarButton
@@ -67,6 +69,7 @@
 import TransportToolbar from './TransportToolbar.vue';
 import ViewToggleButton from './ViewToggleButton.vue';
 import SongMenu from './SongMenu.vue';
+import SupportToolbarButton from './SupportToolbarButton.vue';
 import HelpToolbarButton from './HelpToolbarButton.vue';
 import SettingsToolbarButton from './SettingsToolbarButton.vue';
 

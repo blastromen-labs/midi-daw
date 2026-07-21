@@ -136,8 +136,8 @@
               @pointercancel="onClipPointerUp($event, track)"
               @click="onClipClick(track.id, pattern.id, pattern.liveLaunchMode)"
             >
-              <span class="block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
-              <span class="flex items-center gap-1 min-w-0 mt-0.5 pr-3">
+              <span class="relative z-[1] block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
+              <span class="relative z-[1] flex items-center gap-1 min-w-0 mt-0.5 pr-3">
                 <span
                   class="text-[8px] font-semibold uppercase tracking-wider opacity-80 flex-shrink-0"
                   :title="launchModeLabel(pattern)"
@@ -146,29 +146,24 @@
               </span>
 
               <span
-                v-if="clipStatus(track, pattern) === 'playing' || clipStatus(track, pattern) === 'stopping' || clipStatus(track, pattern) === 'arming' || clipStatus(track, pattern) === 'queued'"
-                class="absolute left-0 bottom-0 h-0.5 bg-white/80"
-                :style="{ width: clipProgress(track, pattern) * 100 + '%' }"
-              ></span>
-              <span
                 v-if="clipStatus(track, pattern) === 'playing'"
-                class="absolute top-1 right-1 text-[10px] leading-none"
+                class="absolute top-1 right-1 z-[1] text-[10px] leading-none"
               >▶</span>
               <span
                 v-else-if="clipStatus(track, pattern) === 'stopping'"
-                class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
+                class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
               ></span>
               <span
                 v-else-if="clipStatus(track, pattern) === 'queued'"
-                class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+                class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white animate-pulse"
               ></span>
               <span
                 v-else-if="clipStatus(track, pattern) === 'arming'"
-                class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
               ></span>
               <span
                 v-else-if="clipStatus(track, pattern) === 'armed'"
-                class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
+                class="absolute top-1 right-1 z-[1] text-[10px] leading-none opacity-60"
               >▶</span>
             </button>
           </template>
@@ -547,8 +542,26 @@ function clipStateClass(track, pattern) {
 
 function clipStyle(track, pattern) {
   const status = clipStatus(track, pattern);
+  const showProgress =
+    status === 'playing' ||
+    status === 'stopping' ||
+    status === 'arming' ||
+    status === 'queued';
   const isLit = status === 'playing' || status === 'stopping' || status === 'armed' || status === 'arming';
   const base = pattern.color;
+
+  // Whole clip is the progress meter: played = light fill, remaining = darker base.
+  // Sharper and easier to read than a thin bottom bar on busy clip colors.
+  if (showProgress) {
+    const p = clipProgress(track, pattern) * 100;
+    const played = shade(base, 0.14);
+    const remaining = shade(base, -0.42);
+    return {
+      background: `linear-gradient(90deg, ${played} ${p}%, ${remaining} ${p}%)`,
+      color: shade(base, 0.78),
+    };
+  }
+
   return {
     background: isLit
       ? `linear-gradient(180deg, ${shade(base, 0.15)}, ${shade(base, -0.15)})`

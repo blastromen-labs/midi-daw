@@ -75,13 +75,15 @@
             <select
               v-model="draft.liveSyncGrid"
               class="w-full text-xs py-1.5 px-2 bg-surface border border-line-light rounded"
-              :disabled="draft.liveLaunchMode !== 'hold'"
               title="Grid the pattern unmute aligns to when you press (Hold mode)"
             >
               <option v-for="opt in liveSyncGridOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
               </option>
             </select>
+            <p class="text-[10px] text-muted-dim mt-1.5 leading-snug">
+              Used in Hold mode: unmute snaps to this grid when you press a clip.
+            </p>
           </section>
         </div>
 

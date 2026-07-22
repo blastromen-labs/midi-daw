@@ -119,10 +119,10 @@
         <option v-for="t in tracks" :key="t.id" :value="t.id">{{ t.name }}</option>
       </select>
       <select
+        v-if="track?.ghostTrackId"
         :value="track?.ghostPatternId ?? ''"
-        class="ghost-select text-[11px] w-24 min-w-24 max-w-24 py-0.5 bg-surface border border-line-light rounded flex-shrink-0 disabled:opacity-40"
+        class="ghost-select text-[11px] w-24 min-w-24 max-w-24 py-0.5 bg-surface border border-line-light rounded flex-shrink-0"
         title="Pattern to show as a faded reference overlay"
-        :disabled="!track?.ghostTrackId"
         @change="onGhostPatternChange"
       >
         <option value="">—</option>

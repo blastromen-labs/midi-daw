@@ -20,15 +20,32 @@
     <div class="daw-toolbar-divider"></div>
 
     <div class="daw-toolbar-secondary">
-      <ViewToggleButton
-        :mode="viewMode"
-        @view-mode-change="(v) => emit('view-mode-change', v)"
-      />
+      <!-- Live-only: reveal tracks/patterns marked Hide from Live. -->
+      <template v-if="viewMode === 'live'">
+        <ToolbarField
+          label="Hidden"
+          :title="showHidden
+            ? 'Showing tracks/patterns marked Hide from Live — click to hide them again'
+            : 'Show tracks and patterns marked Hide from Live (still play via scenes)'"
+        >
+          <button
+            type="button"
+            class="h-6 px-1.5 rounded text-[9px] font-semibold uppercase tracking-wider transition-colors"
+            :class="showHidden
+              ? 'bg-surface-active text-white'
+              : 'bg-surface-hover text-muted hover:text-white hover:bg-surface-active'"
+            :aria-pressed="showHidden"
+            @click="emit('toggle-show-hidden')"
+          >
+            Show
+          </button>
+        </ToolbarField>
+
+        <div class="daw-toolbar-divider"></div>
+      </template>
 
       <!-- Song picker is roll-only — Live shows every song as its own block. -->
-      <template v-if="viewMode !== 'live'">
-        <div class="daw-toolbar-divider"></div>
-
+      <template v-else>
         <SongMenu
           :songs="songs"
           :active-song-id="activeSongId"
@@ -42,9 +59,15 @@
           @load-file="(text) => emit('load-song-file', text)"
           @load-file-error="(msg) => emit('load-song-file-error', msg)"
         />
+
+        <div class="daw-toolbar-divider"></div>
       </template>
 
-      <div class="daw-toolbar-divider"></div>
+      <!-- Keep View fixed left of Support so it doesn't jump when Song/Hidden swap. -->
+      <ViewToggleButton
+        :mode="viewMode"
+        @view-mode-change="(v) => emit('view-mode-change', v)"
+      />
 
       <SupportToolbarButton />
 
@@ -75,6 +98,7 @@ import SongMenu from './SongMenu.vue';
 import SupportToolbarButton from './SupportToolbarButton.vue';
 import HelpToolbarButton from './HelpToolbarButton.vue';
 import SettingsToolbarButton from './SettingsToolbarButton.vue';
+import ToolbarField from './ToolbarField.vue';
 
 defineProps({
   viewMode: { type: String, required: true },
@@ -89,6 +113,7 @@ defineProps({
   midiOutputs: { type: Array, default: () => [] },
   songs: { type: Array, default: () => [] },
   activeSongId: String,
+  showHidden: Boolean,
 });
 
 const emit = defineEmits([
@@ -107,5 +132,6 @@ const emit = defineEmits([
   'toggle-clock',
   'clock-output-change',
   'compact-navbar-change',
+  'toggle-show-hidden',
 ]);
 </script>

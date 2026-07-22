@@ -1,21 +1,5 @@
 <template>
   <div class="live-view flex flex-col h-full bg-panel overflow-hidden">
-    <div class="flex items-center justify-end gap-2 px-2 pt-2 pb-1 border-b border-line/60 flex-shrink-0">
-      <button
-        type="button"
-        class="h-9 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wider flex-shrink-0 ring-1 transition-colors"
-        :class="showHidden
-          ? 'ring-white/50 bg-surface text-white'
-          : 'ring-line-light bg-surface/60 text-muted-dim hover:ring-white/40 hover:text-white'"
-        :title="showHidden
-          ? 'Showing tracks/patterns marked Hide from Live — click to hide them again'
-          : 'Show tracks and patterns marked Hide from Live (still play via scenes)'"
-        @click="showHidden = !showHidden"
-      >
-        Show hidden
-      </button>
-    </div>
-
     <div class="flex-1 overflow-auto p-2 flex flex-col gap-3">
       <SongLiveBlock
         v-for="(entry, index) in liveSongs"
@@ -46,7 +30,6 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
 import SongLiveBlock from './SongLiveBlock.vue';
 
 defineProps({
@@ -55,6 +38,8 @@ defineProps({
   /** songId → last-launched scene id for that song's UI. */
   activeSceneBySong: { type: Object, default: () => ({}) },
   playing: Boolean,
+  /** When true, tracks/patterns marked Hide from Live stay visible in the grid. */
+  showHidden: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -67,6 +52,4 @@ const emit = defineEmits([
   'edit-scene',
   'move-song',
 ]);
-
-const showHidden = ref(false);
 </script>

@@ -14,6 +14,7 @@
         :midi-outputs="midiOutputs"
         :songs="songs"
         :active-song-id="currentSongId"
+        :show-hidden="showHiddenLive"
         @toggle-play="togglePlay"
         @bpm-change="setBpm"
         @view-mode-change="viewMode = $event"
@@ -29,6 +30,7 @@
         @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
         @clock-output-change="syncSettings.clockOutputId = $event"
         @compact-navbar-change="globalSettings.compactNavbar = $event"
+        @toggle-show-hidden="showHiddenLive = !showHiddenLive"
       />
 
       <div class="flex-1 min-h-0">
@@ -72,6 +74,7 @@
           :live-songs="liveSongs"
           :active-scene-by-song="activeSceneBySong"
           :playing="playing"
+          :show-hidden="showHiddenLive"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
@@ -212,6 +215,8 @@ const mixBpm = ref(120);
 // 'roll': piano roll editor (default). 'live': session-style launch grid —
 // toggled via Tab or the View control in either view's toolbar.
 const viewMode = ref('roll');
+/** Live UI: show tracks/patterns marked Hide from Live (still play via scenes). */
+const showHiddenLive = ref(false);
 const sceneEditorOpen = ref(false);
 const sceneEditorMode = ref('create');
 const sceneEditorId = ref(null);

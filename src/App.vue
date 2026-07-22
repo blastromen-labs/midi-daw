@@ -33,7 +33,7 @@
         @toggle-show-hidden="showHiddenLive = !showHiddenLive"
       />
 
-      <div class="flex-1 min-h-0">
+      <div class="relative flex-1 min-h-0 overflow-hidden">
         <PianoRoll
           v-show="viewMode === 'roll'"
           :toolbar-active="viewMode === 'roll'"
@@ -71,6 +71,7 @@
         />
         <LiveView
           v-show="viewMode === 'live'"
+          class="absolute inset-0"
           :live-songs="liveSongs"
           :active-scene-by-song="activeSceneBySong"
           :playing="playing"

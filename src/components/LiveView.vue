@@ -1,9 +1,17 @@
 <template>
-  <div class="live-view flex flex-col h-full bg-panel overflow-hidden">
-    <div class="flex-1 overflow-auto p-2 flex flex-col gap-3">
+  <!--
+    min-h-0 on the flex child is required so overflow can engage: without it,
+    the scroll area grows to fit every song and the outer h-full box clips
+    content with no scrollbar (classic flex min-height:auto pitfall).
+  -->
+  <div class="live-view flex flex-col h-full min-h-0 bg-panel overflow-hidden">
+    <div
+      class="live-view__scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain p-2 flex flex-col gap-3"
+    >
       <SongLiveBlock
         v-for="(entry, index) in liveSongs"
         :key="entry.id"
+        class="shrink-0"
         :song="entry"
         :tracks="entry.tracks"
         :scenes="entry.scenes"
@@ -22,7 +30,7 @@
         @move-song="(songId, direction) => emit('move-song', songId, direction)"
       />
 
-      <div v-if="!liveSongs.length" class="text-sm text-muted-dim px-2 py-4">
+      <div v-if="!liveSongs.length" class="text-sm text-muted-dim px-2 py-4 shrink-0">
         No songs yet — create one from the Song menu in Roll view
       </div>
     </div>

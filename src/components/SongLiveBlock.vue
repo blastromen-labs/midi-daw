@@ -1,5 +1,6 @@
 <template>
-  <section class="song-live-block flex flex-col border border-line/50 rounded-md overflow-hidden bg-surface/20">
+  <!-- shrink-0: never compress a tall song — LiveView scrolls instead. -->
+  <section class="song-live-block flex flex-col shrink-0 border border-line/50 rounded-md overflow-hidden bg-surface/20">
     <!-- Song header — name, tempo hint, reorder within the Live set. -->
     <div class="flex items-center gap-2 px-2 py-1.5 border-b border-line/50 bg-surface/40">
       <span

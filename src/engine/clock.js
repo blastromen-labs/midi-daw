@@ -62,6 +62,21 @@ export class TransportClock {
     return this._startAudioTime + this.beatToSec(absoluteBeat - this._startBeat);
   }
 
+  /**
+   * Change tempo without jumping the playhead. Re-anchors the audio↔beat
+   * mapping at the current absolute beat so elapsed seconds aren't
+   * reinterpreted under the new BPM (which would scrub the transport).
+   */
+  setBpmPreservingPosition(bpm) {
+    const next = Math.max(40, Math.min(300, Number(bpm) || this.bpm));
+    if (this.playing && this._ctx) {
+      const absBeat = this.getAbsoluteBeat();
+      this._startBeat = absBeat;
+      this._startAudioTime = this._ctx.currentTime;
+    }
+    this.bpm = next;
+  }
+
   _wrapBeat(beat) {
     return wrapLoopBeat(beat, this.loopStartBeat, this.loopEndBeat);
   }

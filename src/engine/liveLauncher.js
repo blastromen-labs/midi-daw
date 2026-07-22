@@ -466,7 +466,7 @@ function cutNonSceneOnTrack(track, scenePatternIds, stopBeat) {
  * @param {{ track: object, pattern: object }[]} refs
  * @param {number} currentAbsBeat
  * @param {object[]} [allTracks] every project track (needed to silence non-scene clips)
- * @returns {{ queued: number, skippedPlaying: number }}
+ * @returns {{ queued: number, skippedPlaying: number, launchBeat: number|null }}
  */
 export function queueSceneLaunch(refs, currentAbsBeat, allTracks = []) {
   const launchable = [];
@@ -476,7 +476,7 @@ export function queueSceneLaunch(refs, currentAbsBeat, allTracks = []) {
     if (mode === LIVE_LAUNCH_MODES.HOLD) continue;
     launchable.push({ track, pattern, mode });
   }
-  if (!launchable.length) return { queued: 0, skippedPlaying: 0 };
+  if (!launchable.length) return { queued: 0, skippedPlaying: 0, launchBeat: null };
 
   const scenePatternIds = new Set(launchable.map(({ pattern }) => pattern.id));
   const tracks = allTracks.length ? allTracks : [...new Set(launchable.map(({ track }) => track))];
@@ -502,7 +502,7 @@ export function queueSceneLaunch(refs, currentAbsBeat, allTracks = []) {
     queuePendingLaunch(track, pattern.id, launchBeat, cutOthers, { restartFromStart: true });
     queued += 1;
   }
-  return { queued, skippedPlaying: 0 };
+  return { queued, skippedPlaying: 0, launchBeat };
 }
 
 /**

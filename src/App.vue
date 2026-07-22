@@ -4,7 +4,7 @@
       <AppToolbar
         :view-mode="viewMode"
         :playing="playing"
-        :bpm="project.bpm"
+        :bpm="mixBpm"
         :sync-mode="syncSettings.syncMode"
         :clock-input-id="syncSettings.clockInputId"
         :send-midi-clock="syncSettings.sendMidiClock"
@@ -63,15 +63,14 @@
           @marker-change="project.markerBeat = $event"
           @loop-region-change="setLoopRegion"
           @bpm-change="setBpm"
-          @hold-pattern-down="onHoldPatternDown"
-          @hold-pattern-up="onHoldPatternUp"
+          @hold-pattern-down="onRollHoldPatternDown"
+          @hold-pattern-up="onRollHoldPatternUp"
           @preview-pattern="onPreviewPattern"
         />
         <LiveView
           v-show="viewMode === 'live'"
-          :tracks="project.tracks"
-          :scenes="project.scenes"
-          :active-scene-id="activeSceneId"
+          :live-songs="liveSongs"
+          :active-scene-by-song="activeSceneBySong"
           :playing="playing"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
@@ -80,6 +79,7 @@
           @launch-scene="launchScene"
           @add-scene="startCreateScene"
           @edit-scene="startEditScene"
+          @move-song="onMoveLiveSong"
         />
       </div>
     </div>
@@ -88,8 +88,8 @@
       v-if="sceneEditorOpen"
       :mode="sceneEditorMode"
       :initial="sceneEditorInitial"
-      :tracks="project.tracks"
-      :scenes="project.scenes"
+      :tracks="sceneEditorTracks"
+      :scenes="sceneEditorScenes"
       @save="commitSceneEditor"
       @cancel="closeSceneEditor"
       @delete="confirmDeleteScene"
@@ -117,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import AppToolbar from './components/AppToolbar.vue';
 import PianoRoll from './components/PianoRoll.vue';
 import LiveView from './components/LiveView.vue';
@@ -161,6 +161,11 @@ import {
   downloadSongFile,
   parseSongFileJson,
 } from './engine/songStorage.js';
+import {
+  normalizeLiveSongOrder,
+  moveLiveSong,
+  snapshotLiveRuntime,
+} from './engine/liveSet.js';
 import { loadGlobalSettings, persistGlobalSettings } from './engine/globalSettings.js';
 import {
   initMidi,
@@ -193,17 +198,27 @@ import {
 const project = reactive(createProject());
 const songs = ref([]);
 const currentSongId = ref(null);
+/** Ordered song ids shown as stacked blocks in Live view. */
+const liveSongOrder = ref([]);
+/**
+ * Background song projects kept in memory for Live mixing (not the edit-focus
+ * song). Keyed by song id; includes liveLaunches so clips keep sounding when
+ * the user switches which song they're editing.
+ */
+const songRuntimes = reactive({});
 const playing = ref(false);
+/** Transport / toolbar tempo — may differ from the edit-focus song's written BPM during a Live scene take-over. */
+const mixBpm = ref(120);
 // 'roll': piano roll editor (default). 'live': session-style launch grid —
 // toggled via Tab or the View control in either view's toolbar.
 const viewMode = ref('roll');
 const sceneEditorOpen = ref(false);
 const sceneEditorMode = ref('create');
 const sceneEditorId = ref(null);
+const sceneEditorSongId = ref(null);
 const sceneEditorInitial = ref({ name: '' });
-// Which scene button last claimed Live playback. Shared patterns must not light
-// up every scene that contains them — only this id shows as playing/queued.
-const activeSceneId = ref(null);
+// Per-song: which scene button last claimed Live playback in that song.
+const activeSceneBySong = reactive({});
 // Sync/clock routing is global — not per-song (scheduler still reads project.*).
 const syncSettings = reactive({
   syncMode: 'internal',
@@ -225,22 +240,43 @@ let outputsUnsub = null;
 let inputsUnsub = null;
 let clockInputUnsub = null; // subscription to the selected external MIDI clock input
 let saveTimer = null;
+/** Deferred scene tempo: applied when absBeat reaches atBeat (same boundary as the scene). */
+let pendingSceneTempo = null;
 
-function clearDrumSamples() {
-  for (const track of project.tracks) {
+function getProjectForSong(songId) {
+  if (!songId || songId === currentSongId.value) return project;
+  return songRuntimes[songId] ?? null;
+}
+
+/** Every track across the Live-set order — used by the scheduler for multi-song mixes. */
+function getAllLiveTracks() {
+  const tracks = [];
+  for (const id of liveSongOrder.value) {
+    const proj = getProjectForSong(id);
+    if (proj?.tracks?.length) tracks.push(...proj.tracks);
+  }
+  return tracks.length ? tracks : project.tracks;
+}
+
+function clearDrumSamplesForTracks(tracks) {
+  for (const track of tracks ?? []) {
     if (track.kind === 'drum') {
-      for (const pad of track.pads) clearSample(pad.id);
+      for (const pad of track.pads ?? []) clearSample(pad.id);
     }
   }
+}
+
+function clearDrumSamples() {
+  clearDrumSamplesForTracks(project.tracks);
 }
 
 // Built-in samples in public/drums/ are engine-only buffers — reload them
 // whenever project state is swapped in (song switch, load) since the cache
 // was just cleared. Skips pads the user replaced with a custom fileName.
-async function hydrateDefaultDrumSamples() {
-  for (const track of project.tracks) {
+async function hydrateDefaultDrumSamplesForTracks(tracks) {
+  for (const track of tracks ?? []) {
     if (track.kind !== 'drum') continue;
-    for (const pad of track.pads) {
+    for (const pad of track.pads ?? []) {
       const defaultFile = defaultDrumSampleFile(pad.name);
       if (!defaultFile) continue;
       if (pad.fileName && pad.fileName !== defaultFile) continue;
@@ -253,6 +289,59 @@ async function hydrateDefaultDrumSamples() {
       }
     }
   }
+}
+
+async function hydrateDefaultDrumSamples() {
+  await hydrateDefaultDrumSamplesForTracks(project.tracks);
+}
+
+function ensureSongRuntime(songId) {
+  if (!songId || songId === currentSongId.value) return project;
+  if (songRuntimes[songId]) return songRuntimes[songId];
+  const song = songs.value.find((s) => s.id === songId);
+  if (!song) return null;
+  const loaded = deserializeProject(song.project);
+  ensureDefaultDrumPads(loaded.tracks);
+  normalizeProjectNotes(loaded.tracks);
+  loaded.syncMode = syncSettings.syncMode;
+  loaded.clockInputId = syncSettings.clockInputId;
+  loaded.sendMidiClock = syncSettings.sendMidiClock;
+  loaded.clockOutputId = syncSettings.clockOutputId;
+  songRuntimes[songId] = loaded;
+  syncUidCounter({ project, songRuntimes, songs: songs.value });
+  void hydrateDefaultDrumSamplesForTracks(loaded.tracks);
+  return loaded;
+}
+
+function ensureAllLiveRuntimes() {
+  liveSongOrder.value = normalizeLiveSongOrder(liveSongOrder.value, songs.value);
+  for (const id of liveSongOrder.value) ensureSongRuntime(id);
+}
+
+const liveSongs = computed(() =>
+  liveSongOrder.value.map((id) => {
+    const meta = songs.value.find((s) => s.id === id);
+    const proj = getProjectForSong(id);
+    return {
+      id,
+      name: meta?.name ?? 'Untitled',
+      color: meta?.color ?? '#6699ff',
+      bpm: proj?.bpm ?? meta?.project?.bpm ?? 120,
+      tracks: proj?.tracks ?? [],
+      scenes: proj?.scenes ?? [],
+    };
+  })
+);
+
+const sceneEditorTracks = computed(
+  () => getProjectForSong(sceneEditorSongId.value)?.tracks ?? project.tracks
+);
+const sceneEditorScenes = computed(
+  () => getProjectForSong(sceneEditorSongId.value)?.scenes ?? project.scenes
+);
+
+function clearActiveScenes() {
+  for (const key of Object.keys(activeSceneBySong)) delete activeSceneBySong[key];
 }
 
 function getTrackIndex(tracks, trackId) {
@@ -289,9 +378,16 @@ function applyGlobalSettingsToProject() {
 
 function engageLivePlayback() {
   project.sessionView = 'live';
+  for (const id of liveSongOrder.value) {
+    if (id === currentSongId.value) continue;
+    const runtime = songRuntimes[id];
+    if (runtime) runtime.sessionView = 'live';
+  }
+  ensureAllLiveRuntimes();
+  playback.setLiveTracksGetter(getAllLiveTracks);
 }
 
-function replaceProject(snapshot, { preserveSelection = false } = {}) {
+function adoptProjectData(loaded, { preserveSelection = false, clearSamples = true, doStop = true } = {}) {
   let trackIndex = 0;
   let patternIndex = 0;
   if (preserveSelection && activeTrackId.value) {
@@ -299,10 +395,10 @@ function replaceProject(snapshot, { preserveSelection = false } = {}) {
     patternIndex = getPatternIndex(project.tracks[trackIndex]);
   }
 
-  clearDrumSamples();
-  stopPlayback();
-  const loaded = deserializeProject(snapshot);
-  syncUidCounter(loaded);
+  if (clearSamples) clearDrumSamples();
+  if (doStop) stopPlayback();
+
+  syncUidCounter({ loaded, project, songRuntimes, songs: songs.value });
   for (const key of Object.keys(project)) delete project[key];
   Object.assign(project, loaded);
   ensureDefaultDrumPads(project.tracks);
@@ -318,34 +414,50 @@ function replaceProject(snapshot, { preserveSelection = false } = {}) {
   applyGlobalSettingsToProject();
   syncClockLoopFromTracks();
   playback.setProject(project);
-  engageSyncMode();
+  playback.setLiveTracksGetter(getAllLiveTracks);
+  if (doStop) engageSyncMode();
   void hydrateDefaultDrumSamples();
 }
 
+function replaceProject(snapshot, { preserveSelection = false, clearSamples = true, doStop = true } = {}) {
+  const loaded = deserializeProject(snapshot);
+  adoptProjectData(loaded, { preserveSelection, clearSamples, doStop });
+}
+
 function persistSongs() {
-  persistSongLibrary(songs.value, currentSongId.value);
+  persistSongLibrary(songs.value, currentSongId.value, liveSongOrder.value);
+}
+
+function saveSongById(songId) {
+  if (!songId) return;
+  const song = songs.value.find((s) => s.id === songId);
+  if (!song) return;
+  const proj = getProjectForSong(songId);
+  if (!proj) return;
+  song.project = serializeProject(proj);
+  song.updatedAt = new Date().toISOString();
 }
 
 function saveCurrentSong() {
-  if (!currentSongId.value) return;
-  const song = songs.value.find((s) => s.id === currentSongId.value);
-  if (!song) return;
-  song.project = serializeProject(project);
-  song.updatedAt = new Date().toISOString();
-  persistSongs();
+  saveSongById(currentSongId.value);
 }
 
 function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveCurrentSong, 400);
+  saveTimer = setTimeout(() => {
+    saveCurrentSong();
+    for (const id of Object.keys(songRuntimes)) saveSongById(id);
+    persistSongs();
+  }, 400);
 }
 
 function initSongLibrary() {
-  const { songs: stored, currentSongId: storedId } = loadSongLibrary();
+  const { songs: stored, currentSongId: storedId, liveSongOrder: storedOrder } = loadSongLibrary();
   if (stored.length === 0) {
     const entry = createSongEntry('Untitled', createProject());
     songs.value = [entry];
     currentSongId.value = entry.id;
+    liveSongOrder.value = [entry.id];
     replaceProject(entry.project);
     persistSongs();
     return;
@@ -353,17 +465,51 @@ function initSongLibrary() {
   songs.value = stored;
   const id = stored.some((s) => s.id === storedId) ? storedId : stored[0].id;
   currentSongId.value = id;
+  liveSongOrder.value = normalizeLiveSongOrder(storedOrder, stored);
   const song = stored.find((s) => s.id === id);
   replaceProject(song.project);
+  ensureAllLiveRuntimes();
 }
 
 function selectSong(songId) {
   if (songId === currentSongId.value) return;
+
+  // Keep sounding Live clips when switching edit focus mid-mix — park the
+  // outgoing song's runtime (with liveLaunches) instead of tearing the clock down.
+  const keepLiveMix =
+    playing.value && (viewMode.value === 'live' || project.sessionView === 'live');
+
+  if (keepLiveMix) {
+    songRuntimes[currentSongId.value] = snapshotLiveRuntime(project);
+  } else {
+    delete songRuntimes[currentSongId.value];
+  }
+
   saveCurrentSong();
   currentSongId.value = songId;
-  const song = songs.value.find((s) => s.id === songId);
-  if (song) replaceProject(song.project, { preserveSelection: true });
+
+  const runtime = songRuntimes[songId];
+  if (runtime) {
+    delete songRuntimes[songId];
+    adoptProjectData(runtime, {
+      preserveSelection: true,
+      clearSamples: !keepLiveMix,
+      doStop: !keepLiveMix,
+    });
+  } else {
+    const song = songs.value.find((s) => s.id === songId);
+    if (song) {
+      replaceProject(song.project, {
+        preserveSelection: true,
+        clearSamples: !keepLiveMix,
+        doStop: !keepLiveMix,
+      });
+    }
+  }
+
+  if (keepLiveMix) project.sessionView = 'live';
   persistSongs();
+  ensureAllLiveRuntimes();
 }
 
 function createSong(name) {
@@ -371,8 +517,15 @@ function createSong(name) {
   const usedColors = songs.value.map((s) => s.color).filter(Boolean);
   const entry = createSongEntry(name, createProject(), randomTrackColor(usedColors));
   songs.value.push(entry);
+  liveSongOrder.value = normalizeLiveSongOrder([...liveSongOrder.value, entry.id], songs.value);
   currentSongId.value = entry.id;
   replaceProject(entry.project, { preserveSelection: true });
+  persistSongs();
+  ensureAllLiveRuntimes();
+}
+
+function onMoveLiveSong(songId, direction) {
+  liveSongOrder.value = moveLiveSong(liveSongOrder.value, songId, direction);
   persistSongs();
 }
 
@@ -385,6 +538,10 @@ function updateSong(songId, changes) {
     const bpm = Math.max(40, Math.min(300, Math.round(Number(changes.bpm))));
     if (Number.isFinite(bpm)) {
       song.project = { ...song.project, bpm };
+      const runtime = getProjectForSong(songId);
+      if (runtime) runtime.bpm = bpm;
+      // Transport tempo only follows the edit-focus song — other songs show
+      // their written BPM as a Live hint while the mix stays on the master clock.
       if (songId === currentSongId.value) setBpm(bpm);
     }
   }
@@ -404,14 +561,34 @@ function deleteSong(songId) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
+
+  const runtime = songRuntimes[songId];
+  if (runtime) {
+    clearDrumSamplesForTracks(runtime.tracks);
+    delete songRuntimes[songId];
+  } else if (wasActive) {
+    clearDrumSamples();
+  }
+  delete activeSceneBySong[songId];
   songs.value.splice(idx, 1);
+  liveSongOrder.value = normalizeLiveSongOrder(
+    liveSongOrder.value.filter((id) => id !== songId),
+    songs.value
+  );
 
   if (wasActive) {
     const next = songs.value[Math.min(idx, songs.value.length - 1)];
     currentSongId.value = next.id;
-    replaceProject(next.project, { preserveSelection: true });
+    const nextRuntime = songRuntimes[next.id];
+    if (nextRuntime) {
+      delete songRuntimes[next.id];
+      adoptProjectData(nextRuntime, { preserveSelection: true });
+    } else {
+      replaceProject(next.project, { preserveSelection: true });
+    }
   }
   persistSongs();
+  ensureAllLiveRuntimes();
 }
 
 function applySyncSettingsFromProject(snapshot) {
@@ -450,9 +627,11 @@ function loadSongFromFile(text) {
   const usedColors = songs.value.map((s) => s.color).filter(Boolean);
   const entry = createSongEntry(parsed.name, parsed.project, randomTrackColor(usedColors));
   songs.value.push(entry);
+  liveSongOrder.value = normalizeLiveSongOrder([...liveSongOrder.value, entry.id], songs.value);
   currentSongId.value = entry.id;
   replaceProject(entry.project, { preserveSelection: true });
   persistSongs();
+  ensureAllLiveRuntimes();
 }
 
 function onLoadSongFileError(message) {
@@ -463,7 +642,8 @@ function onLoadSongFileError(message) {
 // so shorter patterns can repeat independently inside the scheduler.
 function syncClockLoopFromTracks() {
   const useLiveLaunch = project.sessionView === 'live';
-  const patternEndBeat = projectLoopEndBeat(project.tracks, {
+  const tracks = useLiveLaunch ? getAllLiveTracks() : project.tracks;
+  const patternEndBeat = projectLoopEndBeat(tracks, {
     forPlayback: playing.value,
     useLiveLaunch,
     soloPreview: useLiveLaunch ? null : project.soloPreview,
@@ -488,7 +668,7 @@ function bindPlayingListener(clock) {
     if (type === 'start') playing.value = true;
     if (type === 'stop') {
       playing.value = false;
-      activeSceneId.value = null;
+      clearActiveScenes();
     }
   });
 }
@@ -546,12 +726,18 @@ onMounted(async () => {
   }
 
   initSongLibrary();
+  playback.setLiveTracksGetter(getAllLiveTracks);
+  playback.setLiveBoundaryHandler(onLiveBoundary);
 });
 
 onUnmounted(() => {
   window.removeEventListener('dragover', onWindowDragOver);
   if (saveTimer) clearTimeout(saveTimer);
   saveCurrentSong();
+  for (const id of Object.keys(songRuntimes)) saveSongById(id);
+  persistSongs();
+  playback.setLiveTracksGetter(null);
+  playback.setLiveBoundaryHandler(null);
   playback.stop();
   if (playingUnsub) playingUnsub();
   if (outputsUnsub) outputsUnsub();
@@ -563,9 +749,17 @@ watch(syncSettings, applyGlobalSettingsToProject, { deep: true, immediate: true 
 watch(globalSettings, () => persistGlobalSettings(globalSettings), { deep: true });
 watch(() => [syncSettings.syncMode, syncSettings.clockInputId], engageSyncMode);
 
+watch(viewMode, (mode) => {
+  if (mode === 'live') {
+    ensureAllLiveRuntimes();
+    playback.setLiveTracksGetter(getAllLiveTracks);
+  }
+});
+
 watch(
   () => project.bpm,
   (bpm) => {
+    mixBpm.value = bpm;
     // External mode's tempo is detected from the incoming clock, not user-set.
     if (project.syncMode === 'internal') transport.bpm = bpm;
   },
@@ -579,15 +773,21 @@ watch(
   // wouldn't resize the transport's loop/wrap boundary while already playing.
   // In piano-roll mode, playback follows activePatternId instead, so loop
   // length must follow that same source of truth.
+  // Live mode spans every song in the set so a longer clip in a background
+  // song still expands the transport wrap.
   () => [
-    projectLoopEndBeat(project.tracks, {
-      forPlayback: playing.value,
-      useLiveLaunch: project.sessionView === 'live',
-      soloPreview: project.sessionView === 'live' ? null : project.soloPreview,
-    }),
+    projectLoopEndBeat(
+      project.sessionView === 'live' ? getAllLiveTracks() : project.tracks,
+      {
+        forPlayback: playing.value,
+        useLiveLaunch: project.sessionView === 'live',
+        soloPreview: project.sessionView === 'live' ? null : project.soloPreview,
+      }
+    ),
     playing.value,
     project.sessionView,
     project.soloPreview,
+    liveSongOrder.value.join(','),
   ],
   () => syncClockLoopFromTracks(),
   { immediate: true }
@@ -595,6 +795,12 @@ watch(
 
 watch(
   project,
+  () => scheduleSave(),
+  { deep: true }
+);
+
+watch(
+  songRuntimes,
   () => scheduleSave(),
   { deep: true }
 );
@@ -611,19 +817,22 @@ function togglePlay(fromBeat) {
   }
 }
 
-function startPlayback(fromBeat, { keepSoloPreview = false } = {}) {
+function startPlayback(fromBeat, { keepSoloPreview = false, forceLive = false } = {}) {
   if (project.syncMode === 'external') return;
   if (!keepSoloPreview) project.soloPreview = null;
-  if (viewMode.value === 'live') {
+  if (viewMode.value === 'live' || forceLive) {
     engageLivePlayback();
   } else {
     // Roll-view transport play must not inherit a stale sessionView === 'live'
     // from an earlier Live session or hold preview — that would re-arm Live
     // launch semantics and can sound Hold-mode tracks without a hold press.
     project.sessionView = 'roll';
+    playback.setLiveTracksGetter(null);
   }
   playback.setProject(project);
-  transport.bpm = project.bpm;
+  // Prefer mixBpm so a Live scene take-over from another song keeps its tempo
+  // when startPlayback runs immediately after applyMixTempo.
+  transport.bpm = mixBpm.value;
   syncClockLoopFromTracks();
   playback.start(fromBeat);
   playing.value = true;
@@ -633,18 +842,59 @@ function stopPlayback() {
   if (project.syncMode === 'external') return; // Stop is driven by the incoming clock
   playback.stop();
   playing.value = false;
-  activeSceneId.value = null;
+  clearActiveScenes();
+  clearPendingSceneTempo();
   project.soloPreview = null;
   project.sessionView = 'roll';
+  for (const id of Object.keys(songRuntimes)) {
+    if (songRuntimes[id]) songRuntimes[id].sessionView = 'roll';
+  }
 }
 
 function setBpm(bpm) {
-  project.bpm = Math.max(40, Math.min(300, bpm));
-  if (project.syncMode === 'internal') transport.bpm = project.bpm;
+  const next = Math.max(40, Math.min(300, bpm));
+  project.bpm = next;
+  mixBpm.value = next;
+  if (project.syncMode === 'internal') transport.bpm = next;
 }
 
-function findTrack(trackId) {
-  return project.tracks.find((t) => t.id === trackId);
+/** Snap the shared clock to a song's tempo without rewriting another song's stored BPM. */
+function applyMixTempo(bpm, { songId = null } = {}) {
+  const next = Math.max(40, Math.min(300, Math.round(Number(bpm)) || 120));
+  mixBpm.value = next;
+  if (project.syncMode === 'internal') {
+    // Re-anchor while playing so the playhead doesn't scrub when BPM changes
+    // at a scene boundary mid-transport.
+    if (transport.playing) transport.setBpmPreservingPosition(next);
+    else transport.bpm = next;
+  }
+  if (songId == null || songId === currentSongId.value) {
+    project.bpm = next;
+  }
+}
+
+function queueSceneTempo(bpm, songId, atBeat) {
+  pendingSceneTempo = {
+    bpm: Math.max(40, Math.min(300, Math.round(Number(bpm)) || 120)),
+    songId,
+    atBeat,
+  };
+}
+
+function clearPendingSceneTempo() {
+  pendingSceneTempo = null;
+}
+
+/** Scheduler Live-boundary hook — apply deferred scene tempo with the clips. */
+function onLiveBoundary(absBeat) {
+  const pending = pendingSceneTempo;
+  if (!pending || absBeat + 1e-6 < pending.atBeat) return;
+  pendingSceneTempo = null;
+  applyMixTempo(pending.bpm, { songId: pending.songId });
+}
+
+function findTrack(trackId, songId = currentSongId.value) {
+  return getProjectForSong(songId)?.tracks?.find((t) => t.id === trackId) ?? null;
 }
 
 function updateNotes(trackId, patternId, notes) {
@@ -752,19 +1002,21 @@ function deletePattern(trackId, patternId) {
 //   - playing transport, One Shot: queue a single playthrough, then auto-stop.
 // Linked patterns (edit pattern → Linked patterns) receive the same start/stop
 // intent, including clips hidden from Live. See engine/linkedLauncher.js.
-function queueOrLaunchPattern(trackId, patternId) {
-  const track = findTrack(trackId);
+// songId scopes the launch so clips from another song can join the mix.
+function queueOrLaunchPattern(songId, trackId, patternId) {
+  const songProject = getProjectForSong(songId) ?? ensureSongRuntime(songId);
+  const track = songProject?.tracks?.find((t) => t.id === trackId);
   const pattern = track?.patterns?.find((p) => p.id === patternId);
-  if (!track || !pattern) return;
+  if (!track || !pattern || !songProject) return;
 
-  // Manual clip launch leaves scene mode — only scene buttons claim a scene.
-  activeSceneId.value = null;
+  // Manual clip launch leaves scene mode for that song only.
+  delete activeSceneBySong[songId];
   engageLivePlayback();
 
   const intent = resolveClipIntent(track, pattern, playing.value);
-  runLinkedClipIntent(project.tracks, patternId, intent, {
+  runLinkedClipIntent(songProject.tracks, patternId, intent, {
     transportPlaying: playing.value,
-    startPlayback: () => startPlayback(),
+    startPlayback: () => startPlayback(undefined, { forceLive: true }),
     getAbsBeat: () => getActiveClock().getAbsoluteBeat(),
   });
 }
@@ -772,34 +1024,49 @@ function queueOrLaunchPattern(trackId, patternId) {
 // Remember which pattern started a Hold gesture so release can fan out to
 // its link group (hold-up events only carry the track id today).
 let activeHoldPatternId = null;
+let activeHoldSongId = null;
 
-function onHoldPatternDown(trackId, patternId) {
-  const track = findTrack(trackId);
+function onHoldPatternDown(songId, trackId, patternId) {
+  const songProject = getProjectForSong(songId) ?? ensureSongRuntime(songId);
+  const track = songProject?.tracks?.find((t) => t.id === trackId);
   const pattern = track?.patterns?.find((p) => p.id === patternId);
-  if (!track || patternLaunchMode(pattern) !== LIVE_LAUNCH_MODES.HOLD) return;
+  if (!track || !songProject || patternLaunchMode(pattern) !== LIVE_LAUNCH_MODES.HOLD) return;
 
   project.soloPreview = null;
   engageLivePlayback();
   if (!playing.value) {
-    startPlayback();
+    startPlayback(undefined, { forceLive: true });
   }
   // Read abs beat only after the transport is running — otherwise
   // getAbsoluteBeat() returns a stale wrapped position and the unmute
   // boundary may never arrive (silence forever while the playhead moves).
   activeHoldPatternId = patternId;
-  holdLinkedPatternsDown(project.tracks, patternId, getActiveClock().getAbsoluteBeat());
+  activeHoldSongId = songId;
+  holdLinkedPatternsDown(songProject.tracks, patternId, getActiveClock().getAbsoluteBeat());
 }
 
-function onHoldPatternUp(trackId) {
+function onHoldPatternUp(songId, trackId) {
   const patternId = activeHoldPatternId;
+  const holdSongId = activeHoldSongId ?? songId;
   activeHoldPatternId = null;
-  if (patternId) {
-    holdLinkedPatternsUp(project.tracks, patternId);
+  activeHoldSongId = null;
+  const songProject = getProjectForSong(holdSongId) ?? ensureSongRuntime(holdSongId);
+  if (patternId && songProject) {
+    holdLinkedPatternsUp(songProject.tracks, patternId);
     return;
   }
-  const track = findTrack(trackId);
+  const track = songProject?.tracks?.find((t) => t.id === trackId) ?? findTrack(trackId, holdSongId);
   if (!track) return;
   holdPatternUp(track);
+}
+
+/** Piano roll Hold gestures are always for the edit-focus song. */
+function onRollHoldPatternDown(trackId, patternId) {
+  onHoldPatternDown(currentSongId.value, trackId, patternId);
+}
+
+function onRollHoldPatternUp(trackId) {
+  onHoldPatternUp(currentSongId.value, trackId);
 }
 
 // Roll-view ▶ on Loop / One Shot patterns — solo preview for one pattern
@@ -830,18 +1097,20 @@ function onPreviewPattern(trackId, patternId) {
   }
 }
 
-function reorderPatterns(trackId, fromIndex, toIndex) {
-  const track = findTrack(trackId);
+function reorderPatterns(songId, trackId, fromIndex, toIndex) {
+  const track = findTrack(trackId, songId);
   if (track) reorderTrackPatterns(track, fromIndex, toIndex);
 }
 
-function ensureScenes() {
-  if (!Array.isArray(project.scenes)) project.scenes = [];
-  return project.scenes;
+function ensureScenes(songId = currentSongId.value) {
+  const songProject = getProjectForSong(songId) ?? ensureSongRuntime(songId) ?? project;
+  if (!Array.isArray(songProject.scenes)) songProject.scenes = [];
+  return songProject.scenes;
 }
 
-function scenePatternIds(sceneId) {
-  return getScenePatternRefs(project.tracks, sceneId).map(({ pattern }) => pattern.id);
+function scenePatternIds(songId, sceneId) {
+  const tracks = getProjectForSong(songId)?.tracks ?? project.tracks;
+  return getScenePatternRefs(tracks, sceneId).map(({ pattern }) => pattern.id);
 }
 
 /**
@@ -849,10 +1118,11 @@ function scenePatternIds(sceneId) {
  * Patterns in the list gain this sceneId; patterns that leave lose only this sceneId
  * (membership in other scenes is preserved).
  */
-function applyScenePatternMembership(sceneId, patternIds) {
+function applyScenePatternMembership(songId, sceneId, patternIds) {
   if (!sceneId) return;
+  const tracks = getProjectForSong(songId)?.tracks ?? project.tracks;
   const wanted = new Set(patternIds ?? []);
-  for (const track of project.tracks) {
+  for (const track of tracks) {
     for (const pattern of track.patterns ?? []) {
       if (wanted.has(pattern.id)) {
         addPatternToScene(pattern, sceneId);
@@ -863,26 +1133,30 @@ function applyScenePatternMembership(sceneId, patternIds) {
   }
 }
 
-function startCreateScene() {
+function startCreateScene(songId = currentSongId.value) {
+  const sid = songId ?? currentSongId.value;
+  sceneEditorSongId.value = sid;
   sceneEditorMode.value = 'create';
   sceneEditorId.value = null;
   sceneEditorInitial.value = {
-    name: defaultSceneName(ensureScenes()),
+    name: defaultSceneName(ensureScenes(sid)),
     sceneId: null,
     patternIds: [],
   };
   sceneEditorOpen.value = true;
 }
 
-function startEditScene(sceneId) {
-  const scene = ensureScenes().find((s) => s.id === sceneId);
+function startEditScene(songId, sceneId) {
+  const sid = songId ?? currentSongId.value;
+  const scene = ensureScenes(sid).find((s) => s.id === sceneId);
   if (!scene) return;
+  sceneEditorSongId.value = sid;
   sceneEditorMode.value = 'edit';
   sceneEditorId.value = scene.id;
   sceneEditorInitial.value = {
     name: scene.name,
     sceneId: scene.id,
-    patternIds: scenePatternIds(scene.id),
+    patternIds: scenePatternIds(sid, scene.id),
   };
   sceneEditorOpen.value = true;
 }
@@ -890,61 +1164,84 @@ function startEditScene(sceneId) {
 function closeSceneEditor() {
   sceneEditorOpen.value = false;
   sceneEditorId.value = null;
+  sceneEditorSongId.value = null;
 }
 
 function commitSceneEditor(values) {
   const name = values?.name?.trim();
   if (!name) return;
-  const scenes = ensureScenes();
+  const sid = sceneEditorSongId.value ?? currentSongId.value;
+  const scenes = ensureScenes(sid);
   const patternIds = Array.isArray(values.patternIds) ? values.patternIds : [];
   if (sceneEditorMode.value === 'create') {
     const scene = createScene(name);
     scenes.push(scene);
-    applyScenePatternMembership(scene.id, patternIds);
+    applyScenePatternMembership(sid, scene.id, patternIds);
   } else if (sceneEditorId.value) {
     const scene = scenes.find((s) => s.id === sceneEditorId.value);
     if (scene) scene.name = name;
-    applyScenePatternMembership(sceneEditorId.value, patternIds);
+    applyScenePatternMembership(sid, sceneEditorId.value, patternIds);
   }
   closeSceneEditor();
 }
 
 function confirmDeleteScene() {
   const sceneId = sceneEditorId.value;
+  const sid = sceneEditorSongId.value ?? currentSongId.value;
   if (!sceneId) return;
-  const scenes = ensureScenes();
+  const scenes = ensureScenes(sid);
   const idx = scenes.findIndex((s) => s.id === sceneId);
   if (idx === -1) return;
   scenes.splice(idx, 1);
-  clearSceneFromPatterns(project.tracks, sceneId);
-  if (activeSceneId.value === sceneId) activeSceneId.value = null;
+  const tracks = getProjectForSong(sid)?.tracks ?? project.tracks;
+  clearSceneFromPatterns(tracks, sceneId);
+  if (activeSceneBySong[sid] === sceneId) delete activeSceneBySong[sid];
   closeSceneEditor();
 }
 
-// Scene button — launch every assigned Loop / One Shot on one shared quantize
-// boundary, and cut anything else that is playing/queued (exclusive scene).
-// Claims activeSceneId so shared patterns don't light up other scenes in the UI.
-function launchScene(sceneId) {
-  const refs = getScenePatternRefs(project.tracks, sceneId).filter(
+// Scene button — exclusive take-over across the whole Live set: cut every
+// sounding/queued clip in every song, launch this scene's patterns, and snap
+// the transport tempo to the scene's song at the same boundary (not on click).
+// Manual clip launches still layer across songs; only scenes claim the mix.
+function launchScene(songId, sceneId) {
+  const songProject = getProjectForSong(songId) ?? ensureSongRuntime(songId);
+  if (!songProject) return;
+  const refs = getScenePatternRefs(songProject.tracks, sceneId).filter(
     ({ pattern }) => patternLaunchMode(pattern) !== LIVE_LAUNCH_MODES.HOLD
   );
   if (!refs.length) return;
 
   engageLivePlayback();
-  activeSceneId.value = sceneId;
+  clearActiveScenes();
+  activeSceneBySong[songId] = sceneId;
+
+  // Cut non-scene clips on every Live-set track so a scene from song B stops
+  // whatever was still running from song A (and vice versa).
+  const allTracks = getAllLiveTracks();
+  const sceneBpm = songProject.bpm ?? 120;
 
   if (!playing.value) {
+    // Stopped: scene arms immediately, so tempo can follow right away.
+    clearPendingSceneTempo();
+    applyMixTempo(sceneBpm, { songId });
     // Start at beat 0 with startBeat stamped so every clip begins at pattern
     // beat 0, and later switches can wait on each clip's real loop end.
-    const { oneShots } = armSceneLoops(refs, project.tracks, { originBeat: 0 });
-    startPlayback(0);
+    const { oneShots } = armSceneLoops(refs, allTracks, { originBeat: 0 });
+    startPlayback(0, { forceLive: true });
     if (oneShots.length) {
-      queueSceneLaunch(oneShots, getActiveClock().getAbsoluteBeat(), project.tracks);
+      queueSceneLaunch(oneShots, getActiveClock().getAbsoluteBeat(), allTracks);
     }
     return;
   }
 
-  queueSceneLaunch(refs, getActiveClock().getAbsoluteBeat(), project.tracks);
+  const { launchBeat } = queueSceneLaunch(
+    refs,
+    getActiveClock().getAbsoluteBeat(),
+    allTracks
+  );
+  // Keep the current mix tempo until the shared scene boundary — then snap.
+  if (launchBeat != null) queueSceneTempo(sceneBpm, songId, launchBeat);
+  else applyMixTempo(sceneBpm, { songId });
 }
 
 function updateTrack(trackId, changes) {

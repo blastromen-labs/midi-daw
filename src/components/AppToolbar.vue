@@ -25,21 +25,24 @@
         @view-mode-change="(v) => emit('view-mode-change', v)"
       />
 
-      <div class="daw-toolbar-divider"></div>
+      <!-- Song picker is roll-only — Live shows every song as its own block. -->
+      <template v-if="viewMode !== 'live'">
+        <div class="daw-toolbar-divider"></div>
 
-      <SongMenu
-        :songs="songs"
-        :active-song-id="activeSongId"
-        :bpm="bpm"
-        :compact-navbar="compactNavbar"
-        @select="(id) => emit('select-song', id)"
-        @update="(id, changes) => emit('update-song', id, changes)"
-        @create="(name) => emit('create-song', name)"
-        @delete="(id) => emit('delete-song', id)"
-        @save-file="emit('save-song-file')"
-        @load-file="(text) => emit('load-song-file', text)"
-        @load-file-error="(msg) => emit('load-song-file-error', msg)"
-      />
+        <SongMenu
+          :songs="songs"
+          :active-song-id="activeSongId"
+          :bpm="bpm"
+          :compact-navbar="compactNavbar"
+          @select="(id) => emit('select-song', id)"
+          @update="(id, changes) => emit('update-song', id, changes)"
+          @create="(name) => emit('create-song', name)"
+          @delete="(id) => emit('delete-song', id)"
+          @save-file="emit('save-song-file')"
+          @load-file="(text) => emit('load-song-file', text)"
+          @load-file-error="(msg) => emit('load-song-file-error', msg)"
+        />
+      </template>
 
       <div class="daw-toolbar-divider"></div>
 

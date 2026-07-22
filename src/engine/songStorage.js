@@ -12,6 +12,7 @@ import { sanitizeFilename } from '../utils/filename.js';
 
 const SONGS_KEY = 'midi-daw:songs';
 const CURRENT_SONG_KEY = 'midi-daw:currentSongId';
+const LIVE_SONG_ORDER_KEY = 'midi-daw:liveSongOrder';
 const STORAGE_VERSION = 1;
 const SONG_FILE_FORMAT = 'midi-daw-song';
 const SONG_FILE_VERSION = 1;
@@ -147,29 +148,47 @@ function normalizeSongColors(songs) {
   }
 }
 
-export function loadSongLibrary() {
+function loadLiveSongOrder() {
   try {
-    const raw = localStorage.getItem(SONGS_KEY);
-    if (!raw) return { songs: [], currentSongId: null };
+    const raw = localStorage.getItem(LIVE_SONG_ORDER_KEY);
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.songs)) {
-      return { songs: [], currentSongId: null };
-    }
-    normalizeSongColors(parsed.songs);
-    const currentSongId = localStorage.getItem(CURRENT_SONG_KEY);
-    return { songs: parsed.songs, currentSongId };
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
   } catch {
-    return { songs: [], currentSongId: null };
+    return [];
   }
 }
 
-export function persistSongLibrary(songs, currentSongId) {
+export function loadSongLibrary() {
+  try {
+    const raw = localStorage.getItem(SONGS_KEY);
+    if (!raw) return { songs: [], currentSongId: null, liveSongOrder: [] };
+    const parsed = JSON.parse(raw);
+    if (parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.songs)) {
+      return { songs: [], currentSongId: null, liveSongOrder: [] };
+    }
+    normalizeSongColors(parsed.songs);
+    const currentSongId = localStorage.getItem(CURRENT_SONG_KEY);
+    return {
+      songs: parsed.songs,
+      currentSongId,
+      liveSongOrder: loadLiveSongOrder(),
+    };
+  } catch {
+    return { songs: [], currentSongId: null, liveSongOrder: [] };
+  }
+}
+
+export function persistSongLibrary(songs, currentSongId, liveSongOrder = null) {
   localStorage.setItem(
     SONGS_KEY,
     JSON.stringify({ version: STORAGE_VERSION, songs })
   );
   if (currentSongId) localStorage.setItem(CURRENT_SONG_KEY, currentSongId);
   else localStorage.removeItem(CURRENT_SONG_KEY);
+  if (liveSongOrder != null) {
+    localStorage.setItem(LIVE_SONG_ORDER_KEY, JSON.stringify(liveSongOrder));
+  }
 }
 
 export function sanitizeSongFilename(name) {

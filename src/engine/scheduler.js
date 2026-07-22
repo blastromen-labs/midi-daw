@@ -129,6 +129,14 @@ function nextTransportLoopOccurrence(absBeat, noteBeat, loopStart, loopLen) {
 export class PlaybackEngine {
   constructor() {
     this.project = null;
+    // Optional () => Track[] for Live multi-song mixes. When set, scheduling /
+    // commit / clock-output discovery walk these tracks in addition to (or
+    // instead of, if the getter already includes them) project.tracks.
+    // Kept as a getter so App can park/swap song runtimes without rebinding.
+    this._getLiveTracks = null;
+    // Optional (absBeat) => void — fires after Live launches commit each tick so
+    // App can apply deferred work (e.g. scene tempo) on the same boundary.
+    this._onLiveBoundary = null;
     this._unsub = null;
     this._clock = null;
     this._clockOutputs = new Set();
@@ -140,6 +148,30 @@ export class PlaybackEngine {
     this._updateClockOutputs();
   }
 
+  /**
+   * Provide tracks from every song in the Live set. Pass null to schedule only
+   * the active project (piano-roll / single-song behaviour).
+   * @param {null|(() => object[])} getter
+   */
+  setLiveTracksGetter(getter) {
+    this._getLiveTracks = typeof getter === 'function' ? getter : null;
+    this._updateClockOutputs();
+  }
+
+  /** @param {null|((absBeat: number) => void)} handler */
+  setLiveBoundaryHandler(handler) {
+    this._onLiveBoundary = typeof handler === 'function' ? handler : null;
+  }
+
+  /** Tracks the scheduler should sound this tick. */
+  _schedulingTracks() {
+    if (this._getLiveTracks) {
+      const tracks = this._getLiveTracks();
+      if (Array.isArray(tracks)) return tracks;
+    }
+    return this.project?.tracks ?? [];
+  }
+
   _updateClockOutputs() {
     this._clockOutputs.clear();
     if (!this.project) return;
@@ -149,7 +181,7 @@ export class PlaybackEngine {
     }
 
     // Drum tracks never have a MIDI output — they trigger local samples only.
-    for (const track of this.project.tracks) {
+    for (const track of this._schedulingTracks()) {
       if (track.kind === 'midi' && track.midiOutputId) this._clockOutputs.add(track.midiOutputId);
     }
   }
@@ -225,7 +257,8 @@ export class PlaybackEngine {
 
   _onStop() {
     // Queued Live-mode launches only make sense against a running bar grid.
-    if (this.project) clearPendingLaunches(this.project.tracks);
+    // Clear across the whole Live set so background songs don't keep stale queues.
+    if (this.project) clearPendingLaunches(this._schedulingTracks());
     if (!this.project?.sendMidiClock) return;
     broadcastStop([...this._clockOutputs]);
   }
@@ -286,9 +319,13 @@ export class PlaybackEngine {
     // scheduling below doesn't depend on this having run yet — it reaches
     // across a pending boundary itself via trackSchedulingSegments — this is
     // purely about keeping the track's state/UI in sync with the transport.
+    const tracks = this._schedulingTracks();
     if (useLiveLaunch) {
-      commitDuePatternLaunches(this.project.tracks, absBeat);
-      commitDueUnmutes(this.project.tracks, absBeat);
+      commitDuePatternLaunches(tracks, absBeat);
+      commitDueUnmutes(tracks, absBeat);
+      // After commits so tempo/scene side-effects land with the new clips, and
+      // before note scheduling so this tick's notes use the updated clock.
+      this._onLiveBoundary?.(absBeat);
     }
     const endAbsBeat = absBeat + clock.secToBeat(scheduleUntil - now) + 0.05;
     const useTransportLoop = !!this.project.loopRegion;
@@ -296,7 +333,7 @@ export class PlaybackEngine {
     const loopEnd = clock.loopEndBeat;
     const transportLoopLen = clock.loopLengthBeats;
 
-    for (const track of this.project.tracks) {
+    for (const track of tracks) {
       if (track.kind === 'midi' && !track.midiOutputId) continue;
 
       for (const { pattern, rangeStart, rangeEnd, originBeat } of trackSchedulingSegments(

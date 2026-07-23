@@ -75,6 +75,7 @@
           @rename-pad="renamePad"
           @update-zone="updateZone"
           @add-zone="addZone"
+          @clone-zone="cloneZone"
           @remove-zone="removeZone"
           @delete-track="removeTrack"
           @marker-change="project.markerBeat = $event"
@@ -190,6 +191,7 @@ import {
   createMultiSamplerTrack,
   createDrumPad,
   createSampleZone,
+  cloneSampleZone as cloneSampleZoneModel,
   createPattern,
   createScene,
   clonePattern as clonePatternModel,
@@ -245,6 +247,7 @@ import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
 import {
   clearSample,
+  copySample,
   hasSample,
   loadSampleUrl,
   restoreStoredSample,
@@ -1643,6 +1646,22 @@ function addZone(trackId) {
       rootNote: 60,
     })
   );
+}
+
+function cloneZone(trackId, zoneId) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'multisampler') return;
+  const idx = track.zones.findIndex((z) => z.id === zoneId);
+  if (idx < 0) return;
+  const source = track.zones[idx];
+  const zone = cloneSampleZoneModel(source, track.zones);
+  // Insert beside the source so the duplicate stays next to what it cloned.
+  track.zones.splice(idx + 1, 0, zone);
+  if (hasSample(source.id) || source.fileName) {
+    void copySample(source.id, zone.id).catch((err) => {
+      console.warn(`Failed to copy sample for cloned zone "${zone.id}":`, err);
+    });
+  }
 }
 
 function removeZone(trackId, zoneId) {

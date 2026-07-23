@@ -939,6 +939,23 @@ export function createSampleZone({
   };
 }
 
+/**
+ * Duplicate a sample zone (settings + fileName metadata) with a fresh id.
+ * Audio buffers live in sampler.js keyed by zone.id — the caller must copy
+ * the sample separately via copySample(sourceId, clone.id).
+ */
+export function cloneSampleZone(source, zones) {
+  if (!source) return createSampleZone();
+  const zone = {
+    ...source,
+    id: uid(),
+    name: patternCloneName(zones ?? [], source.name || 'Sample'),
+    // Expand the clone so the duplicate is immediately editable.
+    minimized: false,
+  };
+  return normalizeSampleZone(zone);
+}
+
 /** Coerce legacy or missing zone fields when loading a song. */
 export function normalizeSampleZone(zone) {
   if (!zone) return zone;

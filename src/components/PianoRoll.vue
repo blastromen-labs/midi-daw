@@ -447,6 +447,7 @@
       @close="sampleZonesOpen = false"
       @update-zone="onUpdateZone"
       @add-zone="onAddZone"
+      @clone-zone="onCloneZone"
       @remove-zone="onRemoveZone"
       @load-sample="onLoadZoneSample"
       @clear-sample="onClearZoneSample"
@@ -568,6 +569,7 @@ const emit = defineEmits([
   'rename-pad',
   'update-zone',
   'add-zone',
+  'clone-zone',
   'remove-zone',
   'update-track',
   'delete-track',
@@ -1934,6 +1936,10 @@ function onUpdateZone(zoneId, changes) {
 
 function onAddZone() {
   emit('add-zone', props.activeTrackId);
+}
+
+function onCloneZone(zoneId) {
+  emit('clone-zone', props.activeTrackId, zoneId);
 }
 
 function onRemoveZone(zoneId) {

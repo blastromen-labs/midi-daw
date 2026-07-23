@@ -105,6 +105,15 @@
                 ▶
               </button>
               <button
+                v-if="!zone.minimized"
+                type="button"
+                class="px-2 py-1 rounded text-[10px] text-muted hover:text-white hover:bg-surface-hover flex-shrink-0"
+                title="Clone zone to a new zone"
+                @click="emit('clone-zone', zone.id)"
+              >
+                Clone
+              </button>
+              <button
                 v-if="zones.length > 1 && !zone.minimized"
                 type="button"
                 class="px-2 py-1 rounded text-[10px] text-red-400 hover:text-red-300 hover:bg-surface-hover flex-shrink-0"
@@ -355,6 +364,7 @@ const emit = defineEmits([
   'close',
   'update-zone',
   'add-zone',
+  'clone-zone',
   'remove-zone',
   'load-sample',
   'clear-sample',

@@ -219,6 +219,37 @@ export function hasSample(padId) {
   return bufferCache.has(padId);
 }
 
+/**
+ * Copy a sample from one pad/zone id to another (in-memory cache + IndexedDB).
+ * Used when cloning a multi-sampler zone so the duplicate keeps its audio
+ * without re-picking the file. The decoded AudioBuffer is shared (read-only
+ * during playback); stored bytes are duplicated so clearing one id does not
+ * wipe the other.
+ * @returns {Promise<boolean>} true if a sample was available to copy
+ */
+export async function copySample(fromPadId, toPadId) {
+  if (!fromPadId || !toPadId || fromPadId === toPadId) return false;
+
+  const cached = bufferCache.get(fromPadId);
+  if (cached) bufferCache.set(toPadId, cached);
+
+  try {
+    const stored = await getStoredSample(fromPadId);
+    if (stored?.arrayBuffer) {
+      const bytes = stored.arrayBuffer.slice(0);
+      await putStoredSample(toPadId, bytes, { fileName: stored.fileName });
+      if (!cached) {
+        await loadSampleArrayBuffer(toPadId, bytes, stored.fileName);
+      }
+      return true;
+    }
+  } catch (err) {
+    console.warn(`Failed to copy stored sample "${fromPadId}" → "${toPadId}":`, err);
+  }
+
+  return !!cached;
+}
+
 export function getSampleDuration(padId) {
   return bufferCache.get(padId)?.duration ?? 0;
 }

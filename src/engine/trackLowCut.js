@@ -1,19 +1,20 @@
 /**
- * Live HP: per-track high-pass cutoff. Tap latches at min Hz; hold+drag sweeps
- * min→max and clears on release. Frequency is shared across that track's
+ * Live HP: per-track high-pass cutoff. Tap latches at TAP_HZ; hold+drag sweeps
+ * TAP→MAX and clears on release. Frequency is shared across that track's
  * active sample voices so changes affect notes already ringing.
  *
- * Off = bypass (~20 Hz). On = TRACK_LOW_CUT_MIN_HZ…TRACK_LOW_CUT_MAX_HZ.
+ * Off = bypass (~20 Hz). On = TRACK_LOW_CUT_TAP_HZ…TRACK_LOW_CUT_MAX_HZ.
  */
 
 import { getSharedAudioContext } from './audioContext.js';
 
-export const TRACK_LOW_CUT_MIN_HZ = 200;
+/** Cutoff when the HP strip is tapped once (latched until tapped again). */
+export const TRACK_LOW_CUT_TAP_HZ = 500;
 export const TRACK_LOW_CUT_MAX_HZ = 2000;
 /** Near-DC highpass ≈ transparent; matches delay.js bypass convention. */
 export const TRACK_LOW_CUT_BYPASS_HZ = 20;
 
-/** Vertical drag distance (px) that spans min→max cutoff. */
+/** Vertical drag distance (px) that spans tap→max cutoff. */
 export const TRACK_LOW_CUT_DRAG_PX = 140;
 
 /** @type {Map<string, number>} trackId → cutoff Hz while pressed */
@@ -23,7 +24,7 @@ const cutHzByTrack = new Map();
 const filtersByTrack = new Map();
 
 function clampCutHz(hz) {
-  return Math.max(TRACK_LOW_CUT_MIN_HZ, Math.min(TRACK_LOW_CUT_MAX_HZ, hz));
+  return Math.max(TRACK_LOW_CUT_TAP_HZ, Math.min(TRACK_LOW_CUT_MAX_HZ, hz));
 }
 
 function applyFilterHz(hpf, hz) {
@@ -64,7 +65,7 @@ export function setTrackCutLowHz(trackId, hz) {
 /** Map upward drag (px) from press origin → cutoff Hz (log-scaled). */
 export function cutLowHzFromDragPx(dragUpPx) {
   const t = Math.max(0, Math.min(1, dragUpPx / TRACK_LOW_CUT_DRAG_PX));
-  const minL = Math.log(TRACK_LOW_CUT_MIN_HZ);
+  const minL = Math.log(TRACK_LOW_CUT_TAP_HZ);
   const maxL = Math.log(TRACK_LOW_CUT_MAX_HZ);
   return Math.exp(minL + t * (maxL - minL));
 }

@@ -166,7 +166,7 @@
                 ? 'text-white/90 bg-accent'
                 : 'text-muted-dim hover:text-muted hover:bg-surface-active'
             "
-            :title="'Tap: latch 200 Hz · hold & drag up: 200–2000 Hz · release after drag clears'"
+            :title="'Tap: latch 500 Hz · hold & drag up: 500–2000 Hz · release after drag clears'"
             :aria-label="`${track.name} high-pass`"
             :aria-pressed="cutLowHzByTrack[track.id] != null"
             @pointerdown.stop="onCutLowPointerDown($event, track.id)"
@@ -366,7 +366,7 @@ import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js'
 import {
   setTrackCutLowHz,
   cutLowHzFromDragPx,
-  TRACK_LOW_CUT_MIN_HZ,
+  TRACK_LOW_CUT_TAP_HZ,
 } from '../engine/trackLowCut.js';
 import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
@@ -442,11 +442,11 @@ function endCutLowGesture(trackId) {
     releaseCutLow(trackId);
     return;
   }
-  // Tap: toggle latch at 200 Hz (second tap turns it off).
+  // Tap: toggle latch at 500 Hz (second tap turns it off).
   if (drag.wasLatched) {
     releaseCutLow(trackId);
   } else {
-    engageCutLow(trackId, TRACK_LOW_CUT_MIN_HZ);
+    engageCutLow(trackId, TRACK_LOW_CUT_TAP_HZ);
   }
 }
 
@@ -460,7 +460,7 @@ function onCutLowPointerDown(e, trackId) {
     dragged: false,
     wasLatched: cutLowHzByTrack[trackId] != null,
   });
-  engageCutLow(trackId, TRACK_LOW_CUT_MIN_HZ);
+  engageCutLow(trackId, TRACK_LOW_CUT_TAP_HZ);
 }
 
 function onCutLowPointerMove(e, trackId) {

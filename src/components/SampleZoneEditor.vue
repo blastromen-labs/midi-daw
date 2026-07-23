@@ -349,8 +349,6 @@ const props = defineProps({
   trackName: { type: String, default: 'Sampler' },
   zones: { type: Array, required: true },
   trackVolume: { type: Number, default: 1 },
-  /** Mirror Live track-box HP so zone preview matches playback. */
-  cutLow: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -438,12 +436,6 @@ function preview(zone) {
   if (!hasSample(zone.id)) return;
   resumeSamplerAudio();
   const gainMul = (zone.volume ?? 1) * (props.trackVolume ?? 1);
-  playSample(
-    zone.id,
-    PREVIEW_VELOCITY,
-    0,
-    gainMul,
-    zonePlaybackOpts(zone, zone.rootNote, 0, { track: { cutLow: props.cutLow } })
-  );
+  playSample(zone.id, PREVIEW_VELOCITY, 0, gainMul, zonePlaybackOpts(zone, zone.rootNote));
 }
 </script>

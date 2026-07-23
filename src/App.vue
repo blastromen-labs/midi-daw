@@ -108,7 +108,6 @@
           @edit-track="startEditLiveTrack"
           @toggle-track-mute="toggleTrackMute"
           @toggle-track-solo="toggleTrackSolo"
-          @toggle-track-cut-low="toggleTrackCutLow"
           @edit-pattern="startEditLivePattern"
           @open-pattern-roll="openPatternInRoll"
           @move-song="onMoveLiveSong"
@@ -1516,13 +1515,6 @@ function toggleTrackSolo(songId, trackId) {
   const track = findTrack(trackId, songId);
   if (!track) return;
   updateTrack(trackId, { soloed: !track.soloed }, songId);
-}
-
-/** Live track-box HP — high-pass drum / multi-sampler audio under 200 Hz. */
-function toggleTrackCutLow(songId, trackId) {
-  const track = findTrack(trackId, songId);
-  if (!track || (track.kind !== 'drum' && track.kind !== 'multisampler')) return;
-  updateTrack(trackId, { cutLow: !track.cutLow }, songId);
 }
 
 function addTrack(kind, config = {}) {

@@ -44,8 +44,8 @@ export function zonePlaybackOpts(zone, notePitch, notePitchOffset = 0, { duratio
     delayLeftSync: zone?.delayLeftSync,
     delayRightSync: zone?.delayRightSync,
     delayCutLow: !!zone?.delayCutLow,
-    // Track-level HPF (Live HP) — applied in playSample before dry/wet fan-out.
-    cutLow: !!track?.cutLow,
+    // Live HP bus key — playSample inserts a controllable track HPF.
+    trackId: track?.id ?? null,
   };
   if (durationSec != null && Number.isFinite(durationSec)) {
     opts.durationSec = Math.max(0.01, durationSec);

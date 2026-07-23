@@ -141,30 +141,57 @@
         :class="isHiddenFromLive(track) ? 'opacity-55' : ''"
       >
         <div
-          class="flex items-stretch w-36 flex-shrink-0 rounded-md bg-surface/60 overflow-hidden"
+          class="relative flex items-stretch w-36 flex-shrink-0 rounded-md bg-surface/60 overflow-hidden min-h-[2.75rem]"
         >
-          <!-- Full-height left HP strip for touch during Live; drum / sampler only. -->
+          <!-- Title centered across the whole track box (sits above HP + mute halves). -->
+          <span
+            class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none px-5"
+            aria-hidden="true"
+          >
+            <span
+              class="truncate text-xs font-semibold text-center max-w-full drop-shadow-[0_1px_1px_rgba(0,0,0,0.65)]"
+              :class="cutLowHzByTrack[track.id] != null ? 'text-white' : ''"
+            >
+              {{ track.name }}
+            </span>
+          </span>
+
+          <!-- Full-height left HP strip: hold + drag up for cutoff, release = off. -->
           <button
             v-if="track.kind === 'drum' || track.kind === 'multisampler'"
             type="button"
-            class="w-8 flex-shrink-0 self-stretch flex items-center justify-center text-[9px] font-bold tracking-tight transition-colors select-none"
+            class="relative z-0 w-1/2 flex-shrink-0 self-stretch flex flex-col items-start justify-start gap-0.5 p-1 text-[9px] font-bold tracking-tight transition-colors select-none touch-none"
             :class="
-              track.cutLow
-                ? 'text-white bg-accent'
-                : 'text-muted-dim hover:text-muted hover:bg-surface-active active:bg-surface-active'
+              cutLowHzByTrack[track.id] != null
+                ? 'text-white/90 bg-accent'
+                : 'text-muted-dim hover:text-muted hover:bg-surface-active'
             "
-            :title="track.cutLow ? 'Cut low on — high-pass at 200 Hz' : 'Cut low — high-pass at 200 Hz'"
-            :aria-pressed="!!track.cutLow"
-            @click.stop="emit('toggle-track-cut-low', song.id, track.id)"
+            :title="'Hold & drag up: high-pass 200–2000 Hz · release to clear'"
+            :aria-label="`${track.name} high-pass`"
+            :aria-pressed="cutLowHzByTrack[track.id] != null"
+            @pointerdown.stop="onCutLowPointerDown($event, track.id)"
+            @pointermove.stop="onCutLowPointerMove($event, track.id)"
+            @pointerup.stop="onCutLowPointerUp($event, track.id)"
+            @pointercancel.stop="onCutLowPointerUp($event, track.id)"
+            @lostpointercapture="onCutLowLostCapture(track.id)"
           >
-            HP
+            <span>HP</span>
+            <span
+              v-if="cutLowHzByTrack[track.id] != null"
+              class="text-[8px] font-semibold tabular-nums leading-none opacity-90"
+            >
+              {{ formatCutLowHz(cutLowHzByTrack[track.id]) }}
+            </span>
           </button>
-          <div class="flex flex-col justify-center gap-0.5 flex-1 min-w-0 px-2 py-1.5">
-            <div class="flex items-center gap-1 min-w-0">
-              <span class="truncate text-xs font-semibold flex-1 min-w-0">{{ track.name }}</span>
+          <div
+            class="relative z-0 flex flex-col justify-between gap-0.5 flex-1 min-w-0 px-1.5 py-1"
+            :class="track.kind === 'drum' || track.kind === 'multisampler' ? '' : 'w-full'"
+          >
+            <div class="flex items-start justify-end gap-0.5 min-w-0">
               <button
                 type="button"
-                class="flex items-center justify-center w-5 h-5 flex-shrink-0 rounded hover:bg-surface-active transition-colors"
+                class="relative z-20 flex items-center justify-center w-5 h-5 flex-shrink-0 rounded hover:bg-surface-active transition-colors"
+                :aria-label="`${track.name} mute`"
                 @click.stop="emit('toggle-track-mute', song.id, track.id)"
                 @contextmenu.prevent.stop="emit('toggle-track-solo', song.id, track.id)"
               >
@@ -177,29 +204,31 @@
               <button
                 v-if="editMode"
                 type="button"
-                class="w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
+                class="relative z-20 w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
                 @click.stop="emit('edit-track', song.id, track.id)"
               >
                 ✎
               </button>
             </div>
             <template v-if="!hideTrackDetails">
-              <span class="text-[9px] text-muted-dim uppercase tracking-wide">
-                {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
-              </span>
-              <span
-                v-if="track.kind === 'midi'"
-                class="text-[9px] tracking-wide truncate"
-                :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
-              >
-                {{ trackMidiOutLabel(track) || 'No MIDI out' }}
-              </span>
-              <span
-                v-else-if="track.kind === 'multisampler'"
-                class="text-[9px] tracking-wide truncate text-muted-dim"
-              >
-                Sampler
-              </span>
+              <div class="flex flex-col items-end gap-0 min-w-0">
+                <span class="text-[9px] text-muted-dim uppercase tracking-wide truncate max-w-full">
+                  {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
+                </span>
+                <span
+                  v-if="track.kind === 'midi'"
+                  class="text-[9px] tracking-wide truncate max-w-full"
+                  :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
+                >
+                  {{ trackMidiOutLabel(track) || 'No MIDI out' }}
+                </span>
+                <span
+                  v-else-if="track.kind === 'multisampler'"
+                  class="text-[9px] tracking-wide truncate max-w-full text-muted-dim"
+                >
+                  Sampler
+                </span>
+              </div>
             </template>
           </div>
         </div>
@@ -319,7 +348,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onUnmounted } from 'vue';
+import { ref, reactive, computed, nextTick, onUnmounted } from 'vue';
 import {
   LIVE_LAUNCH_MODES,
   getLiveLaunch,
@@ -334,6 +363,11 @@ import {
   patternStepsLabel,
 } from '../models/project.js';
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
+import {
+  setTrackCutLowHz,
+  cutLowHzFromDragPx,
+  TRACK_LOW_CUT_MIN_HZ,
+} from '../engine/trackLowCut.js';
 import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { useHoldPointer } from '../composables/useHoldPointer.js';
@@ -371,11 +405,59 @@ const emit = defineEmits([
   'edit-track',
   'toggle-track-mute',
   'toggle-track-solo',
-  'toggle-track-cut-low',
   'edit-pattern',
   'open-pattern-roll',
   'move-song',
 ]);
+
+/** Momentary Live HP UI: trackId → cutoff Hz while finger/pointer is down. */
+const cutLowHzByTrack = reactive({});
+/** trackId → { pointerId, startY } for vertical drag → cutoff. */
+const cutLowDrag = new Map();
+
+function formatCutLowHz(hz) {
+  if (hz >= 1000) return `${(hz / 1000).toFixed(1)}k`;
+  return `${Math.round(hz)}`;
+}
+
+function engageCutLow(trackId, hz) {
+  cutLowHzByTrack[trackId] = hz;
+  setTrackCutLowHz(trackId, hz);
+}
+
+function releaseCutLow(trackId) {
+  delete cutLowHzByTrack[trackId];
+  cutLowDrag.delete(trackId);
+  setTrackCutLowHz(trackId, null);
+}
+
+function onCutLowPointerDown(e, trackId) {
+  if (e.button != null && e.button !== 0) return;
+  e.preventDefault();
+  e.currentTarget.setPointerCapture(e.pointerId);
+  cutLowDrag.set(trackId, { pointerId: e.pointerId, startY: e.clientY });
+  engageCutLow(trackId, TRACK_LOW_CUT_MIN_HZ);
+}
+
+function onCutLowPointerMove(e, trackId) {
+  const drag = cutLowDrag.get(trackId);
+  if (!drag || drag.pointerId !== e.pointerId) return;
+  e.preventDefault();
+  const dragUpPx = drag.startY - e.clientY;
+  engageCutLow(trackId, cutLowHzFromDragPx(dragUpPx));
+}
+
+function onCutLowPointerUp(e, trackId) {
+  const drag = cutLowDrag.get(trackId);
+  if (!drag || drag.pointerId !== e.pointerId) return;
+  releaseCutLow(trackId);
+}
+
+function onCutLowLostCapture(trackId) {
+  if (cutLowDrag.has(trackId) || cutLowHzByTrack[trackId] != null) {
+    releaseCutLow(trackId);
+  }
+}
 
 /** Green = audible, yellow = soloed, dark = muted. */
 function trackMuteSoloLedClass(track) {
@@ -672,6 +754,9 @@ function clipDragClass(trackId, index) {
 }
 
 onUnmounted(() => {
+  for (const trackId of [...cutLowDrag.keys(), ...Object.keys(cutLowHzByTrack)]) {
+    releaseCutLow(trackId);
+  }
   holdPointer.dispose();
   window.removeEventListener('pointermove', onDragMove);
   window.removeEventListener('pointerup', onDragEnd);

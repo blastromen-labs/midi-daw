@@ -444,7 +444,6 @@
       :track-name="activeTrack.name"
       :zones="activeTrack.zones"
       :track-volume="activeTrack.volume ?? 1"
-      :cut-low="!!activeTrack.cutLow"
       @close="sampleZonesOpen = false"
       @update-zone="onUpdateZone"
       @add-zone="onAddZone"

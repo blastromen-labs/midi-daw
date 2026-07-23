@@ -12,7 +12,12 @@ import { getDelayInputFromSource } from './delay.js';
 import { getDistortionCurve } from './padDistortion.js';
 import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
 import { deleteStoredSample, getStoredSample, putStoredSample } from './sampleStorage.js';
-import { TRACK_LOW_CUT_HZ } from '../models/project.js';
+import {
+  getTrackCutLowHz,
+  registerTrackLowCutFilter,
+  unregisterTrackLowCutFilter,
+  TRACK_LOW_CUT_BYPASS_HZ,
+} from './trackLowCut.js';
 
 export async function resumeSamplerAudio() {
   return resumeSharedAudioContext();
@@ -27,6 +32,9 @@ const CUT_RAMP_SEC = 0.008;
 function releaseVoiceGraph(voice) {
   if (voice.released || !voice.nodes) return;
   voice.released = true;
+  if (voice.trackId && voice.lowCut) {
+    unregisterTrackLowCutFilter(voice.trackId, voice.lowCut);
+  }
   for (const node of voice.nodes) {
     try {
       node.disconnect();
@@ -307,17 +315,20 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   tail.connect(gain);
   nodes.push(gain);
 
-  // Track-level low cut (Live HP): high-pass before dry/reverb/delay fan-out so
-  // the whole voice — not just the delay return — loses content under 200 Hz.
+  // Track Live HP: always insert an HPF when we know the track so press/drag
+  // can open the cut on voices that are already playing (bypass ≈ 20 Hz).
   let bus = gain;
-  if (opts.cutLow) {
-    const hpf = c.createBiquadFilter();
-    hpf.type = 'highpass';
-    hpf.frequency.value = TRACK_LOW_CUT_HZ;
-    hpf.Q.value = 0.707;
-    gain.connect(hpf);
-    bus = hpf;
-    nodes.push(hpf);
+  let lowCut = null;
+  const trackId = opts.trackId || null;
+  if (trackId) {
+    lowCut = c.createBiquadFilter();
+    lowCut.type = 'highpass';
+    lowCut.Q.value = 0.707;
+    lowCut.frequency.value = getTrackCutLowHz(trackId) ?? TRACK_LOW_CUT_BYPASS_HZ;
+    gain.connect(lowCut);
+    bus = lowCut;
+    nodes.push(lowCut);
+    registerTrackLowCutFilter(trackId, lowCut);
   }
 
   // Dry / reverb balance (crossfade). Delay is a parallel send on top.
@@ -354,7 +365,7 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
     gain.gain.linearRampToValueAtTime(0, endTime);
   }
 
-  const voice = { id: ++voiceId, padId, source: src, gain, nodes };
+  const voice = { id: ++voiceId, padId, trackId, source: src, gain, lowCut, nodes };
   activeVoices.set(voice.id, voice);
   src.onended = () => {
     activeVoices.delete(voice.id);

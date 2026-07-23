@@ -89,6 +89,7 @@
           @edit-scene="startEditScene"
           @edit-track="startEditLiveTrack"
           @edit-pattern="startEditLivePattern"
+          @open-pattern-roll="openPatternInRoll"
           @move-song="onMoveLiveSong"
         />
       </div>
@@ -1313,6 +1314,16 @@ function startEditLivePattern(songId, trackId, patternId) {
   patternEditorPatternId.value = patternId;
   patternEditorInitial.value = patternToEditorDraft(pattern);
   patternEditorOpen.value = true;
+}
+
+/** Jump from a Live clip into Roll with that song/track/pattern selected for note editing. */
+function openPatternInRoll(songId, trackId, patternId) {
+  if (songId !== currentSongId.value) selectSong(songId);
+  const track = findTrack(trackId);
+  if (!track?.patterns?.some((p) => p.id === patternId)) return;
+  activeTrackId.value = trackId;
+  selectPattern(trackId, patternId);
+  viewMode.value = 'roll';
 }
 
 function closePatternEditor() {

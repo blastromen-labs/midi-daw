@@ -221,17 +221,37 @@
                 >▶</span>
               </button>
 
-              <button
+              <div
                 v-if="editMode"
-                type="button"
-                class="absolute bottom-0.5 right-0.5 z-[2] w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
-                title="Edit pattern"
-                @pointerdown.stop
-                @pointerup.stop
-                @click.stop="emit('edit-pattern', song.id, track.id, pattern.id)"
+                class="absolute bottom-0.5 right-0.5 z-[2] flex items-center gap-0.5"
               >
-                ✎
-              </button>
+                <button
+                  type="button"
+                  class="w-5 h-5 rounded flex items-center justify-center bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
+                  title="Edit notes in piano roll"
+                  @pointerdown.stop
+                  @pointerup.stop
+                  @click.stop="emit('open-pattern-roll', song.id, track.id, pattern.id)"
+                >
+                  <svg viewBox="0 0 16 12" class="w-3 h-2.5" aria-hidden="true">
+                    <rect x="0.5" y="0.5" width="15" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1" />
+                    <path
+                      fill="currentColor"
+                      d="M3 1h2v6H3zm4 0h2v6H7zm4 0h2v6h-2z"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
+                  title="Edit pattern"
+                  @pointerdown.stop
+                  @pointerup.stop
+                  @click.stop="emit('edit-pattern', song.id, track.id, pattern.id)"
+                >
+                  ✎
+                </button>
+              </div>
             </div>
           </template>
           <div
@@ -295,6 +315,7 @@ const emit = defineEmits([
   'edit-scene',
   'edit-track',
   'edit-pattern',
+  'open-pattern-roll',
   'move-song',
 ]);
 

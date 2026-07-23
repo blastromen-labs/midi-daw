@@ -61,20 +61,32 @@ function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, sol
   const segments = [];
   const pending = track.pendingLaunches ?? [];
 
-  // Soonest beat at which a cutOthers pending launch will wipe other clips.
-  let globalCutBeat = null;
+  // cutOthers pending launches: Loop swaps cut everything; Hold/One Shot fills
+  // only cut other fills so a queued/sounding Loop is never truncated by them.
+  let loopCutBeat = null;
+  let fillCutBeat = null;
   for (const p of pending) {
     if (!p.cutOthers) continue;
     if (p.launchBeat == null || p.launchBeat > rangeEnd) continue;
-    if (globalCutBeat == null || p.launchBeat < globalCutBeat) globalCutBeat = p.launchBeat;
+    const pendingPattern = track.patterns?.find((pat) => pat.id === p.patternId);
+    const mode = patternLaunchMode(pendingPattern);
+    if (mode === LIVE_LAUNCH_MODES.HOLD || mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
+      if (fillCutBeat == null || p.launchBeat < fillCutBeat) fillCutBeat = p.launchBeat;
+    } else if (loopCutBeat == null || p.launchBeat < loopCutBeat) {
+      loopCutBeat = p.launchBeat;
+    }
   }
 
   const sounding = getPlayingPatterns(track, { useLiveLaunch, soloPreview });
   for (const pattern of sounding) {
     const launch = getLiveLaunch(track, pattern.id);
+    const soundingMode = patternLaunchMode(pattern);
+    const isFill =
+      soundingMode === LIVE_LAUNCH_MODES.HOLD || soundingMode === LIVE_LAUNCH_MODES.ONE_SHOT;
     let end = rangeEnd;
     if (launch?.stopBeat != null) end = Math.min(end, launch.stopBeat - 1e-6);
-    if (globalCutBeat != null) end = Math.min(end, globalCutBeat - 1e-6);
+    if (loopCutBeat != null) end = Math.min(end, loopCutBeat - 1e-6);
+    if (isFill && fillCutBeat != null) end = Math.min(end, fillCutBeat - 1e-6);
     // Pending re-launch of the same clip (scene restart / One Shot retrigger):
     // end the current sounding segment before that beat so we don't double-schedule.
     const pendingSelf = pending.find((p) => p.patternId === pattern.id && p.launchBeat != null);

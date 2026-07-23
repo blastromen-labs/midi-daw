@@ -284,7 +284,22 @@ export function stopPatternImmediately(track, patternId) {
   cancelPendingForPattern(track, patternId);
 }
 
-// Hold-to-play: own launch slot; cutOthers decides whether other clips survive.
+function isTransientLaunchMode(mode) {
+  return mode === LIVE_LAUNCH_MODES.HOLD || mode === LIVE_LAUNCH_MODES.ONE_SHOT;
+}
+
+/** Keep Loops; drop other Hold/One Shot slots (and any re-launch of `patternId`). */
+function cutTransientOthers(track, patternId) {
+  materializeFollowActive(track);
+  if (track.liveLaunches == null) track.liveLaunches = [];
+  track.liveLaunches = track.liveLaunches.filter((l) => {
+    if (l.patternId === patternId) return false;
+    return !isTransientLaunchMode(patternLaunchMode(findPattern(track, l.patternId)));
+  });
+}
+
+// Hold-to-play: own launch slot; cutOthers only replaces other fills — never
+// Loops or their pending swaps. Hold/One Shot are overlays on the Loop lane.
 export function holdPatternDown(track, patternId, currentAbsBeat) {
   if (!track) return;
 
@@ -300,15 +315,16 @@ export function holdPatternDown(track, patternId, currentAbsBeat) {
   });
 
   if (patternCutsOthers(pattern)) {
-    track.liveLaunches = [launch];
+    cutTransientOthers(track, patternId);
   } else {
     materializeFollowActive(track);
     if (track.liveLaunches == null) track.liveLaunches = [];
     removeLaunch(track, patternId);
-    track.liveLaunches.push(launch);
   }
-  // Drop pending starts that this hold would race with.
-  track.pendingLaunches = [];
+  track.liveLaunches.push(launch);
+  // Only drop a pending re-launch of this same Hold clip (if any). Queued
+  // Loop starts on this track must keep waiting for their boundary.
+  cancelPendingForPattern(track, patternId);
 }
 
 export function holdPatternUp(track) {
@@ -363,13 +379,21 @@ function isHoldLaunchAudible(launch) {
 function commitLaunch(track, pending) {
   const { patternId, cutOthers, launchBeat, restartFromStart } = pending;
   const pattern = findPattern(track, patternId);
+  const mode = patternLaunchMode(pattern);
   // One Shots and scene restarts record the absolute launch beat so the
   // scheduler can map pattern beat 0 → launchBeat instead of phase-locking.
-  const restart =
-    restartFromStart || patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT;
+  const restart = restartFromStart || mode === LIVE_LAUNCH_MODES.ONE_SHOT;
   const launch = createLiveLaunch(patternId, restart ? { startBeat: launchBeat } : {});
   if (cutOthers) {
-    track.liveLaunches = [launch];
+    if (isTransientLaunchMode(mode)) {
+      // Hold/One Shot "cut others" only replaces other fills — never a Loop.
+      // Otherwise a One Shot landing on the same boundary as a queued Loop
+      // swap would wipe the Loop that just committed.
+      cutTransientOthers(track, patternId);
+      track.liveLaunches.push(launch);
+    } else {
+      track.liveLaunches = [launch];
+    }
   } else {
     materializeFollowActive(track);
     if (track.liveLaunches == null) track.liveLaunches = [];
@@ -386,6 +410,13 @@ export function commitDuePatternLaunches(tracks, currentAbsBeat) {
     const due = pending.filter((p) => currentAbsBeat + EPSILON >= p.launchBeat);
     if (due.length) {
       track.pendingLaunches = pending.filter((p) => currentAbsBeat + EPSILON < p.launchBeat);
+      // Transients first, Loops last — so a Loop swap that shares a boundary
+      // with a One Shot isn't left wiped by the One Shot's cutOthers commit.
+      due.sort((a, b) => {
+        const rank = (p) =>
+          isTransientLaunchMode(patternLaunchMode(findPattern(track, p.patternId))) ? 0 : 1;
+        return rank(a) - rank(b);
+      });
       for (const p of due) commitLaunch(track, p);
     }
 

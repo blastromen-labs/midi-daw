@@ -3,13 +3,14 @@
     <div class="flex items-center gap-0.5">
       <button
         type="button"
-        class="daw-toolbar-icon-btn text-[9px] leading-none transition-colors disabled:opacity-30 disabled:pointer-events-none"
+        class="daw-toolbar-icon-btn hold-launch-btn text-[9px] leading-none transition-colors disabled:opacity-30 disabled:pointer-events-none"
         :class="activePattern ? launchButtonClass(activePattern) : 'bg-surface-hover text-muted'"
         :title="activePattern ? launchButtonTitle(activePattern) : 'No pattern'"
         :disabled="!activePattern"
         @pointerdown="onLaunchPointerDown($event)"
         @pointerup="onLaunchPointerUp($event)"
-        @pointercancel="onLaunchPointerUp($event)"
+        @pointercancel="onLaunchPointerCancel($event)"
+        @contextmenu.prevent
         @click.stop="onPreviewClick"
       >
         ▶
@@ -148,6 +149,7 @@ import {
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 import { contrastTextColor } from '../utils/color.js';
 import { initialLetter } from '../utils/text.js';
+import { useHoldPointer } from '../composables/useHoldPointer.js';
 import PatternEditorModal from './PatternEditorModal.vue';
 
 const props = defineProps({
@@ -187,11 +189,15 @@ const editorMode = ref('create');
 const editorPatternId = ref(null);
 const editorInitial = ref({});
 
-let holdPointerId = null;
-
 const activePattern = computed(() =>
   props.track?.patterns?.find((p) => p.id === props.track.activePatternId) ?? null
 );
+
+const holdPointer = useHoldPointer({
+  isStillMuted: (payload) => isTrackHoldMuted(props.track, payload.patternId),
+  onDown: (payload) => emit('hold-pattern-down', payload.patternId),
+  onUp: () => emit('hold-pattern-up'),
+});
 
 const isHoldMode = computed(
   () => patternLaunchMode(activePattern.value) === LIVE_LAUNCH_MODES.HOLD
@@ -345,7 +351,7 @@ function launchButtonClass(pattern) {
 function launchButtonTitle(pattern) {
   const mode = patternLaunchMode(pattern);
   if (mode === LIVE_LAUNCH_MODES.HOLD) {
-    return `${pattern.name} — hold to play in sync (${pattern.liveSyncGrid ?? '1/16'} grid)`;
+    return `${pattern.name} — hold (or tap) to play in sync (${pattern.liveSyncGrid ?? '1/16'} grid); release or tap again to stop`;
   }
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
     return `${pattern.name} — preview this pattern (Live: one shot on ${pattern.liveSyncGrid ?? '1/16'} grid)`;
@@ -359,17 +365,22 @@ function onPreviewClick() {
 }
 
 function onLaunchPointerDown(e) {
-  if (!activePattern.value || !isHoldMode.value || e.button !== 0) return;
-  holdPointerId = e.pointerId;
-  e.currentTarget.setPointerCapture(e.pointerId);
-  emit('hold-pattern-down', activePattern.value.id);
+  if (!activePattern.value || !isHoldMode.value) return;
+  holdPointer.onPointerDown(e, {
+    key: activePattern.value.id,
+    payload: { patternId: activePattern.value.id },
+    captureTarget: e.currentTarget,
+  });
 }
 
 function onLaunchPointerUp(e) {
   if (!isHoldMode.value) return;
-  if (e?.pointerId != null && holdPointerId != null && e.pointerId !== holdPointerId) return;
-  holdPointerId = null;
-  emit('hold-pattern-up');
+  holdPointer.onElementPointerUp(e);
+}
+
+function onLaunchPointerCancel(e) {
+  if (!isHoldMode.value) return;
+  holdPointer.onElementPointerCancel(e);
 }
 
 function onDocumentPointerDown(e) {
@@ -400,6 +411,7 @@ window.addEventListener('resize', onWindowChange);
 window.addEventListener('keydown', onKeyDown);
 
 onUnmounted(() => {
+  holdPointer.dispose();
   window.removeEventListener('mousedown', onDocumentPointerDown);
   window.removeEventListener('touchstart', onDocumentPointerDown);
   window.removeEventListener('scroll', onWindowChange, true);
@@ -407,3 +419,12 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
 });
 </script>
+
+<style scoped>
+.hold-launch-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+</style>

@@ -225,8 +225,9 @@
                 :data-track-id="track.id"
                 :data-clip-index="index"
                 @pointerdown="onClipPointerDown($event, track, index, pattern.id)"
-                @pointerup="onClipPointerUp($event, track)"
-                @pointercancel="onClipPointerUp($event, track)"
+                @pointerup="onClipPointerUp($event)"
+                @pointercancel="onClipPointerCancel($event)"
+                @contextmenu.prevent
                 @click="onClipClick(track.id, pattern.id, pattern.liveLaunchMode)"
               >
                 <span class="relative z-[1] block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
@@ -337,6 +338,7 @@ import {
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
 import { shade } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
+import { useHoldPointer } from '../composables/useHoldPointer.js';
 
 const props = defineProps({
   song: { type: Object, required: true },
@@ -440,7 +442,20 @@ const hoveredSceneId = ref(null);
 const CLICK_DRAG_THRESHOLD_PX = 5;
 const drag = ref(null);
 let suppressNextClick = false;
-let holdPointerId = null;
+
+const holdPointer = useHoldPointer({
+  isStillMuted: (payload) => {
+    const track = props.tracks.find((t) => t.id === payload.trackId);
+    return isTrackHoldMuted(track, payload.patternId);
+  },
+  onDown: (payload) => {
+    suppressNextClick = true;
+    emit('hold-pattern-down', props.song.id, payload.trackId, payload.patternId);
+  },
+  onUp: (payload) => {
+    emit('hold-pattern-up', props.song.id, payload.trackId);
+  },
+});
 
 function updateSceneMenuPosition() {
   const el = sceneMenuTriggerRef.value;
@@ -498,7 +513,9 @@ function launchModeShort(pattern) {
 
 function launchModeLabel(pattern) {
   const mode = patternLaunchMode(pattern);
-  if (mode === LIVE_LAUNCH_MODES.HOLD) return 'Hold — press and hold to play';
+  if (mode === LIVE_LAUNCH_MODES.HOLD) {
+    return 'Hold — press and hold to play (tap toggles on tablet / extended display)';
+  }
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) return 'One Shot — plays once';
   return 'Loop — toggles on/off';
 }
@@ -571,10 +588,11 @@ function onClipPointerDown(e, track, fromIndex, patternId) {
 
   const pattern = track.patterns?.find((p) => p.id === patternId);
   if (isHoldPattern(pattern)) {
-    holdPointerId = e.pointerId;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    suppressNextClick = true;
-    emit('hold-pattern-down', props.song.id, track.id, patternId);
+    holdPointer.onPointerDown(e, {
+      key: `${track.id}:${patternId}`,
+      payload: { trackId: track.id, patternId },
+      captureTarget: e.currentTarget,
+    });
     return;
   }
 
@@ -593,11 +611,12 @@ function onClipPointerDown(e, track, fromIndex, patternId) {
   window.addEventListener('pointercancel', onDragEnd);
 }
 
-function onClipPointerUp(e, track) {
-  if (holdPointerId == null) return;
-  if (e?.pointerId != null && e.pointerId !== holdPointerId) return;
-  holdPointerId = null;
-  emit('hold-pattern-up', props.song.id, track.id);
+function onClipPointerUp(e) {
+  holdPointer.onElementPointerUp(e);
+}
+
+function onClipPointerCancel(e) {
+  holdPointer.onElementPointerCancel(e);
 }
 
 function dropIndexFromPoint(clientX, clientY, trackId) {
@@ -684,6 +703,7 @@ function clipDragClass(trackId, index) {
 }
 
 onUnmounted(() => {
+  holdPointer.dispose();
   window.removeEventListener('pointermove', onDragMove);
   window.removeEventListener('pointerup', onDragEnd);
   window.removeEventListener('pointercancel', onDragEnd);
@@ -786,9 +806,11 @@ function clipTitle(track, pattern) {
       : '';
   if (mode === LIVE_LAUNCH_MODES.HOLD) {
     const grid = pattern.liveSyncGrid ?? '1/16';
-    if (status === 'playing') return `${pattern.name} — playing (release to stop)${hiddenNote}`;
+    if (status === 'playing') {
+      return `${pattern.name} — playing (release or tap again to stop)${hiddenNote}`;
+    }
     if (status === 'arming') return `${pattern.name} — syncing to ${grid} grid…${hiddenNote}`;
-    return `${pattern.name} — hold to play in sync (${grid} grid)${hiddenNote}`;
+    return `${pattern.name} — hold (or tap) to play in sync (${grid} grid)${hiddenNote}`;
   }
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
     const grid = pattern.liveSyncGrid ?? '1/16';
@@ -810,6 +832,8 @@ function clipTitle(track, pattern) {
 .scene-btn {
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Outline (not ring) so this doesn't fight playing/queued ring utilities.

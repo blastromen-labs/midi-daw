@@ -23,6 +23,8 @@ export function padPlaybackOpts(pad, track, notePitchOffset = 0) {
     delayLeftSync: pad.delayLeftSync,
     delayRightSync: pad.delayRightSync,
     delayCutLow: !!pad.delayCutLow,
+    // Track-level HPF (Live HP) — applied in playSample before dry/wet fan-out.
+    cutLow: !!track?.cutLow,
   };
 }
 

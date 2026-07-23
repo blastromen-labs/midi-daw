@@ -26,7 +26,7 @@ export function zonePitchOffset(zone, notePitch, notePitchOffset = 0) {
 }
 
 /** playSample opts for a multi-sampler hit (wide pitch + drum-pad FX). */
-export function zonePlaybackOpts(zone, notePitch, notePitchOffset = 0, { durationSec } = {}) {
+export function zonePlaybackOpts(zone, notePitch, notePitchOffset = 0, { durationSec, track } = {}) {
   const opts = {
     pitch: zonePitchOffset(zone, notePitch, notePitchOffset),
     // Full MIDI keyboard vs a single root can exceed ±24 semitones.
@@ -44,6 +44,8 @@ export function zonePlaybackOpts(zone, notePitch, notePitchOffset = 0, { duratio
     delayLeftSync: zone?.delayLeftSync,
     delayRightSync: zone?.delayRightSync,
     delayCutLow: !!zone?.delayCutLow,
+    // Track-level HPF (Live HP) — applied in playSample before dry/wet fan-out.
+    cutLow: !!track?.cutLow,
   };
   if (durationSec != null && Number.isFinite(durationSec)) {
     opts.durationSec = Math.max(0.01, durationSec);

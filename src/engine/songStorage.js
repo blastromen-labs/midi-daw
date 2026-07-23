@@ -89,6 +89,10 @@ export function deserializeProject(data) {
     track.muted = !!track.muted;
     track.soloed = !!track.soloed;
     track.hiddenFromLive = !!track.hiddenFromLive;
+    // Drum / multi-sampler only — MIDI tracks ignore this (no local audio path).
+    if (track.kind === 'drum' || track.kind === 'multisampler') {
+      track.cutLow = !!track.cutLow;
+    }
     // Migrate legacy track-level launch settings onto each pattern, then drop
     // them from the track so launch mode is always per-pattern going forward.
     const legacyMode = track.liveLaunchMode ?? 'toggle';

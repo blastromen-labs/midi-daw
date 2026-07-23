@@ -141,50 +141,67 @@
         :class="isHiddenFromLive(track) ? 'opacity-55' : ''"
       >
         <div
-          class="flex flex-col justify-center gap-0.5 w-36 flex-shrink-0 px-2 py-1.5 rounded-md bg-surface/60"
+          class="flex items-stretch w-36 flex-shrink-0 rounded-md bg-surface/60 overflow-hidden"
         >
-          <div class="flex items-center gap-1 min-w-0">
-            <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: track.color }"></span>
-            <span class="truncate text-xs font-semibold flex-1 min-w-0">{{ track.name }}</span>
-            <button
-              type="button"
-              class="flex items-center justify-center w-5 h-5 flex-shrink-0 rounded hover:bg-surface-active transition-colors"
-              @click.stop="emit('toggle-track-mute', song.id, track.id)"
-              @contextmenu.prevent.stop="emit('toggle-track-solo', song.id, track.id)"
-            >
+          <!-- Full-height left HP strip for touch during Live; drum / sampler only. -->
+          <button
+            v-if="track.kind === 'drum' || track.kind === 'multisampler'"
+            type="button"
+            class="w-8 flex-shrink-0 self-stretch flex items-center justify-center text-[9px] font-bold tracking-tight transition-colors select-none"
+            :class="
+              track.cutLow
+                ? 'text-white bg-accent'
+                : 'text-muted-dim hover:text-muted hover:bg-surface-active active:bg-surface-active'
+            "
+            :title="track.cutLow ? 'Cut low on — high-pass at 200 Hz' : 'Cut low — high-pass at 200 Hz'"
+            :aria-pressed="!!track.cutLow"
+            @click.stop="emit('toggle-track-cut-low', song.id, track.id)"
+          >
+            HP
+          </button>
+          <div class="flex flex-col justify-center gap-0.5 flex-1 min-w-0 px-2 py-1.5">
+            <div class="flex items-center gap-1 min-w-0">
+              <span class="truncate text-xs font-semibold flex-1 min-w-0">{{ track.name }}</span>
+              <button
+                type="button"
+                class="flex items-center justify-center w-5 h-5 flex-shrink-0 rounded hover:bg-surface-active transition-colors"
+                @click.stop="emit('toggle-track-mute', song.id, track.id)"
+                @contextmenu.prevent.stop="emit('toggle-track-solo', song.id, track.id)"
+              >
+                <span
+                  class="w-2 h-2 rounded-full ring-1 transition-all pointer-events-none"
+                  :class="trackMuteSoloLedClass(track)"
+                  aria-hidden="true"
+                ></span>
+              </button>
+              <button
+                v-if="editMode"
+                type="button"
+                class="w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
+                @click.stop="emit('edit-track', song.id, track.id)"
+              >
+                ✎
+              </button>
+            </div>
+            <template v-if="!hideTrackDetails">
+              <span class="text-[9px] text-muted-dim uppercase tracking-wide">
+                {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
+              </span>
               <span
-                class="w-2 h-2 rounded-full ring-1 transition-all pointer-events-none"
-                :class="trackMuteSoloLedClass(track)"
-                aria-hidden="true"
-              ></span>
-            </button>
-            <button
-              v-if="editMode"
-              type="button"
-              class="w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
-              @click.stop="emit('edit-track', song.id, track.id)"
-            >
-              ✎
-            </button>
+                v-if="track.kind === 'midi'"
+                class="text-[9px] tracking-wide truncate"
+                :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
+              >
+                {{ trackMidiOutLabel(track) || 'No MIDI out' }}
+              </span>
+              <span
+                v-else-if="track.kind === 'multisampler'"
+                class="text-[9px] tracking-wide truncate text-muted-dim"
+              >
+                Sampler
+              </span>
+            </template>
           </div>
-          <template v-if="!hideTrackDetails">
-            <span class="text-[9px] text-muted-dim uppercase tracking-wide">
-              {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
-            </span>
-            <span
-              v-if="track.kind === 'midi'"
-              class="text-[9px] tracking-wide truncate"
-              :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
-            >
-              {{ trackMidiOutLabel(track) || 'No MIDI out' }}
-            </span>
-            <span
-              v-else-if="track.kind === 'multisampler'"
-              class="text-[9px] tracking-wide truncate text-muted-dim"
-            >
-              Sampler
-            </span>
-          </template>
         </div>
 
         <div class="flex flex-wrap gap-1.5 flex-1 content-start relative" :data-clip-track="track.id">
@@ -354,6 +371,7 @@ const emit = defineEmits([
   'edit-track',
   'toggle-track-mute',
   'toggle-track-solo',
+  'toggle-track-cut-low',
   'edit-pattern',
   'open-pattern-roll',
   'move-song',

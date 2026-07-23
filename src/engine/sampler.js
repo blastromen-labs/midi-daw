@@ -12,6 +12,7 @@ import { getDelayInputFromSource } from './delay.js';
 import { getDistortionCurve } from './padDistortion.js';
 import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
 import { deleteStoredSample, getStoredSample, putStoredSample } from './sampleStorage.js';
+import { TRACK_LOW_CUT_HZ } from '../models/project.js';
 
 export async function resumeSamplerAudio() {
   return resumeSharedAudioContext();
@@ -306,25 +307,38 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   tail.connect(gain);
   nodes.push(gain);
 
+  // Track-level low cut (Live HP): high-pass before dry/reverb/delay fan-out so
+  // the whole voice — not just the delay return — loses content under 200 Hz.
+  let bus = gain;
+  if (opts.cutLow) {
+    const hpf = c.createBiquadFilter();
+    hpf.type = 'highpass';
+    hpf.frequency.value = TRACK_LOW_CUT_HZ;
+    hpf.Q.value = 0.707;
+    gain.connect(hpf);
+    bus = hpf;
+    nodes.push(hpf);
+  }
+
   // Dry / reverb balance (crossfade). Delay is a parallel send on top.
   if (reverbSend > 0.001) {
     const dryGain = c.createGain();
     const wetGain = c.createGain();
     dryGain.gain.value = 1 - reverbSend;
     wetGain.gain.value = reverbSend;
-    gain.connect(dryGain);
-    gain.connect(wetGain);
+    bus.connect(dryGain);
+    bus.connect(wetGain);
     dryGain.connect(out);
     wetGain.connect(getReverbInput(padId, opts.reverbDecay));
     nodes.push(dryGain, wetGain);
   } else {
-    gain.connect(out);
+    bus.connect(out);
   }
 
   if (delayAmount > 0.001) {
     const delaySend = c.createGain();
     delaySend.gain.value = delayAmount;
-    gain.connect(delaySend);
+    bus.connect(delaySend);
     delaySend.connect(getDelayInputFromSource(padId, opts));
     nodes.push(delaySend);
   }

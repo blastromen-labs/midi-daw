@@ -678,6 +678,8 @@ export const DELAY_FEEDBACK_MAX = 0.95;
 export const DELAY_LEFT_SYNC_DEFAULT = '1/8';
 export const DELAY_RIGHT_SYNC_DEFAULT = '1/4';
 export const DELAY_LOW_CUT_HZ = 200;
+/** Track-level high-pass for drum / multi-sampler dry+wet path (Live "HP" toggle). */
+export const TRACK_LOW_CUT_HZ = DELAY_LOW_CUT_HZ;
 
 /** Musical note values for tempo-synced delay taps (beats at current BPM). */
 export const DELAY_SYNC_OPTIONS = [
@@ -853,6 +855,8 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     muted: false,
     // Instant solo — when any track is soloed, only soloed tracks schedule.
     soloed: false,
+    // High-pass the full sample path at TRACK_LOW_CUT_HZ (Live track-box HP).
+    cutLow: false,
     // When true, the whole track row is omitted from Live view (patterns still
     // play via scenes). Prefer over per-pattern hide for background tracks.
     hiddenFromLive: false,
@@ -998,6 +1002,8 @@ export function createMultiSamplerTrack(
     zones: [createSampleZone({ name: 'Sample 1', lowNote: 0, highNote: 127, rootNote: 60 })],
     muted: false,
     soloed: false,
+    // High-pass the full sample path at TRACK_LOW_CUT_HZ (Live track-box HP).
+    cutLow: false,
     hiddenFromLive: false,
   };
 }

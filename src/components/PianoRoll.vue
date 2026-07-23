@@ -444,6 +444,7 @@
       :track-name="activeTrack.name"
       :zones="activeTrack.zones"
       :track-volume="activeTrack.volume ?? 1"
+      :cut-low="!!activeTrack.cutLow"
       @close="sampleZonesOpen = false"
       @update-zone="onUpdateZone"
       @add-zone="onAddZone"
@@ -2542,7 +2543,7 @@ function playMultiSamplerPreview(track, pitch, velocity = PREVIEW_VELOCITY) {
     velocity,
     0,
     gainMul,
-    zonePlaybackOpts(zone, pitch)
+    zonePlaybackOpts(zone, pitch, 0, { track })
   );
   if (voiceId != null) previewVoices.set(pitch, voiceId);
   return true;

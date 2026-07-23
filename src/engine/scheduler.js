@@ -311,7 +311,7 @@ export class PlaybackEngine {
       note.velocity,
       onDelay,
       gainMul,
-      zonePlaybackOpts(zone, note.pitch, note.pitchOffset, { durationSec })
+      zonePlaybackOpts(zone, note.pitch, note.pitchOffset, { durationSec, track })
     );
   }
 

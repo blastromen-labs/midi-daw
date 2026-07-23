@@ -192,6 +192,21 @@
                 />
               </label>
 
+              <div>
+                <label class="text-[9px] uppercase tracking-wider text-muted-dim block mb-0.5">
+                  Pitch — {{ pitchLabel(zone) }}
+                </label>
+                <input
+                  type="range"
+                  min="-24"
+                  max="24"
+                  step="1"
+                  :value="zone.pitch ?? 0"
+                  class="w-full accent-accent"
+                  @input="emit('update-zone', zone.id, { pitch: Number($event.target.value) })"
+                />
+              </div>
+
               <div class="border-t border-line pt-2.5 space-y-2">
                 <div>
                   <label class="text-[9px] uppercase tracking-wider text-muted-dim block mb-0.5">
@@ -358,6 +373,12 @@ function noteLabel(pitch) {
 
 function rangeLabel(zone) {
   return `${noteName(zone.lowNote)} – ${noteName(zone.highNote)}`;
+}
+
+function pitchLabel(zone) {
+  const p = zone.pitch ?? 0;
+  if (p === 0) return 'Original';
+  return p > 0 ? `+${p} st` : `${p} st`;
 }
 
 function decayLabel(zone) {

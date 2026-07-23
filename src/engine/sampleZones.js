@@ -15,9 +15,14 @@ export function findZoneForPitch(zones, pitch) {
   return zones.find((z) => !z.muted && p >= z.lowNote && p <= z.highNote) ?? null;
 }
 
-/** Semitones to shift the sample so `notePitch` sounds relative to rootNote. */
+/** Semitones to shift the sample: note vs root + zone pitch + per-note offset. */
 export function zonePitchOffset(zone, notePitch, notePitchOffset = 0) {
-  return (Number(notePitch) || 0) - (Number(zone?.rootNote) || 60) + (Number(notePitchOffset) || 0);
+  return (
+    (Number(notePitch) || 0) -
+    (Number(zone?.rootNote) || 60) +
+    (Number(zone?.pitch) || 0) +
+    (Number(notePitchOffset) || 0)
+  );
 }
 
 /** playSample opts for a multi-sampler hit (wide pitch + drum-pad FX). */

@@ -925,6 +925,8 @@ export function createSampleZone({
     highNote: high,
     // MIDI pitch at which the sample plays at its original rate.
     rootNote: root,
+    // Extra semitone offset on top of note−rootNote mapping (±24, like drum pads).
+    pitch: 0,
     volume: 1,
     muted: false,
     // Samples-editor UI: collapse zone parameters to title + note range.
@@ -949,6 +951,8 @@ export function normalizeSampleZone(zone) {
     zone.highNote = tmp;
   }
   zone.rootNote = clampMidiNote(zone.rootNote, 60);
+  if (zone.pitch == null) zone.pitch = 0;
+  zone.pitch = Math.max(-24, Math.min(24, Math.round(Number(zone.pitch) || 0)));
   if (zone.volume == null) zone.volume = 1;
   zone.volume = Math.max(0, Math.min(1, Number(zone.volume) || 0));
   if (zone.muted === undefined) zone.muted = false;

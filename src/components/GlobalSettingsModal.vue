@@ -115,6 +115,28 @@
                 ></span>
               </button>
             </div>
+
+            <div class="mt-4">
+              <div class="mb-2">
+                <span class="text-xs text-muted block">Live view scale</span>
+                <span class="text-[11px] text-muted-dim leading-snug">
+                  Larger clip and scene buttons for tablet use.
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button
+                  v-for="scale in liveViewUiScales"
+                  :key="scale"
+                  type="button"
+                  class="flex-1 px-2 py-1.5 rounded text-xs"
+                  :class="liveViewUiScale === scale ? 'bg-accent text-white' : 'bg-surface-hover hover:bg-surface-active'"
+                  :title="`Live view at ${scale}%`"
+                  @click="emit('live-view-ui-scale-change', scale)"
+                >
+                  {{ scale }}%
+                </button>
+              </div>
+            </div>
           </section>
         </div>
       </div>
@@ -123,15 +145,20 @@
 </template>
 
 <script setup>
+import { LIVE_VIEW_UI_SCALES } from '../engine/globalSettings.js';
+
 defineProps({
   syncMode: { type: String, default: 'internal' },
   clockInputId: { type: String, default: '' },
   sendMidiClock: Boolean,
   clockOutputId: { type: String, default: '' },
   compactNavbar: Boolean,
+  liveViewUiScale: { type: Number, default: 100 },
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
 });
+
+const liveViewUiScales = LIVE_VIEW_UI_SCALES;
 
 const emit = defineEmits([
   'close',
@@ -140,5 +167,6 @@ const emit = defineEmits([
   'toggle-clock',
   'clock-output-change',
   'compact-navbar-change',
+  'live-view-ui-scale-change',
 ]);
 </script>

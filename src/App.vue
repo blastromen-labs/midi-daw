@@ -10,6 +10,7 @@
         :send-midi-clock="syncSettings.sendMidiClock"
         :clock-output-id="syncSettings.clockOutputId"
         :compact-navbar="globalSettings.compactNavbar"
+        :live-view-ui-scale="globalSettings.liveViewUiScale"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
         :songs="songs"
@@ -31,6 +32,7 @@
         @toggle-clock="syncSettings.sendMidiClock = !syncSettings.sendMidiClock"
         @clock-output-change="syncSettings.clockOutputId = $event"
         @compact-navbar-change="globalSettings.compactNavbar = $event"
+        @live-view-ui-scale-change="globalSettings.liveViewUiScale = $event"
         @toggle-show-hidden="showHiddenLive = !showHiddenLive"
         @toggle-edit-mode="liveEditMode = !liveEditMode"
       />
@@ -82,6 +84,7 @@
           :playing="playing"
           :show-hidden="showHiddenLive"
           :edit-mode="liveEditMode"
+          :ui-scale="globalSettings.liveViewUiScale"
           :midi-outputs="midiOutputs"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"

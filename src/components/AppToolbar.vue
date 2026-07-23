@@ -98,6 +98,7 @@
         :send-midi-clock="sendMidiClock"
         :clock-output-id="clockOutputId"
         :compact-navbar="compactNavbar"
+        :live-view-ui-scale="liveViewUiScale"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
         @sync-mode-change="(v) => emit('sync-mode-change', v)"
@@ -105,6 +106,7 @@
         @toggle-clock="emit('toggle-clock')"
         @clock-output-change="(v) => emit('clock-output-change', v)"
         @compact-navbar-change="(v) => emit('compact-navbar-change', v)"
+        @live-view-ui-scale-change="(v) => emit('live-view-ui-scale-change', v)"
       />
     </div>
   </div>
@@ -128,6 +130,7 @@ defineProps({
   sendMidiClock: Boolean,
   clockOutputId: { type: String, default: '' },
   compactNavbar: Boolean,
+  liveViewUiScale: { type: Number, default: 100 },
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
   songs: { type: Array, default: () => [] },
@@ -152,6 +155,7 @@ const emit = defineEmits([
   'toggle-clock',
   'clock-output-change',
   'compact-navbar-change',
+  'live-view-ui-scale-change',
   'toggle-show-hidden',
   'toggle-edit-mode',
 ]);

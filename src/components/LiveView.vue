@@ -6,39 +6,48 @@
   -->
   <div class="live-view flex flex-col h-full min-h-0 bg-panel overflow-hidden">
     <div
-      class="live-view__scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain p-2 flex flex-col gap-3"
+      class="live-view__scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain"
     >
-      <SongLiveBlock
-        v-for="(entry, index) in liveSongs"
-        :key="entry.id"
-        class="shrink-0"
-        :song="entry"
-        :tracks="entry.tracks"
-        :scenes="entry.scenes"
-        :active-scene-id="activeSceneBySong[entry.id] ?? null"
-        :playing="playing"
-        :show-hidden="showHidden"
-        :edit-mode="editMode"
-        :midi-outputs="midiOutputs"
-        :can-move-up="index > 0"
-        :can-move-down="index < liveSongs.length - 1"
-        @trigger-pattern="(songId, trackId, patternId) => emit('trigger-pattern', songId, trackId, patternId)"
-        @hold-pattern-down="(songId, trackId, patternId) => emit('hold-pattern-down', songId, trackId, patternId)"
-        @hold-pattern-up="(songId, trackId) => emit('hold-pattern-up', songId, trackId)"
-        @reorder-patterns="(songId, trackId, from, to) => emit('reorder-patterns', songId, trackId, from, to)"
-        @launch-scene="(songId, sceneId) => emit('launch-scene', songId, sceneId)"
-        @add-scene="(songId) => emit('add-scene', songId)"
-        @edit-scene="(songId, sceneId) => emit('edit-scene', songId, sceneId)"
-        @edit-track="(songId, trackId) => emit('edit-track', songId, trackId)"
-        @toggle-track-mute="(songId, trackId) => emit('toggle-track-mute', songId, trackId)"
-        @toggle-track-solo="(songId, trackId) => emit('toggle-track-solo', songId, trackId)"
-        @edit-pattern="(songId, trackId, patternId) => emit('edit-pattern', songId, trackId, patternId)"
-        @open-pattern-roll="(songId, trackId, patternId) => emit('open-pattern-roll', songId, trackId, patternId)"
-        @move-song="(songId, direction) => emit('move-song', songId, direction)"
-      />
+      <!--
+        CSS zoom scales layout + hit-testing (unlike transform), so clip/scene
+        targets and getBoundingClientRect-based menus stay aligned on tablets.
+      -->
+      <div
+        class="live-view__scale p-2 flex flex-col gap-3"
+        :style="{ zoom: uiScale / 100 }"
+      >
+        <SongLiveBlock
+          v-for="(entry, index) in liveSongs"
+          :key="entry.id"
+          class="shrink-0"
+          :song="entry"
+          :tracks="entry.tracks"
+          :scenes="entry.scenes"
+          :active-scene-id="activeSceneBySong[entry.id] ?? null"
+          :playing="playing"
+          :show-hidden="showHidden"
+          :edit-mode="editMode"
+          :midi-outputs="midiOutputs"
+          :can-move-up="index > 0"
+          :can-move-down="index < liveSongs.length - 1"
+          @trigger-pattern="(songId, trackId, patternId) => emit('trigger-pattern', songId, trackId, patternId)"
+          @hold-pattern-down="(songId, trackId, patternId) => emit('hold-pattern-down', songId, trackId, patternId)"
+          @hold-pattern-up="(songId, trackId) => emit('hold-pattern-up', songId, trackId)"
+          @reorder-patterns="(songId, trackId, from, to) => emit('reorder-patterns', songId, trackId, from, to)"
+          @launch-scene="(songId, sceneId) => emit('launch-scene', songId, sceneId)"
+          @add-scene="(songId) => emit('add-scene', songId)"
+          @edit-scene="(songId, sceneId) => emit('edit-scene', songId, sceneId)"
+          @edit-track="(songId, trackId) => emit('edit-track', songId, trackId)"
+          @toggle-track-mute="(songId, trackId) => emit('toggle-track-mute', songId, trackId)"
+          @toggle-track-solo="(songId, trackId) => emit('toggle-track-solo', songId, trackId)"
+          @edit-pattern="(songId, trackId, patternId) => emit('edit-pattern', songId, trackId, patternId)"
+          @open-pattern-roll="(songId, trackId, patternId) => emit('open-pattern-roll', songId, trackId, patternId)"
+          @move-song="(songId, direction) => emit('move-song', songId, direction)"
+        />
 
-      <div v-if="!liveSongs.length" class="text-sm text-muted-dim px-2 py-4 shrink-0">
-        No songs yet — create one from the Song menu in Roll view
+        <div v-if="!liveSongs.length" class="text-sm text-muted-dim px-2 py-4 shrink-0">
+          No songs yet — create one from the Song menu in Roll view
+        </div>
       </div>
     </div>
   </div>
@@ -57,6 +66,8 @@ defineProps({
   showHidden: { type: Boolean, default: false },
   /** When true, show pen buttons that open track/pattern/scene edit modals. */
   editMode: { type: Boolean, default: false },
+  /** Live grid UI scale percent: 100 | 125 | 150 | 175 | 200. */
+  uiScale: { type: Number, default: 100 },
   midiOutputs: { type: Array, default: () => [] },
 });
 

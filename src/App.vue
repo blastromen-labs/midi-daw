@@ -260,7 +260,7 @@ const mixBpm = ref(120);
 const viewMode = ref('roll');
 /** Live UI: show tracks/patterns marked Hide from Live (still play via scenes). */
 const showHiddenLive = ref(false);
-/** Live UI: show pen buttons that open track/pattern settings modals. */
+/** Live UI: show pen buttons that open track/pattern/scene settings modals. */
 const liveEditMode = ref(false);
 const sceneEditorOpen = ref(false);
 const sceneEditorMode = ref('create');

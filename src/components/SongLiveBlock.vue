@@ -95,29 +95,45 @@
       </div>
 
       <div class="flex flex-wrap gap-1.5 flex-1 content-start min-w-0">
-        <button
+        <!-- Wrapper keeps edit pen a sibling of the scene button (no nested <button>). -->
+        <div
           v-for="scene in scenes"
           :key="scene.id"
-          type="button"
-          class="scene-btn relative h-9 min-w-[5.5rem] px-3 pr-5 rounded-md text-left text-xs font-medium transition-transform active:scale-[0.97]"
-          :class="sceneStateClass(scene)"
-          :title="sceneTitle(scene)"
-          @click="emit('launch-scene', song.id, scene.id)"
+          class="relative h-9 min-w-[5.5rem] flex-shrink-0"
+          @mouseenter="hoveredSceneId = scene.id"
+          @mouseleave="hoveredSceneId = null"
         >
-          <span class="block truncate">{{ scene.name }}</span>
-          <span
-            v-if="sceneStatus(scene) === 'playing'"
-            class="absolute top-1 right-1 text-[10px] leading-none"
-          >▶</span>
-          <span
-            v-else-if="sceneStatus(scene) === 'queued'"
-            class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
-          ></span>
-          <span
-            v-else-if="sceneStatus(scene) === 'armed'"
-            class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
-          >▶</span>
-        </button>
+          <button
+            type="button"
+            class="scene-btn absolute inset-0 px-3 pr-5 rounded-md text-left text-xs font-medium transition-transform active:scale-[0.97]"
+            :class="sceneStateClass(scene)"
+            :title="sceneTitle(scene)"
+            @click="emit('launch-scene', song.id, scene.id)"
+          >
+            <span class="block truncate">{{ scene.name }}</span>
+            <span
+              v-if="sceneStatus(scene) === 'playing'"
+              class="absolute top-1 right-1 text-[10px] leading-none"
+            >▶</span>
+            <span
+              v-else-if="sceneStatus(scene) === 'queued'"
+              class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+            ></span>
+            <span
+              v-else-if="sceneStatus(scene) === 'armed'"
+              class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
+            >▶</span>
+          </button>
+          <button
+            v-if="editMode"
+            type="button"
+            class="absolute bottom-0.5 right-0.5 z-[2] w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
+            title="Edit scene"
+            @click.stop="emit('edit-scene', song.id, scene.id)"
+          >
+            ✎
+          </button>
+        </div>
         <p
           v-if="!scenes.length"
           class="text-[10px] text-muted-dim self-center px-1"
@@ -175,11 +191,12 @@
             <div class="relative w-24 h-14 flex-shrink-0">
               <button
                 type="button"
-                class="clip absolute inset-0 rounded-md overflow-hidden text-left px-2 py-1 transition-transform active:scale-[0.97]"
+                class="clip absolute inset-0 rounded-md overflow-hidden text-left px-2 py-1 transition-[transform,opacity,filter] active:scale-[0.97]"
                 :class="[
                   clipStateClass(track, pattern),
                   clipDragClass(track.id, index),
                   isHiddenFromLive(pattern) && !isHiddenFromLive(track) ? 'opacity-55' : '',
+                  sceneHoverClipClass(pattern),
                 ]"
                 :style="clipStyle(track, pattern)"
                 :title="clipTitle(track, pattern)"
@@ -283,6 +300,7 @@ import {
   isPatternPlaying,
   isPatternQueued,
   isPatternStopQueued,
+  patternInScene,
   patternLaunchMode,
   patternLoopEndBeat,
   patternStepsLabel,
@@ -364,6 +382,8 @@ const sceneMenuRootRef = ref(null);
 const sceneMenuTriggerRef = ref(null);
 const sceneMenuPanelRef = ref(null);
 const sceneMenuStyle = ref({});
+/** Scene id under the pointer — used to preview which clips belong to it. */
+const hoveredSceneId = ref(null);
 
 const CLICK_DRAG_THRESHOLD_PX = 5;
 const drag = ref(null);
@@ -471,6 +491,14 @@ function sceneStateClass(scene) {
   if (status === 'partial') return 'ring-1 ring-white/40 bg-surface text-white';
   if (status === 'empty') return 'ring-1 ring-line-light bg-surface/40 text-muted';
   return 'ring-1 ring-line-light bg-surface hover:ring-white/40 text-white';
+}
+
+/** Highlight scene members / dim others while a scene button is hovered. */
+function sceneHoverClipClass(pattern) {
+  if (!hoveredSceneId.value) return '';
+  return patternInScene(pattern, hoveredSceneId.value)
+    ? 'scene-hover-member'
+    : 'scene-hover-dim';
 }
 
 function sceneTitle(scene) {
@@ -730,5 +758,20 @@ function clipTitle(track, pattern) {
 .scene-btn {
   touch-action: none;
   user-select: none;
+}
+
+/* Outline (not ring) so this doesn't fight playing/queued ring utilities.
+   Full opacity so hidden-from-Live members still read clearly in the preview. */
+.clip.scene-hover-member {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 1px;
+  filter: brightness(1.12);
+  opacity: 1;
+  z-index: 1;
+}
+
+.clip.scene-hover-dim {
+  opacity: 0.3;
+  filter: saturate(0.55);
 }
 </style>

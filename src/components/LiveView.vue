@@ -53,7 +53,7 @@ defineProps({
   playing: Boolean,
   /** When true, tracks/patterns marked Hide from Live stay visible in the grid. */
   showHidden: { type: Boolean, default: false },
-  /** When true, show pen buttons that open track/pattern edit modals. */
+  /** When true, show pen buttons that open track/pattern/scene edit modals. */
   editMode: { type: Boolean, default: false },
   midiOutputs: { type: Array, default: () => [] },
 });

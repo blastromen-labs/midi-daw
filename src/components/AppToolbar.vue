@@ -20,7 +20,7 @@
     <div class="daw-toolbar-divider"></div>
 
     <div class="daw-toolbar-secondary">
-      <!-- Live-only: reveal hidden clips and/or quick-edit pens on tracks/patterns. -->
+      <!-- Live-only: reveal hidden clips and/or quick-edit pens on tracks/patterns/scenes. -->
       <template v-if="viewMode === 'live'">
         <ToolbarField
           label="Hidden"
@@ -44,8 +44,8 @@
         <ToolbarField
           label="Edit"
           :title="editMode
-            ? 'Edit pens visible on tracks and patterns — click to hide'
-            : 'Show edit pens on tracks and patterns for quick settings'"
+            ? 'Edit pens visible on tracks, patterns, and scenes — click to hide'
+            : 'Show edit pens on tracks, patterns, and scenes for quick settings'"
         >
           <button
             type="button"

@@ -1838,7 +1838,10 @@ function startDrawPreview(pitch, velocity = PREVIEW_VELOCITY) {
   if (props.playing) return;
 
   const track = activeTrack.value;
-  if (!track) return;
+  if (!track || track.muted) return;
+  // Match scheduler solo: if any track is soloed, only soloed tracks preview.
+  const tracks = props.tracks ?? [];
+  if (tracks.some((t) => t.soloed) && !track.soloed) return;
 
   if (track.kind === 'drum') {
     const pad = track.pads.find((p) => p.id === pitch);

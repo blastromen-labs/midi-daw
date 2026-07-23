@@ -333,7 +333,13 @@ export class PlaybackEngine {
     const loopEnd = clock.loopEndBeat;
     const transportLoopLen = clock.loopLengthBeats;
 
+    // Solo is additive: if any track is soloed, only those tracks sound
+    // (still respecting mute). Same rule across the whole Live scheduling set.
+    const anySolo = tracks.some((t) => t.soloed);
+
     for (const track of tracks) {
+      if (track.muted) continue;
+      if (anySolo && !track.soloed) continue;
       if (track.kind === 'midi' && !track.midiOutputId) continue;
 
       for (const { pattern, rangeStart, rangeEnd, originBeat } of trackSchedulingSegments(

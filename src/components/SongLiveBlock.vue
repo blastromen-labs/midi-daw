@@ -158,6 +158,19 @@
             <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: track.color }"></span>
             <span class="truncate text-xs font-semibold flex-1 min-w-0">{{ track.name }}</span>
             <button
+              type="button"
+              class="flex items-center justify-center w-5 h-5 flex-shrink-0 rounded hover:bg-surface-active transition-colors"
+              :title="trackMuteSoloTitle(track)"
+              @click.stop="emit('toggle-track-mute', song.id, track.id)"
+              @contextmenu.prevent.stop="emit('toggle-track-solo', song.id, track.id)"
+            >
+              <span
+                class="w-2 h-2 rounded-full ring-1 transition-all pointer-events-none"
+                :class="trackMuteSoloLedClass(track)"
+                aria-hidden="true"
+              ></span>
+            </button>
+            <button
               v-if="editMode"
               type="button"
               class="w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
@@ -332,10 +345,27 @@ const emit = defineEmits([
   'add-scene',
   'edit-scene',
   'edit-track',
+  'toggle-track-mute',
+  'toggle-track-solo',
   'edit-pattern',
   'open-pattern-roll',
   'move-song',
 ]);
+
+/** Green = audible, yellow = soloed, dark = muted. */
+function trackMuteSoloLedClass(track) {
+  if (track.muted) return 'bg-[#1a2420] ring-line/50';
+  if (track.soloed) {
+    return 'bg-[#facc15] ring-[#facc15]/50 shadow-[0_0_5px_rgba(250,204,21,0.55)]';
+  }
+  return 'bg-[#4ade80] ring-[#4ade80]/50 shadow-[0_0_5px_rgba(74,222,128,0.55)]';
+}
+
+function trackMuteSoloTitle(track) {
+  const mute = track.muted ? 'Unmute' : 'Mute';
+  const solo = track.soloed ? 'Unsolo' : 'Solo';
+  return `${mute} ${track.name} (click) · ${solo} (right-click)`;
+}
 
 const absBeat = useAbsolutePlayheadBeat();
 

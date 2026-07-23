@@ -88,6 +88,8 @@
           @add-scene="startCreateScene"
           @edit-scene="startEditScene"
           @edit-track="startEditLiveTrack"
+          @toggle-track-mute="toggleTrackMute"
+          @toggle-track-solo="toggleTrackSolo"
           @edit-pattern="startEditLivePattern"
           @open-pattern-roll="openPatternInRoll"
           @move-song="onMoveLiveSong"
@@ -1464,6 +1466,20 @@ function updateTrack(trackId, changes, songId = currentSongId.value) {
     Object.assign(track, changes);
     if (track.kind === 'drum') normalizeDrumTrack(track);
   }
+}
+
+/** Instant Live-view mute LED — toggles track.muted (scheduler skips muted tracks). */
+function toggleTrackMute(songId, trackId) {
+  const track = findTrack(trackId, songId);
+  if (!track) return;
+  updateTrack(trackId, { muted: !track.muted }, songId);
+}
+
+/** Right-click on the mute LED — toggles track.soloed (additive across Live set). */
+function toggleTrackSolo(songId, trackId) {
+  const track = findTrack(trackId, songId);
+  if (!track) return;
+  updateTrack(trackId, { soloed: !track.soloed }, songId);
 }
 
 function addTrack(kind, config = {}) {

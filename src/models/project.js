@@ -626,6 +626,10 @@ export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), pat
     pendingLaunches: [],
     midiOutputId: '',
     midiChannel: 0,
+    // Instant mute — skips note scheduling (Live LED + any view). Same idea as pad.muted.
+    muted: false,
+    // Instant solo — when any track is soloed, only soloed tracks schedule.
+    soloed: false,
     // When true, the whole track row is omitted from Live view (patterns still
     // play via scenes). Prefer over per-pattern hide for background tracks.
     hiddenFromLive: false,
@@ -760,6 +764,10 @@ export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), pa
     pendingLaunches: [],
     volume: 1,
     pads: DEFAULT_DRUM_PADS.map(([padName, color2]) => createDrumPad(padName, color2)),
+    // Instant mute — skips note scheduling (Live LED + any view). Same idea as pad.muted.
+    muted: false,
+    // Instant solo — when any track is soloed, only soloed tracks schedule.
+    soloed: false,
     // When true, the whole track row is omitted from Live view (patterns still
     // play via scenes). Prefer over per-pattern hide for background tracks.
     hiddenFromLive: false,

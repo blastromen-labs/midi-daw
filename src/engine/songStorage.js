@@ -86,6 +86,8 @@ export function deserializeProject(data) {
     track.liveLaunches = null;
     track.pendingLaunches = [];
     track.category = normalizeTrackCategory(track);
+    track.muted = !!track.muted;
+    track.soloed = !!track.soloed;
     track.hiddenFromLive = !!track.hiddenFromLive;
     // Migrate legacy track-level launch settings onto each pattern, then drop
     // them from the track so launch mode is always per-pattern going forward.

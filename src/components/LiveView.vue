@@ -30,6 +30,8 @@
         @add-scene="(songId) => emit('add-scene', songId)"
         @edit-scene="(songId, sceneId) => emit('edit-scene', songId, sceneId)"
         @edit-track="(songId, trackId) => emit('edit-track', songId, trackId)"
+        @toggle-track-mute="(songId, trackId) => emit('toggle-track-mute', songId, trackId)"
+        @toggle-track-solo="(songId, trackId) => emit('toggle-track-solo', songId, trackId)"
         @edit-pattern="(songId, trackId, patternId) => emit('edit-pattern', songId, trackId, patternId)"
         @open-pattern-roll="(songId, trackId, patternId) => emit('open-pattern-roll', songId, trackId, patternId)"
         @move-song="(songId, direction) => emit('move-song', songId, direction)"
@@ -67,6 +69,8 @@ const emit = defineEmits([
   'add-scene',
   'edit-scene',
   'edit-track',
+  'toggle-track-mute',
+  'toggle-track-solo',
   'edit-pattern',
   'open-pattern-roll',
   'move-song',

@@ -221,7 +221,6 @@
                   sceneHoverClipClass(pattern),
                 ]"
                 :style="clipStyle(track, pattern)"
-                :title="clipTitle(track, pattern)"
                 :data-track-id="track.id"
                 :data-clip-index="index"
                 @pointerdown="onClipPointerDown($event, track, index, pattern.id)"
@@ -238,7 +237,6 @@
                   <span
                     v-if="!hidePatternLaunchMode"
                     class="text-[8px] font-semibold uppercase tracking-wider opacity-80 flex-shrink-0"
-                    :title="launchModeLabel(pattern)"
                   >{{ launchModeShort(pattern) }}</span>
                   <span
                     v-if="!hidePatternBarLength"
@@ -511,15 +509,6 @@ function launchModeShort(pattern) {
   if (mode === LIVE_LAUNCH_MODES.HOLD) return 'Hold';
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) return '1-Shot';
   return 'Loop';
-}
-
-function launchModeLabel(pattern) {
-  const mode = patternLaunchMode(pattern);
-  if (mode === LIVE_LAUNCH_MODES.HOLD) {
-    return 'Hold — press and hold to play (tap toggles on tablet / extended display)';
-  }
-  if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) return 'One Shot — plays once';
-  return 'Loop — toggles on/off';
 }
 
 function sceneLaunchableRefs(scene) {
@@ -803,35 +792,6 @@ function clipStyle(track, pattern) {
   };
 }
 
-function clipTitle(track, pattern) {
-  const status = clipStatus(track, pattern);
-  const mode = patternLaunchMode(pattern);
-  const hiddenNote =
-    isHiddenFromLive(pattern) || isHiddenFromLive(track)
-      ? ' [hidden from Live — still plays via scenes]'
-      : '';
-  if (mode === LIVE_LAUNCH_MODES.HOLD) {
-    const grid = pattern.liveSyncGrid ?? '1/16';
-    if (status === 'playing') {
-      return `${pattern.name} — playing (release or tap again to stop)${hiddenNote}`;
-    }
-    if (status === 'arming') return `${pattern.name} — syncing to ${grid} grid…${hiddenNote}`;
-    return `${pattern.name} — hold (or tap) to play in sync (${grid} grid)${hiddenNote}`;
-  }
-  const reorderHint = props.lockPatternOrder ? '' : ', drag to reorder';
-  if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
-    const grid = pattern.liveSyncGrid ?? '1/16';
-    if (status === 'playing') return `${pattern.name} — playing once (click to retrigger from the start)${hiddenNote}`;
-    if (status === 'queued') return `${pattern.name} — queued one shot on ${grid} grid (starts from beginning; click again to cancel)${hiddenNote}`;
-    if (status === 'armed') return `${pattern.name} — will play once when you press Play (click to un-arm)${hiddenNote}`;
-    return `${pattern.name} — click to play once from the start (${grid} grid)${reorderHint}${hiddenNote}`;
-  }
-  if (status === 'playing') return `${pattern.name} — playing (click to stop when it loops)${hiddenNote}`;
-  if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)${hiddenNote}`;
-  if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)${hiddenNote}`;
-  if (status === 'armed') return `${pattern.name} — will play when you press Play (click to un-arm)${hiddenNote}`;
-  return `${pattern.name} — click to launch${reorderHint}${hiddenNote}`;
-}
 </script>
 
 <style scoped>

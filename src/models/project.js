@@ -90,7 +90,9 @@ export const TRACK_CATEGORIES = [
 ];
 
 export function defaultTrackCategory(kind = 'midi') {
-  return kind === 'drum' ? 'Drums' : 'Lead';
+  if (kind === 'drum') return 'Drums';
+  if (kind === 'multisampler') return 'Keys';
+  return 'Lead';
 }
 
 /** Coerce legacy or missing category values when loading a song. */
@@ -667,6 +669,88 @@ export const PAD_GAIN_MIN = 0.25;
 export const PAD_GAIN_MAX = 2;
 export const PAD_GAIN_DEFAULT = 1;
 
+// Stereo delay (drum pads + multi-sampler zones) — L/R taps in ms or tempo sync.
+export const DELAY_MS_MIN = 1;
+export const DELAY_MS_MAX = 2000;
+export const DELAY_LEFT_MS_DEFAULT = 250;
+export const DELAY_RIGHT_MS_DEFAULT = 375;
+export const DELAY_FEEDBACK_DEFAULT = 0.35;
+export const DELAY_FEEDBACK_MAX = 0.95;
+export const DELAY_LEFT_SYNC_DEFAULT = '1/8';
+export const DELAY_RIGHT_SYNC_DEFAULT = '1/4';
+export const DELAY_LOW_CUT_HZ = 200;
+
+/** Musical note values for tempo-synced delay taps (beats at current BPM). */
+export const DELAY_SYNC_OPTIONS = [
+  { label: '1/64', value: '1/64', beats: 0.0625 },
+  { label: '1/32', value: '1/32', beats: 0.125 },
+  { label: '1/16T', value: '1/16T', beats: 1 / 6 },
+  { label: '1/16', value: '1/16', beats: 0.25 },
+  { label: '1/8T', value: '1/8T', beats: 1 / 3 },
+  { label: '1/8', value: '1/8', beats: 0.5 },
+  { label: '3/16', value: '3/16', beats: 0.75 },
+  { label: '1/4T', value: '1/4T', beats: 2 / 3 },
+  { label: '1/4', value: '1/4', beats: 1 },
+  { label: '3/8', value: '3/8', beats: 1.5 },
+  { label: '1/2', value: '1/2', beats: 2 },
+  { label: '1 bar', value: '1bar', beats: 4 },
+];
+
+export function delaySyncBeats(value) {
+  const opt = DELAY_SYNC_OPTIONS.find((o) => o.value === value);
+  return opt?.beats ?? 0.5;
+}
+
+/** Default delay fields shared by drum pads and multi-sampler zones. */
+export function createDelayDefaults() {
+  return {
+    // Wet send amount (0 = off). Parallel to dry — not a dry/wet crossfade.
+    delay: 0,
+    delayFeedback: DELAY_FEEDBACK_DEFAULT,
+    // false = millisecond taps; true = tempo-sync note values.
+    delaySync: false,
+    delayLeftMs: DELAY_LEFT_MS_DEFAULT,
+    delayRightMs: DELAY_RIGHT_MS_DEFAULT,
+    delayLeftSync: DELAY_LEFT_SYNC_DEFAULT,
+    delayRightSync: DELAY_RIGHT_SYNC_DEFAULT,
+    // High-pass the delay input at DELAY_LOW_CUT_HZ when true.
+    delayCutLow: false,
+  };
+}
+
+/** Coerce/clamp delay fields on a pad or zone (mutates in place). */
+export function normalizeDelayFields(obj) {
+  if (!obj) return obj;
+  if (obj.delay == null) obj.delay = 0;
+  if (obj.delayFeedback == null) obj.delayFeedback = DELAY_FEEDBACK_DEFAULT;
+  if (obj.delaySync === undefined) obj.delaySync = false;
+  if (obj.delayLeftMs == null) obj.delayLeftMs = DELAY_LEFT_MS_DEFAULT;
+  if (obj.delayRightMs == null) obj.delayRightMs = DELAY_RIGHT_MS_DEFAULT;
+  if (!obj.delayLeftSync || !DELAY_SYNC_OPTIONS.some((o) => o.value === obj.delayLeftSync)) {
+    obj.delayLeftSync = DELAY_LEFT_SYNC_DEFAULT;
+  }
+  if (!obj.delayRightSync || !DELAY_SYNC_OPTIONS.some((o) => o.value === obj.delayRightSync)) {
+    obj.delayRightSync = DELAY_RIGHT_SYNC_DEFAULT;
+  }
+  if (obj.delayCutLow === undefined) obj.delayCutLow = false;
+  obj.delay = Math.max(0, Math.min(1, Number(obj.delay) || 0));
+  obj.delayFeedback = Math.max(
+    0,
+    Math.min(DELAY_FEEDBACK_MAX, Number(obj.delayFeedback) || 0)
+  );
+  obj.delaySync = !!obj.delaySync;
+  obj.delayLeftMs = Math.max(
+    DELAY_MS_MIN,
+    Math.min(DELAY_MS_MAX, Math.round(Number(obj.delayLeftMs) || DELAY_LEFT_MS_DEFAULT))
+  );
+  obj.delayRightMs = Math.max(
+    DELAY_MS_MIN,
+    Math.min(DELAY_MS_MAX, Math.round(Number(obj.delayRightMs) || DELAY_RIGHT_MS_DEFAULT))
+  );
+  obj.delayCutLow = !!obj.delayCutLow;
+  return obj;
+}
+
 export function createDrumPad(name, color) {
   const fileName = defaultDrumSampleFile(name) ?? '';
   return {
@@ -694,6 +778,7 @@ export function createDrumPad(name, color) {
     gain: PAD_GAIN_DEFAULT,
     // Saturation amount (0 = clean).
     distortion: 0,
+    ...createDelayDefaults(),
   };
 }
 
@@ -717,6 +802,7 @@ export function normalizeDrumPad(pad) {
   pad.gain = Math.max(PAD_GAIN_MIN, Math.min(PAD_GAIN_MAX, pad.gain));
   pad.distortion = Math.max(0, Math.min(1, pad.distortion));
   pad.pitch = Math.max(-24, Math.min(24, pad.pitch));
+  normalizeDelayFields(pad);
   return pad;
 }
 
@@ -803,6 +889,130 @@ export function ensureDefaultDrumPads(tracks) {
     for (const pad of track.pads) {
       pad.cutByPads = (pad.cutByPads ?? []).filter((id) => padIds.has(id));
     }
+  }
+}
+
+// Multi-sampler zones map a keyboard range (inclusive MIDI pitches) onto one
+// audio sample. Unlike drum pads, notes keep numeric MIDI pitches 0–127 and
+// the piano roll is identical to a MIDI track — playback pitch-shifts the
+// zone's sample relative to `rootNote` (the unshifted key).
+//
+// `fileName` is display-only; decoded AudioBuffers live in engine/sampler.js
+// keyed by zone.id (same IndexedDB path as drum pads).
+
+/** Clamp a MIDI note number into the valid 0–127 range. */
+export function clampMidiNote(note, fallback = 60) {
+  const n = Number(note);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(127, Math.round(n)));
+}
+
+export function createSampleZone({
+  name = 'Sample 1',
+  lowNote = 0,
+  highNote = 127,
+  rootNote = 60,
+} = {}) {
+  let low = clampMidiNote(lowNote, 0);
+  let high = clampMidiNote(highNote, 127);
+  if (high < low) [low, high] = [high, low];
+  const root = clampMidiNote(rootNote, 60);
+  return {
+    id: uid(),
+    name,
+    fileName: '',
+    lowNote: low,
+    highNote: high,
+    // MIDI pitch at which the sample plays at its original rate.
+    rootNote: root,
+    // Extra semitone offset on top of note−rootNote mapping (±24, like drum pads).
+    pitch: 0,
+    volume: 1,
+    muted: false,
+    // Samples-editor UI: collapse zone parameters to title + note range.
+    minimized: false,
+    // Same local FX chain as drum pads (see createDrumPad / sampler.js).
+    gain: PAD_GAIN_DEFAULT,
+    distortion: 0,
+    reverb: 0,
+    reverbDecay: REVERB_DECAY_DEFAULT,
+    ...createDelayDefaults(),
+  };
+}
+
+/** Coerce legacy or missing zone fields when loading a song. */
+export function normalizeSampleZone(zone) {
+  if (!zone) return zone;
+  zone.lowNote = clampMidiNote(zone.lowNote, 0);
+  zone.highNote = clampMidiNote(zone.highNote, 127);
+  if (zone.highNote < zone.lowNote) {
+    const tmp = zone.lowNote;
+    zone.lowNote = zone.highNote;
+    zone.highNote = tmp;
+  }
+  zone.rootNote = clampMidiNote(zone.rootNote, 60);
+  if (zone.pitch == null) zone.pitch = 0;
+  zone.pitch = Math.max(-24, Math.min(24, Math.round(Number(zone.pitch) || 0)));
+  if (zone.volume == null) zone.volume = 1;
+  zone.volume = Math.max(0, Math.min(1, Number(zone.volume) || 0));
+  if (zone.muted === undefined) zone.muted = false;
+  if (zone.minimized === undefined) zone.minimized = false;
+  zone.minimized = !!zone.minimized;
+  if (typeof zone.name !== 'string' || !zone.name) zone.name = 'Sample';
+  if (typeof zone.fileName !== 'string') zone.fileName = '';
+  if (zone.gain == null) zone.gain = PAD_GAIN_DEFAULT;
+  if (zone.distortion == null) zone.distortion = 0;
+  if (zone.reverb == null) zone.reverb = 0;
+  if (zone.reverbDecay == null) zone.reverbDecay = REVERB_DECAY_DEFAULT;
+  zone.gain = Math.max(PAD_GAIN_MIN, Math.min(PAD_GAIN_MAX, Number(zone.gain) || PAD_GAIN_DEFAULT));
+  zone.distortion = Math.max(0, Math.min(1, Number(zone.distortion) || 0));
+  zone.reverb = Math.max(0, Math.min(1, Number(zone.reverb) || 0));
+  zone.reverbDecay = Math.max(
+    REVERB_DECAY_MIN,
+    Math.min(REVERB_DECAY_MAX, Number(zone.reverbDecay) || REVERB_DECAY_DEFAULT)
+  );
+  normalizeDelayFields(zone);
+  return zone;
+}
+
+export function createMultiSamplerTrack(
+  name = 'Sampler 1',
+  color = randomTrackColor(),
+  patternSteps = 16
+) {
+  const pattern = createPattern('Pattern 1', randomPatternColor(), patternSteps);
+  return {
+    id: uid(),
+    kind: 'multisampler',
+    name,
+    color,
+    category: defaultTrackCategory('multisampler'),
+    patterns: [pattern],
+    activePatternId: pattern.id,
+    ghostTrackId: null,
+    ghostPatternId: null,
+    liveLaunches: null,
+    pendingLaunches: [],
+    volume: 1,
+    // One empty zone covering the full keyboard — loading a single sample
+    // maps it chromatically across every key until the user splits ranges.
+    zones: [createSampleZone({ name: 'Sample 1', lowNote: 0, highNote: 127, rootNote: 60 })],
+    muted: false,
+    soloed: false,
+    hiddenFromLive: false,
+  };
+}
+
+/** Ensure multi-sampler tracks always have at least one normalized zone. */
+export function ensureMultiSamplerZones(tracks) {
+  for (const track of tracks ?? []) {
+    if (track.kind !== 'multisampler') continue;
+    if (!Array.isArray(track.zones) || track.zones.length === 0) {
+      track.zones = [createSampleZone()];
+    }
+    for (const zone of track.zones) normalizeSampleZone(zone);
+    if (track.volume == null) track.volume = 1;
+    track.volume = Math.max(0, Math.min(1, Number(track.volume) || 0));
   }
 }
 

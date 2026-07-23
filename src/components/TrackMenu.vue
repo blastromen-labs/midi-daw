@@ -72,6 +72,13 @@
           </button>
           <button
             class="flex-1 text-xs py-1.5 hover:bg-surface-hover text-muted hover:text-white border-l border-line"
+            title="Add a multi-sampler — map samples across the keyboard"
+            @click="startCreate('multisampler')"
+          >
+            + Sampler
+          </button>
+          <button
+            class="flex-1 text-xs py-1.5 hover:bg-surface-hover text-muted hover:text-white border-l border-line"
             title="Add a sample-based drum channel"
             @click="startCreate('drum')"
           >
@@ -127,11 +134,10 @@ const editorInitial = ref({});
 const activeTrack = computed(() => props.tracks.find((t) => t.id === props.activeTrackId));
 
 function defaultTrackName(kind) {
-  const n =
-    kind === 'drum'
-      ? props.tracks.filter((t) => t.kind === 'drum').length + 1
-      : props.tracks.filter((t) => t.kind === 'midi').length + 1;
-  return kind === 'drum' ? `Drums ${n}` : `MIDI ${n}`;
+  const n = props.tracks.filter((t) => t.kind === kind).length + 1;
+  if (kind === 'drum') return `Drums ${n}`;
+  if (kind === 'multisampler') return `Sampler ${n}`;
+  return `MIDI ${n}`;
 }
 
 function trackToDraft(track) {

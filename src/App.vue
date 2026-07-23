@@ -63,6 +63,9 @@
           @add-pad="addPad"
           @remove-pad="removePad"
           @rename-pad="renamePad"
+          @update-zone="updateZone"
+          @add-zone="addZone"
+          @remove-zone="removeZone"
           @delete-track="removeTrack"
           @marker-change="project.markerBeat = $event"
           @loop-region-change="setLoopRegion"
@@ -169,7 +172,9 @@ import {
   createProject,
   createMidiTrack,
   createDrumTrack,
+  createMultiSamplerTrack,
   createDrumPad,
+  createSampleZone,
   createPattern,
   createScene,
   clonePattern as clonePatternModel,
@@ -189,9 +194,11 @@ import {
   syncUidCounter,
   defaultDrumSampleFile,
   ensureDefaultDrumPads,
+  ensureMultiSamplerZones,
   normalizeProjectNotes,
   normalizeDrumTrack,
   normalizeDrumPad,
+  normalizeSampleZone,
   LIVE_LAUNCH_MODES,
   patternLaunchMode,
 } from './models/project.js';
@@ -229,6 +236,7 @@ import {
   restoreStoredSample,
 } from './engine/sampler.js';
 import { removeReverbBus } from './engine/reverb.js';
+import { removeDelayBus } from './engine/delay.js';
 import { hasFileDrag } from './utils/audioFile.js';
 import { isEditableTarget } from './utils/keyboard.js';
 import {
@@ -326,6 +334,8 @@ function clearDrumSamplesForTracks(tracks, { discardStored = false } = {}) {
   for (const track of tracks ?? []) {
     if (track.kind === 'drum') {
       for (const pad of track.pads ?? []) clearSample(pad.id, { discardStored });
+    } else if (track.kind === 'multisampler') {
+      for (const zone of track.zones ?? []) clearSample(zone.id, { discardStored });
     }
   }
 }
@@ -334,10 +344,19 @@ function clearDrumSamples({ discardStored = false } = {}) {
   clearDrumSamplesForTracks(project.tracks, { discardStored });
 }
 
-// Reload drum audio into the engine cache after project swap / refresh.
-// Custom samples come back from IndexedDB; built-ins re-fetch from /drums/.
+// Reload drum + multi-sampler audio into the engine cache after project swap /
+// refresh. Custom samples come back from IndexedDB; drum built-ins re-fetch
+// from /drums/.
 async function hydrateDrumSamplesForTracks(tracks) {
   for (const track of tracks ?? []) {
+    if (track.kind === 'multisampler') {
+      for (const zone of track.zones ?? []) {
+        if (hasSample(zone.id)) continue;
+        await restoreStoredSample(zone.id, zone.fileName || '');
+      }
+      continue;
+    }
+
     if (track.kind !== 'drum') continue;
     for (const pad of track.pads ?? []) {
       if (hasSample(pad.id)) continue;
@@ -371,6 +390,7 @@ function ensureSongRuntime(songId) {
   if (!song) return null;
   const loaded = deserializeProject(song.project);
   ensureDefaultDrumPads(loaded.tracks);
+  ensureMultiSamplerZones(loaded.tracks);
   normalizeProjectNotes(loaded.tracks);
   loaded.syncMode = syncSettings.syncMode;
   loaded.clockInputId = syncSettings.clockInputId;
@@ -482,6 +502,7 @@ function adoptProjectData(loaded, { preserveSelection = false, clearSamples = tr
   for (const key of Object.keys(project)) delete project[key];
   Object.assign(project, loaded);
   ensureDefaultDrumPads(project.tracks);
+  ensureMultiSamplerZones(project.tracks);
   normalizeProjectNotes(project.tracks);
 
   if (preserveSelection) {
@@ -1465,6 +1486,7 @@ function updateTrack(trackId, changes, songId = currentSongId.value) {
   if (track) {
     Object.assign(track, changes);
     if (track.kind === 'drum') normalizeDrumTrack(track);
+    if (track.kind === 'multisampler') ensureMultiSamplerZones([track]);
   }
 }
 
@@ -1484,18 +1506,25 @@ function toggleTrackSolo(songId, trackId) {
 
 function addTrack(kind, config = {}) {
   const color = config.color ?? randomTrackColor(project.tracks.map((t) => t.color));
-  const midiCount = project.tracks.filter((t) => t.kind === 'midi').length;
-  const drumCount = project.tracks.filter((t) => t.kind === 'drum').length;
-  const defaultName = kind === 'drum' ? `Drums ${drumCount + 1}` : `MIDI ${midiCount + 1}`;
-  const track =
+  const kindCount = project.tracks.filter((t) => t.kind === kind).length;
+  const defaultName =
     kind === 'drum'
-      ? createDrumTrack(config.name ?? defaultName, color)
-      : createMidiTrack(config.name ?? defaultName, color);
+      ? `Drums ${kindCount + 1}`
+      : kind === 'multisampler'
+        ? `Sampler ${kindCount + 1}`
+        : `MIDI ${kindCount + 1}`;
+  let track;
+  if (kind === 'drum') track = createDrumTrack(config.name ?? defaultName, color);
+  else if (kind === 'multisampler') track = createMultiSamplerTrack(config.name ?? defaultName, color);
+  else track = createMidiTrack(config.name ?? defaultName, color);
+
   if (kind === 'midi') {
     track.midiOutputId = config.midiOutputId ?? '';
     track.midiChannel = config.midiChannel ?? 0;
   }
-  if (kind === 'drum' && config.volume != null) track.volume = config.volume;
+  if ((kind === 'drum' || kind === 'multisampler') && config.volume != null) {
+    track.volume = config.volume;
+  }
   if (config.category) track.category = config.category;
   if (config.hiddenFromLive != null) track.hiddenFromLive = !!config.hiddenFromLive;
   project.tracks.push(track);
@@ -1514,6 +1543,13 @@ function removeTrack(trackId, songId = currentSongId.value) {
     for (const pad of track.pads) {
       clearSample(pad.id, { discardStored: true });
       removeReverbBus(pad.id);
+      removeDelayBus(pad.id);
+    }
+  } else if (track.kind === 'multisampler') {
+    for (const zone of track.zones ?? []) {
+      clearSample(zone.id, { discardStored: true });
+      removeReverbBus(zone.id);
+      removeDelayBus(zone.id);
     }
   }
 
@@ -1553,6 +1589,7 @@ function removePad(trackId, padId) {
   if (track?.kind !== 'drum') return;
   clearSample(padId, { discardStored: true });
   removeReverbBus(padId);
+  removeDelayBus(padId);
   for (const p of track.pads) {
     if (Array.isArray(p.cutByPads)) p.cutByPads = p.cutByPads.filter((id) => id !== padId);
   }
@@ -1567,6 +1604,42 @@ function renamePad(trackId, padId, name) {
   if (track?.kind !== 'drum') return;
   const pad = track.pads.find((p) => p.id === padId);
   if (pad) pad.name = name;
+}
+
+function updateZone(trackId, zoneId, changes) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'multisampler') return;
+  const zone = track.zones.find((z) => z.id === zoneId);
+  if (zone) {
+    Object.assign(zone, changes);
+    normalizeSampleZone(zone);
+  }
+}
+
+function addZone(trackId) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'multisampler') return;
+  const n = track.zones.length + 1;
+  // Extra zones default to one octave around C4 — user widens/narrows as needed.
+  // The first zone stays full-keyboard until they edit its range.
+  track.zones.push(
+    createSampleZone({
+      name: `Sample ${n}`,
+      lowNote: 60,
+      highNote: 71,
+      rootNote: 60,
+    })
+  );
+}
+
+function removeZone(trackId, zoneId) {
+  const track = findTrack(trackId);
+  if (track?.kind !== 'multisampler') return;
+  if (track.zones.length <= 1) return;
+  clearSample(zoneId, { discardStored: true });
+  removeReverbBus(zoneId);
+  removeDelayBus(zoneId);
+  track.zones = track.zones.filter((z) => z.id !== zoneId);
 }
 
 function onKeyDown(e) {

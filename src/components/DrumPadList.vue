@@ -211,6 +211,14 @@ function onEditorSave(changes) {
     reverbDecay: changes.reverbDecay,
     gain: changes.gain,
     distortion: changes.distortion,
+    delay: changes.delay,
+    delayFeedback: changes.delayFeedback,
+    delaySync: changes.delaySync,
+    delayLeftMs: changes.delayLeftMs,
+    delayRightMs: changes.delayRightMs,
+    delayLeftSync: changes.delayLeftSync,
+    delayRightSync: changes.delayRightSync,
+    delayCutLow: changes.delayCutLow,
   });
   editingPadId.value = null;
 }

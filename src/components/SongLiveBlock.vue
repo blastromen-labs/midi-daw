@@ -191,6 +191,13 @@
           >
             {{ trackMidiOutLabel(track) || 'No MIDI out' }}
           </span>
+          <span
+            v-else-if="track.kind === 'multisampler'"
+            class="text-[9px] tracking-wide truncate text-muted-dim"
+            title="Multi-sampler — local pitched samples"
+          >
+            Sampler
+          </span>
         </div>
 
         <div class="flex flex-wrap gap-1.5 flex-1 content-start relative" :data-clip-track="track.id">

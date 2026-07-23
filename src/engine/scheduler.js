@@ -8,6 +8,7 @@ import {
 } from './midi.js';
 import { playSample, resumeSamplerAudio } from './sampler.js';
 import { padPlaybackOpts } from './padPlayback.js';
+import { findZoneForPitch, zonePlaybackOpts } from './sampleZones.js';
 import { transport } from './clock.js';
 import { getActiveClock } from './activeClock.js';
 import {
@@ -285,7 +286,24 @@ export class PlaybackEngine {
     playSample(pad.id, note.velocity, onDelay, gainMul, padPlaybackOpts(pad, track, note.pitchOffset));
   }
 
-  // Shared by both scheduling branches below: dedups by noteKey and checks
+  // Multi-sampler: `note.pitch` is a MIDI number (same as MIDI tracks). Look up
+  // the zone covering that key and pitch-shift the sample relative to rootNote.
+  // Gate by note.duration so long samples don't ring past the roll note end.
+  _triggerMultiSamplerNote(track, note, onDelay, clock) {
+    const zone = findZoneForPitch(track.zones, note.pitch);
+    if (!zone) return;
+    const gainMul = (zone.volume ?? 1) * (track.volume ?? 1);
+    const durationSec = clock.beatToSec(Math.max(0.01, note.duration ?? 0.25));
+    playSample(
+      zone.id,
+      note.velocity,
+      onDelay,
+      gainMul,
+      zonePlaybackOpts(zone, note.pitch, note.pitchOffset, { durationSec })
+    );
+  }
+
+  // Shared by scheduling branches below: dedups by noteKey and checks
   // the note's audio timestamp actually falls inside this tick's schedulable
   // window before triggering it.
   _maybeScheduleNote(track, note, occurrence, noteKey, now, scheduleUntil, clock) {
@@ -301,6 +319,8 @@ export class PlaybackEngine {
     const onDelay = this._delayMs(startTime);
     if (track.kind === 'drum') {
       this._triggerDrumNote(track, note, onDelay);
+    } else if (track.kind === 'multisampler') {
+      this._triggerMultiSamplerNote(track, note, onDelay, clock);
     } else {
       this._triggerMidiNote(track, note, onDelay, occurrence, clock);
     }

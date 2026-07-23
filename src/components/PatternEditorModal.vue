@@ -136,37 +136,51 @@
                 </span>
               </span>
             </label>
-            <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">Linked patterns</label>
-            <div
-              v-if="linkableGroups.length"
-              class="rounded border border-line-light bg-surface/40 divide-y divide-line/60 max-h-44 overflow-y-auto"
-              title="Enable or stop this pattern in Live also controls the linked patterns (and vice versa)"
-            >
-              <div v-for="group in linkableGroups" :key="group.trackId">
-                <div class="px-2 py-1 text-[10px] text-muted-dim truncate bg-surface/50">
-                  {{ group.trackName }}
+            <label class="flex items-start gap-2 cursor-pointer select-none mb-3">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                :checked="showLinkedPatterns"
+                @change="setShowLinkedPatterns($event.target.checked)"
+              />
+              <span>
+                <span class="block text-[10px] uppercase tracking-wider text-muted-dim">Linked patterns</span>
+                <span class="block text-[10px] text-muted mt-0.5 leading-snug">
+                  Enable or stop this pattern in Live also controls the linked patterns (and vice versa).
+                </span>
+              </span>
+            </label>
+            <template v-if="showLinkedPatterns">
+              <div
+                v-if="linkableGroups.length"
+                class="rounded border border-line-light bg-surface/40 divide-y divide-line/60 max-h-44 overflow-y-auto"
+              >
+                <div v-for="group in linkableGroups" :key="group.trackId">
+                  <div class="px-2 py-1 text-[10px] text-muted-dim truncate bg-surface/50">
+                    {{ group.trackName }}
+                  </div>
+                  <label
+                    v-for="item in group.patterns"
+                    :key="item.id"
+                    class="flex items-center gap-2 px-2 py-1.5 cursor-pointer select-none hover:bg-surface-hover/60"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="draft.linkedPatternIds.includes(item.id)"
+                      @change="toggleLinked(item.id, $event.target.checked)"
+                    />
+                    <span
+                      class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/50"
+                      :style="{ background: item.color }"
+                    />
+                    <span class="text-xs truncate">{{ item.name }}</span>
+                  </label>
                 </div>
-                <label
-                  v-for="item in group.patterns"
-                  :key="item.id"
-                  class="flex items-center gap-2 px-2 py-1.5 cursor-pointer select-none hover:bg-surface-hover/60"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="draft.linkedPatternIds.includes(item.id)"
-                    @change="toggleLinked(item.id, $event.target.checked)"
-                  />
-                  <span
-                    class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/50"
-                    :style="{ background: item.color }"
-                  />
-                  <span class="text-xs truncate">{{ item.name }}</span>
-                </label>
               </div>
-            </div>
-            <p v-else class="text-[10px] text-muted-dim leading-snug">
-              No other-track patterns to link — add a pattern on another track first.
-            </p>
+              <p v-else class="text-[10px] text-muted-dim leading-snug">
+                No other-track patterns to link — add a pattern on another track first.
+              </p>
+            </template>
           </section>
         </div>
 
@@ -250,6 +264,8 @@ const accentColors = TRACK_ACCENT_COLORS;
 const barLengthOptions = BAR_LENGTH_OPTIONS;
 const liveSyncGridOptions = LIVE_SYNC_GRID_OPTIONS;
 const confirmDelete = ref(false);
+/** UI-only: hide the cross-track link checklist until needed (default off). */
+const showLinkedPatterns = ref(false);
 const titleId = `pattern-editor-${Math.random().toString(36).slice(2, 9)}`;
 
 const draft = reactive({
@@ -304,6 +320,8 @@ function syncFromInitial() {
   draft.hiddenFromLive = !!props.initial.hiddenFromLive;
   draft.sceneIds = initialSceneIds(props.initial);
   draft.linkedPatternIds = initialLinkedIds(props.initial);
+  // Open expanded only when this pattern already has links to edit.
+  showLinkedPatterns.value = draft.linkedPatternIds.length > 0;
 }
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
@@ -315,6 +333,13 @@ function toggleScene(sceneId, checked) {
   } else {
     draft.sceneIds = draft.sceneIds.filter((id) => id !== sceneId);
   }
+}
+
+function setShowLinkedPatterns(on) {
+  showLinkedPatterns.value = !!on;
+  // Collapsing the picker means "not linking" — drop draft selections so Save
+  // doesn't keep invisible links after the user turned the feature off.
+  if (!showLinkedPatterns.value) draft.linkedPatternIds = [];
 }
 
 function toggleLinked(patternId, checked) {

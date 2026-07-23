@@ -10,6 +10,7 @@ import { getSharedAudioContext, getMasterDestination, resumeSharedAudioContext }
 import { getReverbInput } from './reverb.js';
 import { getDistortionCurve } from './padDistortion.js';
 import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
+import { deleteStoredSample, getStoredSample, putStoredSample } from './sampleStorage.js';
 
 export async function resumeSamplerAudio() {
   return resumeSharedAudioContext();
@@ -117,17 +118,27 @@ function playbackSettings(opts = {}) {
 // Decodes the given File/Blob and caches it under padId, replacing whatever
 // sample (if any) was previously assigned to that pad. Returns the decoded
 // buffer's duration in seconds, handy for UI feedback.
+//
+// Raw bytes are also written to IndexedDB so the custom sample survives
+// refresh — decodeAudioData may detach its input, so we keep a separate copy.
 export async function loadSampleFile(padId, file) {
   stopPadVoices(padId);
   const c = await resumeSamplerAudio();
   const raw = await file.arrayBuffer();
-  const arrayBuffer = raw.slice(0);
-  const buffer = await decodeSampleFile(file, arrayBuffer, c);
+  const toStore = raw.slice(0);
+  const toDecode = raw.slice(0);
+  const buffer = await decodeSampleFile(file, toDecode, c);
   bufferCache.set(padId, buffer);
+  try {
+    await putStoredSample(padId, toStore, { fileName: file.name });
+  } catch (err) {
+    console.warn(`Failed to persist sample for pad "${padId}":`, err);
+  }
   return buffer.duration;
 }
 
 // Loads a built-in or remote sample from a URL (e.g. /drums/kick.wav).
+// Not persisted — built-ins are re-fetched from /drums/ on hydrate.
 export async function loadSampleUrl(padId, url, displayName = '') {
   stopPadVoices(padId);
   const c = await resumeSamplerAudio();
@@ -139,9 +150,53 @@ export async function loadSampleUrl(padId, url, displayName = '') {
   return buffer.duration;
 }
 
-export function clearSample(padId) {
+/**
+ * Decode raw bytes into the in-memory cache (used when restoring from IndexedDB).
+ * Does not write back to storage.
+ */
+export async function loadSampleArrayBuffer(padId, arrayBuffer, displayName = '') {
+  stopPadVoices(padId);
+  const c = await resumeSamplerAudio();
+  const label = displayName || 'sample';
+  const fileLike = displayName ? { name: displayName } : null;
+  const toDecode = arrayBuffer.slice(0);
+  const buffer = fileLike
+    ? await decodeSampleFile(fileLike, toDecode, c)
+    : await decodeArrayBuffer(toDecode, c, { label });
+  bufferCache.set(padId, buffer);
+  return buffer.duration;
+}
+
+/**
+ * Restore a previously persisted custom sample into the cache.
+ * @returns {Promise<boolean>} true if a stored sample was loaded
+ */
+export async function restoreStoredSample(padId, fallbackFileName = '') {
+  if (!padId || bufferCache.has(padId)) return bufferCache.has(padId);
+  const stored = await getStoredSample(padId);
+  if (!stored) return false;
+  try {
+    await loadSampleArrayBuffer(
+      padId,
+      stored.arrayBuffer,
+      stored.fileName || fallbackFileName
+    );
+    return true;
+  } catch (err) {
+    console.warn(`Failed to restore stored sample for pad "${padId}":`, err);
+    return false;
+  }
+}
+
+/**
+ * Drop the in-memory buffer for a pad. Pass `{ discardStored: true }` when the
+ * user clears/removes the pad (or a song is deleted) so IndexedDB is cleaned up
+ * too. Song switches leave stored bytes alone so hydrate can restore them.
+ */
+export function clearSample(padId, { discardStored = false } = {}) {
   stopPadVoices(padId);
   bufferCache.delete(padId);
+  if (discardStored) void deleteStoredSample(padId);
 }
 
 export function hasSample(padId) {

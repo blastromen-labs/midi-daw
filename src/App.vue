@@ -220,7 +220,12 @@ import { transport } from './engine/clock.js';
 import { externalClock } from './engine/externalClock.js';
 import { getActiveClock, setActiveClock } from './engine/activeClock.js';
 import { playback } from './engine/scheduler.js';
-import { clearSample, hasSample, loadSampleUrl } from './engine/sampler.js';
+import {
+  clearSample,
+  hasSample,
+  loadSampleUrl,
+  restoreStoredSample,
+} from './engine/sampler.js';
 import { removeReverbBus } from './engine/reverb.js';
 import { hasFileDrag } from './utils/audioFile.js';
 import { isEditableTarget } from './utils/keyboard.js';
@@ -315,29 +320,34 @@ function getAllLiveTracks() {
   return tracks.length ? tracks : project.tracks;
 }
 
-function clearDrumSamplesForTracks(tracks) {
+function clearDrumSamplesForTracks(tracks, { discardStored = false } = {}) {
   for (const track of tracks ?? []) {
     if (track.kind === 'drum') {
-      for (const pad of track.pads ?? []) clearSample(pad.id);
+      for (const pad of track.pads ?? []) clearSample(pad.id, { discardStored });
     }
   }
 }
 
-function clearDrumSamples() {
-  clearDrumSamplesForTracks(project.tracks);
+function clearDrumSamples({ discardStored = false } = {}) {
+  clearDrumSamplesForTracks(project.tracks, { discardStored });
 }
 
-// Built-in samples in public/drums/ are engine-only buffers — reload them
-// whenever project state is swapped in (song switch, load) since the cache
-// was just cleared. Skips pads the user replaced with a custom fileName.
-async function hydrateDefaultDrumSamplesForTracks(tracks) {
+// Reload drum audio into the engine cache after project swap / refresh.
+// Custom samples come back from IndexedDB; built-ins re-fetch from /drums/.
+async function hydrateDrumSamplesForTracks(tracks) {
   for (const track of tracks ?? []) {
     if (track.kind !== 'drum') continue;
     for (const pad of track.pads ?? []) {
+      if (hasSample(pad.id)) continue;
+
+      const restored = await restoreStoredSample(pad.id, pad.fileName || '');
+      if (restored) continue;
+
       const defaultFile = defaultDrumSampleFile(pad.name);
       if (!defaultFile) continue;
+      // Pad still shows a custom fileName but bytes are missing (pre-persistence
+      // song, or storage cleared) — don't overwrite the label with the default.
       if (pad.fileName && pad.fileName !== defaultFile) continue;
-      if (hasSample(pad.id)) continue;
       try {
         await loadSampleUrl(pad.id, `/drums/${defaultFile}`, defaultFile);
         if (!pad.fileName) pad.fileName = defaultFile;
@@ -349,7 +359,7 @@ async function hydrateDefaultDrumSamplesForTracks(tracks) {
 }
 
 async function hydrateDefaultDrumSamples() {
-  await hydrateDefaultDrumSamplesForTracks(project.tracks);
+  await hydrateDrumSamplesForTracks(project.tracks);
 }
 
 function ensureSongRuntime(songId) {
@@ -366,7 +376,7 @@ function ensureSongRuntime(songId) {
   loaded.clockOutputId = syncSettings.clockOutputId;
   songRuntimes[songId] = loaded;
   syncUidCounter({ project, songRuntimes, songs: songs.value });
-  void hydrateDefaultDrumSamplesForTracks(loaded.tracks);
+  void hydrateDrumSamplesForTracks(loaded.tracks);
   return loaded;
 }
 
@@ -630,13 +640,17 @@ function deleteSong(songId) {
     saveTimer = null;
   }
 
+  const song = songs.value[idx];
   const runtime = songRuntimes[songId];
-  if (runtime) {
-    clearDrumSamplesForTracks(runtime.tracks);
-    delete songRuntimes[songId];
-  } else if (wasActive) {
-    clearDrumSamples();
+  // Drop stored custom samples for this song's pads — they won't be referenced.
+  // Active song lives in `project`, not songRuntimes.
+  const tracksForCleanup = wasActive
+    ? project.tracks
+    : (runtime?.tracks ?? song?.project?.tracks);
+  if (tracksForCleanup) {
+    clearDrumSamplesForTracks(tracksForCleanup, { discardStored: true });
   }
+  if (runtime) delete songRuntimes[songId];
   delete activeSceneBySong[songId];
   songs.value.splice(idx, 1);
   liveSongOrder.value = normalizeLiveSongOrder(
@@ -1482,7 +1496,7 @@ function removeTrack(trackId, songId = currentSongId.value) {
   const track = songProject.tracks[idx];
   if (track.kind === 'drum') {
     for (const pad of track.pads) {
-      clearSample(pad.id);
+      clearSample(pad.id, { discardStored: true });
       removeReverbBus(pad.id);
     }
   }
@@ -1521,7 +1535,7 @@ function addPad(trackId) {
 function removePad(trackId, padId) {
   const track = findTrack(trackId);
   if (track?.kind !== 'drum') return;
-  clearSample(padId);
+  clearSample(padId, { discardStored: true });
   removeReverbBus(padId);
   for (const p of track.pads) {
     if (Array.isArray(p.cutByPads)) p.cutByPads = p.cutByPads.filter((id) => id !== padId);

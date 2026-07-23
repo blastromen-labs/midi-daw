@@ -1896,7 +1896,7 @@ async function onSampleDrop(e) {
 }
 
 function onClearSample(padId) {
-  clearSample(padId);
+  clearSample(padId, { discardStored: true });
   emit('update-pad', props.activeTrackId, padId, { fileName: '' });
 }
 
@@ -1905,7 +1905,7 @@ function onAddPad() {
 }
 
 function onRemovePad(padId) {
-  clearSample(padId);
+  clearSample(padId, { discardStored: true });
   emit('remove-pad', props.activeTrackId, padId);
 }
 

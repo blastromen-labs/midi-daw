@@ -27,6 +27,9 @@
           :playing="playing"
           :show-hidden="showHidden"
           :edit-mode="editMode"
+          :hide-pattern-bar-length="hidePatternBarLength"
+          :hide-pattern-launch-mode="hidePatternLaunchMode"
+          :hide-track-details="hideTrackDetails"
           :midi-outputs="midiOutputs"
           :can-move-up="index > 0"
           :can-move-down="index < liveSongs.length - 1"
@@ -68,6 +71,12 @@ defineProps({
   editMode: { type: Boolean, default: false },
   /** Live grid UI scale percent: 100 | 125 | 150 | 175 | 200. */
   uiScale: { type: Number, default: 100 },
+  /** When true, omit bar-length labels on pattern clips. */
+  hidePatternBarLength: { type: Boolean, default: false },
+  /** When true, omit Loop / Hold / One Shot labels on pattern clips. */
+  hidePatternLaunchMode: { type: Boolean, default: false },
+  /** When true, omit category / MIDI lines on track boxes. */
+  hideTrackDetails: { type: Boolean, default: false },
   midiOutputs: { type: Array, default: () => [] },
 });
 

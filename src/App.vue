@@ -11,6 +11,9 @@
         :clock-output-id="syncSettings.clockOutputId"
         :compact-navbar="globalSettings.compactNavbar"
         :live-view-ui-scale="globalSettings.liveViewUiScale"
+        :hide-live-pattern-bar-length="globalSettings.hideLivePatternBarLength"
+        :hide-live-pattern-launch-mode="globalSettings.hideLivePatternLaunchMode"
+        :hide-live-track-details="globalSettings.hideLiveTrackDetails"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
         :songs="songs"
@@ -33,6 +36,9 @@
         @clock-output-change="syncSettings.clockOutputId = $event"
         @compact-navbar-change="globalSettings.compactNavbar = $event"
         @live-view-ui-scale-change="globalSettings.liveViewUiScale = $event"
+        @hide-live-pattern-bar-length-change="globalSettings.hideLivePatternBarLength = $event"
+        @hide-live-pattern-launch-mode-change="globalSettings.hideLivePatternLaunchMode = $event"
+        @hide-live-track-details-change="globalSettings.hideLiveTrackDetails = $event"
         @toggle-show-hidden="showHiddenLive = !showHiddenLive"
         @toggle-edit-mode="liveEditMode = !liveEditMode"
       />
@@ -85,6 +91,9 @@
           :show-hidden="showHiddenLive"
           :edit-mode="liveEditMode"
           :ui-scale="globalSettings.liveViewUiScale"
+          :hide-pattern-bar-length="globalSettings.hideLivePatternBarLength"
+          :hide-pattern-launch-mode="globalSettings.hideLivePatternLaunchMode"
+          :hide-track-details="globalSettings.hideLiveTrackDetails"
           :midi-outputs="midiOutputs"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
@@ -190,7 +199,6 @@ import {
   defaultSceneName,
   getScenePatternRefs,
   randomTrackColor,
-  randomPatternColor,
   getActivePattern,
   projectLoopEndBeat,
   reorderPatterns as reorderTrackPatterns,
@@ -1021,10 +1029,9 @@ function addPattern(trackId, config = {}) {
   if (!track?.patterns?.length) return;
 
   const active = getActivePattern(track);
-  const usedColors = track.patterns.map((p) => p.color);
   const pattern = createPattern(
     config.name ?? `Pattern ${track.patterns.length + 1}`,
-    config.color ?? randomPatternColor(usedColors),
+    config.color ?? track.color,
     config.patternSteps ?? active?.patternSteps ?? 16
   );
   if (config.liveLaunchMode != null) pattern.liveLaunchMode = config.liveLaunchMode;

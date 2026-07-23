@@ -99,6 +99,9 @@
         :clock-output-id="clockOutputId"
         :compact-navbar="compactNavbar"
         :live-view-ui-scale="liveViewUiScale"
+        :hide-live-pattern-bar-length="hideLivePatternBarLength"
+        :hide-live-pattern-launch-mode="hideLivePatternLaunchMode"
+        :hide-live-track-details="hideLiveTrackDetails"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
         @sync-mode-change="(v) => emit('sync-mode-change', v)"
@@ -107,6 +110,9 @@
         @clock-output-change="(v) => emit('clock-output-change', v)"
         @compact-navbar-change="(v) => emit('compact-navbar-change', v)"
         @live-view-ui-scale-change="(v) => emit('live-view-ui-scale-change', v)"
+        @hide-live-pattern-bar-length-change="(v) => emit('hide-live-pattern-bar-length-change', v)"
+        @hide-live-pattern-launch-mode-change="(v) => emit('hide-live-pattern-launch-mode-change', v)"
+        @hide-live-track-details-change="(v) => emit('hide-live-track-details-change', v)"
       />
     </div>
   </div>
@@ -131,6 +137,9 @@ defineProps({
   clockOutputId: { type: String, default: '' },
   compactNavbar: Boolean,
   liveViewUiScale: { type: Number, default: 100 },
+  hideLivePatternBarLength: Boolean,
+  hideLivePatternLaunchMode: Boolean,
+  hideLiveTrackDetails: Boolean,
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
   songs: { type: Array, default: () => [] },
@@ -156,6 +165,9 @@ const emit = defineEmits([
   'clock-output-change',
   'compact-navbar-change',
   'live-view-ui-scale-change',
+  'hide-live-pattern-bar-length-change',
+  'hide-live-pattern-launch-mode-change',
+  'hide-live-track-details-change',
   'toggle-show-hidden',
   'toggle-edit-mode',
 ]);

@@ -438,10 +438,9 @@ export function patternCloneName(patterns, sourceName) {
 
 /** Clone a pattern's settings and piano-roll notes into a new pattern object. */
 export function clonePattern(source, patterns) {
-  const usedColors = patterns.map((p) => p.color);
   const pattern = createPattern(
     patternCloneName(patterns, source.name),
-    randomPatternColor(usedColors),
+    source.color,
     source.patternSteps ?? 16,
     cloneNotes(source.notes)
   );
@@ -610,7 +609,7 @@ export function isTrackStopQueued(track) {
 }
 
 export function createMidiTrack(name = 'MIDI 1', color = randomTrackColor(), patternSteps = 16) {
-  const pattern = createPattern('Pattern 1', randomPatternColor(), patternSteps);
+  const pattern = createPattern('Pattern 1', color, patternSteps);
   return {
     id: uid(),
     kind: 'midi',
@@ -835,7 +834,7 @@ export const DRUM_PAD_COLORS = [
 ];
 
 export function createDrumTrack(name = 'Drums 1', color = randomTrackColor(), patternSteps = 16) {
-  const pattern = createPattern('Pattern 1', randomPatternColor(), patternSteps);
+  const pattern = createPattern('Pattern 1', color, patternSteps);
   return {
     id: uid(),
     kind: 'drum',
@@ -980,7 +979,7 @@ export function createMultiSamplerTrack(
   color = randomTrackColor(),
   patternSteps = 16
 ) {
-  const pattern = createPattern('Pattern 1', randomPatternColor(), patternSteps);
+  const pattern = createPattern('Pattern 1', color, patternSteps);
   return {
     id: uid(),
     kind: 'multisampler',

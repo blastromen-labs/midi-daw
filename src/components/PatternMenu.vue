@@ -143,7 +143,6 @@ import { ref, computed, nextTick, onUnmounted } from 'vue';
 import {
   LIVE_LAUNCH_MODES,
   patternLaunchMode,
-  randomPatternColor,
   patternStepsLabel,
 } from '../models/project.js';
 import { isTrackHoldAudible, isTrackHoldMuted } from '../engine/liveLauncher.js';
@@ -258,7 +257,7 @@ function startCreate() {
   editorPatternId.value = null;
   editorInitial.value = {
     name: defaultPatternName(),
-    color: randomPatternColor(props.track?.patterns?.map((p) => p.color) ?? []),
+    color: props.track?.color,
     patternSteps: active?.patternSteps ?? 16,
     // New patterns inherit the active pattern's launch settings as a starting point.
     ...patternLiveDraft(active),

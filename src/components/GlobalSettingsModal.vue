@@ -137,6 +137,69 @@
                 </button>
               </div>
             </div>
+
+            <div class="flex items-center justify-between gap-3 mt-4">
+              <div>
+                <span class="text-xs text-muted block">Hide bar length on Live clips</span>
+                <span class="text-[11px] text-muted-dim leading-snug">
+                  Hide pattern length (e.g. 1 bar) under clip names in Live view.
+                </span>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-5 rounded-full transition-colors relative flex-shrink-0"
+                :class="hideLivePatternBarLength ? 'bg-accent' : 'bg-surface-hover'"
+                title="Hide bar length on Live pattern clips"
+                @click="emit('hide-live-pattern-bar-length-change', !hideLivePatternBarLength)"
+              >
+                <span
+                  class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                  :class="hideLivePatternBarLength ? 'left-5' : 'left-0.5'"
+                ></span>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 mt-4">
+              <div>
+                <span class="text-xs text-muted block">Hide launch mode on Live clips</span>
+                <span class="text-[11px] text-muted-dim leading-snug">
+                  Hide Loop / Hold / One Shot labels under clip names in Live view.
+                </span>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-5 rounded-full transition-colors relative flex-shrink-0"
+                :class="hideLivePatternLaunchMode ? 'bg-accent' : 'bg-surface-hover'"
+                title="Hide launch mode on Live pattern clips"
+                @click="emit('hide-live-pattern-launch-mode-change', !hideLivePatternLaunchMode)"
+              >
+                <span
+                  class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                  :class="hideLivePatternLaunchMode ? 'left-5' : 'left-0.5'"
+                ></span>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 mt-4">
+              <div>
+                <span class="text-xs text-muted block">Hide track details in Live view</span>
+                <span class="text-[11px] text-muted-dim leading-snug">
+                  Show only color, name, and mute/solo on Live track boxes (hide category and MIDI).
+                </span>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-5 rounded-full transition-colors relative flex-shrink-0"
+                :class="hideLiveTrackDetails ? 'bg-accent' : 'bg-surface-hover'"
+                title="Hide track details in Live view"
+                @click="emit('hide-live-track-details-change', !hideLiveTrackDetails)"
+              >
+                <span
+                  class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                  :class="hideLiveTrackDetails ? 'left-5' : 'left-0.5'"
+                ></span>
+              </button>
+            </div>
           </section>
         </div>
       </div>
@@ -154,6 +217,9 @@ defineProps({
   clockOutputId: { type: String, default: '' },
   compactNavbar: Boolean,
   liveViewUiScale: { type: Number, default: 100 },
+  hideLivePatternBarLength: Boolean,
+  hideLivePatternLaunchMode: Boolean,
+  hideLiveTrackDetails: Boolean,
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
 });
@@ -168,5 +234,8 @@ const emit = defineEmits([
   'clock-output-change',
   'compact-navbar-change',
   'live-view-ui-scale-change',
+  'hide-live-pattern-bar-length-change',
+  'hide-live-pattern-launch-mode-change',
+  'hide-live-track-details-change',
 ]);
 </script>

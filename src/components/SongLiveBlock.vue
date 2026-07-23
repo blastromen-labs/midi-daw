@@ -180,24 +180,26 @@
               ✎
             </button>
           </div>
-          <span class="text-[9px] text-muted-dim uppercase tracking-wide">
-            {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
-          </span>
-          <span
-            v-if="track.kind === 'midi'"
-            class="text-[9px] tracking-wide truncate"
-            :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
-            :title="trackMidiOutTitle(track)"
-          >
-            {{ trackMidiOutLabel(track) || 'No MIDI out' }}
-          </span>
-          <span
-            v-else-if="track.kind === 'multisampler'"
-            class="text-[9px] tracking-wide truncate text-muted-dim"
-            title="Multi-sampler — local pitched samples"
-          >
-            Sampler
-          </span>
+          <template v-if="!hideTrackDetails">
+            <span class="text-[9px] text-muted-dim uppercase tracking-wide">
+              {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
+            </span>
+            <span
+              v-if="track.kind === 'midi'"
+              class="text-[9px] tracking-wide truncate"
+              :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
+              :title="trackMidiOutTitle(track)"
+            >
+              {{ trackMidiOutLabel(track) || 'No MIDI out' }}
+            </span>
+            <span
+              v-else-if="track.kind === 'multisampler'"
+              class="text-[9px] tracking-wide truncate text-muted-dim"
+              title="Multi-sampler — local pitched samples"
+            >
+              Sampler
+            </span>
+          </template>
         </div>
 
         <div class="flex flex-wrap gap-1.5 flex-1 content-start relative" :data-clip-track="track.id">
@@ -228,12 +230,19 @@
                 @click="onClipClick(track.id, pattern.id, pattern.liveLaunchMode)"
               >
                 <span class="relative z-[1] block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
-                <span class="relative z-[1] flex items-center gap-1 min-w-0 mt-0.5 pr-3">
+                <span
+                  v-if="!hidePatternLaunchMode || !hidePatternBarLength"
+                  class="relative z-[1] flex items-center gap-1 min-w-0 mt-0.5 pr-3"
+                >
                   <span
+                    v-if="!hidePatternLaunchMode"
                     class="text-[8px] font-semibold uppercase tracking-wider opacity-80 flex-shrink-0"
                     :title="launchModeLabel(pattern)"
                   >{{ launchModeShort(pattern) }}</span>
-                  <span class="text-[9px] opacity-60 truncate">{{ patternStepsLabel(pattern.patternSteps) }}</span>
+                  <span
+                    v-if="!hidePatternBarLength"
+                    class="text-[9px] opacity-60 truncate"
+                  >{{ patternStepsLabel(pattern.patternSteps) }}</span>
                 </span>
 
                 <span
@@ -338,6 +347,12 @@ const props = defineProps({
   playing: Boolean,
   showHidden: { type: Boolean, default: false },
   editMode: { type: Boolean, default: false },
+  /** When true, omit bar-length text under clip names. */
+  hidePatternBarLength: { type: Boolean, default: false },
+  /** When true, omit Loop / Hold / One Shot labels under clip names. */
+  hidePatternLaunchMode: { type: Boolean, default: false },
+  /** When true, omit category / MIDI / sampler lines on track boxes. */
+  hideTrackDetails: { type: Boolean, default: false },
   midiOutputs: { type: Array, default: () => [] },
   canMoveUp: { type: Boolean, default: false },
   canMoveDown: { type: Boolean, default: false },

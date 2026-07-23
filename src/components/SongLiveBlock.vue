@@ -9,23 +9,18 @@
       ></span>
       <div class="flex-1 min-w-0 flex items-baseline gap-2">
         <span class="truncate text-sm font-semibold">{{ song.name }}</span>
-        <span
-          class="text-[10px] text-muted-dim tabular-nums flex-shrink-0"
-          :title="`Written at ${song.bpm} BPM — Live mix follows the transport tempo`"
-        >{{ song.bpm }} BPM</span>
+        <span class="text-[10px] text-muted-dim tabular-nums flex-shrink-0">{{ song.bpm }} BPM</span>
       </div>
       <div class="flex items-center gap-0.5 flex-shrink-0">
         <button
           type="button"
           class="w-7 h-7 rounded text-xs text-muted hover:text-white hover:bg-surface-active disabled:opacity-25 disabled:pointer-events-none"
-          title="Move song up in Live view"
           :disabled="!canMoveUp"
           @click="emit('move-song', song.id, 'up')"
         >↑</button>
         <button
           type="button"
           class="w-7 h-7 rounded text-xs text-muted hover:text-white hover:bg-surface-active disabled:opacity-25 disabled:pointer-events-none"
-          title="Move song down in Live view"
           :disabled="!canMoveDown"
           @click="emit('move-song', song.id, 'down')"
         >↓</button>
@@ -38,8 +33,7 @@
         <button
           ref="sceneMenuTriggerRef"
           type="button"
-          class="w-full h-9 px-2 rounded-md text-left text-xs font-medium ring-1 ring-line-light bg-surface/60 hover:ring-white/40 flex items-center gap-1.5"
-          title="Edit or create scenes"
+          class="w-full h-14 px-2 rounded-md text-left text-xs font-medium ring-1 ring-line-light bg-surface/60 hover:ring-white/40 flex items-center gap-1.5"
           @click="toggleSceneMenu"
         >
           <span class="truncate flex-1 min-w-0 uppercase tracking-wider text-muted-dim text-[10px] font-semibold">Scenes</span>
@@ -62,7 +56,6 @@
                 <button
                   type="button"
                   class="flex-1 min-w-0 text-left text-xs px-1.5 py-1.5 truncate"
-                  :title="`Edit ${scene.name}`"
                   @click="onEditScene(scene.id)"
                 >
                   {{ scene.name }}
@@ -70,7 +63,6 @@
                 <button
                   type="button"
                   class="w-7 h-7 flex-shrink-0 rounded text-sm text-muted hover:text-white hover:bg-surface-active"
-                  title="Edit scene"
                   @click="onEditScene(scene.id)"
                 >
                   ✎
@@ -84,7 +76,6 @@
               <button
                 type="button"
                 class="w-full text-left text-xs px-2 py-1.5 hover:bg-surface-hover text-muted hover:text-white"
-                title="Add scene"
                 @click="onAddScene"
               >
                 + New Scene
@@ -99,15 +90,14 @@
         <div
           v-for="scene in scenes"
           :key="scene.id"
-          class="relative h-9 min-w-[5.5rem] flex-shrink-0"
+          class="relative w-24 h-14 flex-shrink-0"
           @mouseenter="hoveredSceneId = scene.id"
           @mouseleave="hoveredSceneId = null"
         >
           <button
             type="button"
-            class="scene-btn absolute inset-0 px-3 pr-5 rounded-md text-left text-xs font-medium transition-transform active:scale-[0.97]"
+            class="scene-btn absolute inset-0 rounded-md overflow-hidden text-left px-2 py-1 pr-5 text-[11px] font-medium transition-transform active:scale-[0.97]"
             :class="sceneStateClass(scene)"
-            :title="sceneTitle(scene)"
             @click="emit('launch-scene', song.id, scene.id)"
           >
             <span class="block truncate">{{ scene.name }}</span>
@@ -128,7 +118,6 @@
             v-if="editMode"
             type="button"
             class="absolute bottom-0.5 right-0.5 z-[2] w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
-            title="Edit scene"
             @click.stop="emit('edit-scene', song.id, scene.id)"
           >
             ✎
@@ -160,7 +149,6 @@
             <button
               type="button"
               class="flex items-center justify-center w-5 h-5 flex-shrink-0 rounded hover:bg-surface-active transition-colors"
-              :title="trackMuteSoloTitle(track)"
               @click.stop="emit('toggle-track-mute', song.id, track.id)"
               @contextmenu.prevent.stop="emit('toggle-track-solo', song.id, track.id)"
             >
@@ -174,7 +162,6 @@
               v-if="editMode"
               type="button"
               class="w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
-              title="Edit track"
               @click.stop="emit('edit-track', song.id, track.id)"
             >
               ✎
@@ -188,14 +175,12 @@
               v-if="track.kind === 'midi'"
               class="text-[9px] tracking-wide truncate"
               :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
-              :title="trackMidiOutTitle(track)"
             >
               {{ trackMidiOutLabel(track) || 'No MIDI out' }}
             </span>
             <span
               v-else-if="track.kind === 'multisampler'"
               class="text-[9px] tracking-wide truncate text-muted-dim"
-              title="Multi-sampler — local pitched samples"
             >
               Sampler
             </span>
@@ -273,7 +258,6 @@
                 <button
                   type="button"
                   class="w-5 h-5 rounded flex items-center justify-center bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
-                  title="Edit notes in piano roll"
                   @pointerdown.stop
                   @pointerup.stop
                   @click.stop="emit('open-pattern-roll', song.id, track.id, pattern.id)"
@@ -289,7 +273,6 @@
                 <button
                   type="button"
                   class="w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
-                  title="Edit pattern"
                   @pointerdown.stop
                   @pointerup.stop
                   @click.stop="emit('edit-pattern', song.id, track.id, pattern.id)"
@@ -385,12 +368,6 @@ function trackMuteSoloLedClass(track) {
   return 'bg-[#4ade80] ring-[#4ade80]/50 shadow-[0_0_5px_rgba(74,222,128,0.55)]';
 }
 
-function trackMuteSoloTitle(track) {
-  const mute = track.muted ? 'Unmute' : 'Mute';
-  const solo = track.soloed ? 'Unsolo' : 'Solo';
-  return `${mute} ${track.name} (click) · ${solo} (right-click)`;
-}
-
 const absBeat = useAbsolutePlayheadBeat();
 
 const visibleTracks = computed(() =>
@@ -408,14 +385,6 @@ function trackMidiOutLabel(track) {
   if (!name) return track.midiOutputId ? 'Missing device' : '';
   const ch = (track.midiChannel ?? 0) + 1;
   return `${name} · ch ${ch}`;
-}
-
-function trackMidiOutTitle(track) {
-  const name = midiOutputName(track.midiOutputId);
-  const ch = (track.midiChannel ?? 0) + 1;
-  if (!track.midiOutputId) return 'Not connected to a MIDI output';
-  if (!name) return `MIDI output unavailable (ch ${ch})`;
-  return `${name} — MIDI channel ${ch}`;
 }
 
 function visiblePatternEntries(track) {
@@ -559,19 +528,6 @@ function sceneHoverClipClass(pattern) {
   return patternInScene(pattern, hoveredSceneId.value)
     ? 'scene-hover-member'
     : 'scene-hover-dim';
-}
-
-function sceneTitle(scene) {
-  const refs = sceneLaunchableRefs(scene);
-  const status = sceneStatus(scene);
-  if (!refs.length) {
-    return `${scene.name} — no Loop / One Shot patterns assigned (edit a pattern → Scene)`;
-  }
-  const names = refs.map(({ pattern }) => pattern.name).join(', ');
-  if (status === 'playing') return `${scene.name} — playing (${names})`;
-  if (status === 'queued') return `${scene.name} — queued (${names})`;
-  if (status === 'armed') return `${scene.name} — armed, will play on Play (${names})`;
-  return `${scene.name} — launch ${refs.length} pattern${refs.length === 1 ? '' : 's'}: ${names}`;
 }
 
 function onClipPointerDown(e, track, fromIndex, patternId) {

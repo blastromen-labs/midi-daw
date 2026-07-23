@@ -166,7 +166,7 @@
                 ? 'text-white/90 bg-accent'
                 : 'text-muted-dim hover:text-muted hover:bg-surface-active'
             "
-            :title="'Hold & drag up: high-pass 200–2000 Hz · release to clear'"
+            :title="'Tap: latch 200 Hz · hold & drag up: 200–2000 Hz · release after drag clears'"
             :aria-label="`${track.name} high-pass`"
             :aria-pressed="cutLowHzByTrack[track.id] != null"
             @pointerdown.stop="onCutLowPointerDown($event, track.id)"
@@ -410,10 +410,12 @@ const emit = defineEmits([
   'move-song',
 ]);
 
-/** Momentary Live HP UI: trackId → cutoff Hz while finger/pointer is down. */
+/** Live HP UI: trackId → cutoff Hz while latched or actively dragging. */
 const cutLowHzByTrack = reactive({});
-/** trackId → { pointerId, startY } for vertical drag → cutoff. */
+/** trackId → { pointerId, startY, dragged, wasLatched } for tap vs drag. */
 const cutLowDrag = new Map();
+/** Movement past this (px) counts as a drag (release clears); under it = tap latch. */
+const CUT_LOW_TAP_SLOP_PX = 10;
 
 function formatCutLowHz(hz) {
   if (hz >= 1000) return `${(hz / 1000).toFixed(1)}k`;
@@ -431,11 +433,33 @@ function releaseCutLow(trackId) {
   setTrackCutLowHz(trackId, null);
 }
 
+function endCutLowGesture(trackId) {
+  const drag = cutLowDrag.get(trackId);
+  if (!drag) return;
+  cutLowDrag.delete(trackId);
+  if (drag.dragged) {
+    // Drag was momentary — clear on release.
+    releaseCutLow(trackId);
+    return;
+  }
+  // Tap: toggle latch at 200 Hz (second tap turns it off).
+  if (drag.wasLatched) {
+    releaseCutLow(trackId);
+  } else {
+    engageCutLow(trackId, TRACK_LOW_CUT_MIN_HZ);
+  }
+}
+
 function onCutLowPointerDown(e, trackId) {
   if (e.button != null && e.button !== 0) return;
   e.preventDefault();
   e.currentTarget.setPointerCapture(e.pointerId);
-  cutLowDrag.set(trackId, { pointerId: e.pointerId, startY: e.clientY });
+  cutLowDrag.set(trackId, {
+    pointerId: e.pointerId,
+    startY: e.clientY,
+    dragged: false,
+    wasLatched: cutLowHzByTrack[trackId] != null,
+  });
   engageCutLow(trackId, TRACK_LOW_CUT_MIN_HZ);
 }
 
@@ -444,19 +468,19 @@ function onCutLowPointerMove(e, trackId) {
   if (!drag || drag.pointerId !== e.pointerId) return;
   e.preventDefault();
   const dragUpPx = drag.startY - e.clientY;
+  if (!drag.dragged && Math.abs(dragUpPx) < CUT_LOW_TAP_SLOP_PX) return;
+  drag.dragged = true;
   engageCutLow(trackId, cutLowHzFromDragPx(dragUpPx));
 }
 
 function onCutLowPointerUp(e, trackId) {
   const drag = cutLowDrag.get(trackId);
   if (!drag || drag.pointerId !== e.pointerId) return;
-  releaseCutLow(trackId);
+  endCutLowGesture(trackId);
 }
 
 function onCutLowLostCapture(trackId) {
-  if (cutLowDrag.has(trackId) || cutLowHzByTrack[trackId] != null) {
-    releaseCutLow(trackId);
-  }
+  if (cutLowDrag.has(trackId)) endCutLowGesture(trackId);
 }
 
 /** Green = audible, yellow = soloed, dark = muted. */

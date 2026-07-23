@@ -1,7 +1,7 @@
 /**
- * Momentary Live HP: per-track high-pass cutoff held while the HP strip is
- * pressed. Frequency is shared across that track's active sample voices so
- * drag updates affect notes already ringing (not only the next hit).
+ * Live HP: per-track high-pass cutoff. Tap latches at min Hz; hold+drag sweeps
+ * min→max and clears on release. Frequency is shared across that track's
+ * active sample voices so changes affect notes already ringing.
  *
  * Off = bypass (~20 Hz). On = TRACK_LOW_CUT_MIN_HZ…TRACK_LOW_CUT_MAX_HZ.
  */

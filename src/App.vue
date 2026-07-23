@@ -14,6 +14,7 @@
         :hide-live-pattern-bar-length="globalSettings.hideLivePatternBarLength"
         :hide-live-pattern-launch-mode="globalSettings.hideLivePatternLaunchMode"
         :hide-live-track-details="globalSettings.hideLiveTrackDetails"
+        :lock-live-pattern-order="globalSettings.lockLivePatternOrder"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
         :songs="songs"
@@ -39,6 +40,7 @@
         @hide-live-pattern-bar-length-change="globalSettings.hideLivePatternBarLength = $event"
         @hide-live-pattern-launch-mode-change="globalSettings.hideLivePatternLaunchMode = $event"
         @hide-live-track-details-change="globalSettings.hideLiveTrackDetails = $event"
+        @lock-live-pattern-order-change="globalSettings.lockLivePatternOrder = $event"
         @toggle-show-hidden="showHiddenLive = !showHiddenLive"
         @toggle-edit-mode="liveEditMode = !liveEditMode"
       />
@@ -94,6 +96,7 @@
           :hide-pattern-bar-length="globalSettings.hideLivePatternBarLength"
           :hide-pattern-launch-mode="globalSettings.hideLivePatternLaunchMode"
           :hide-track-details="globalSettings.hideLiveTrackDetails"
+          :lock-pattern-order="globalSettings.lockLivePatternOrder"
           :midi-outputs="midiOutputs"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"

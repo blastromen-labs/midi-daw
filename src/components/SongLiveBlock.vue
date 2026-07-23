@@ -355,6 +355,8 @@ const props = defineProps({
   hidePatternLaunchMode: { type: Boolean, default: false },
   /** When true, omit category / MIDI / sampler lines on track boxes. */
   hideTrackDetails: { type: Boolean, default: false },
+  /** When true, disable drag-reorder of pattern clips (performance lock). */
+  lockPatternOrder: { type: Boolean, default: false },
   midiOutputs: { type: Array, default: () => [] },
   canMoveUp: { type: Boolean, default: false },
   canMoveDown: { type: Boolean, default: false },
@@ -596,6 +598,9 @@ function onClipPointerDown(e, track, fromIndex, patternId) {
     return;
   }
 
+  // Locked while performing: taps still launch via click; no drag-reorder.
+  if (props.lockPatternOrder) return;
+
   e.currentTarget.setPointerCapture(e.pointerId);
   drag.value = {
     trackId: track.id,
@@ -696,6 +701,7 @@ function isDropBefore(trackId, index) {
 }
 
 function clipDragClass(trackId, index) {
+  if (props.lockPatternOrder) return '';
   if (!drag.value || drag.value.trackId !== trackId) return '';
   if (drag.value.fromIndex === index && drag.value.moved) return 'opacity-40 scale-95 cursor-grabbing pointer-events-none';
   if (drag.value.moved) return 'cursor-grabbing';
@@ -812,18 +818,19 @@ function clipTitle(track, pattern) {
     if (status === 'arming') return `${pattern.name} — syncing to ${grid} grid…${hiddenNote}`;
     return `${pattern.name} — hold (or tap) to play in sync (${grid} grid)${hiddenNote}`;
   }
+  const reorderHint = props.lockPatternOrder ? '' : ', drag to reorder';
   if (mode === LIVE_LAUNCH_MODES.ONE_SHOT) {
     const grid = pattern.liveSyncGrid ?? '1/16';
     if (status === 'playing') return `${pattern.name} — playing once (click to retrigger from the start)${hiddenNote}`;
     if (status === 'queued') return `${pattern.name} — queued one shot on ${grid} grid (starts from beginning; click again to cancel)${hiddenNote}`;
     if (status === 'armed') return `${pattern.name} — will play once when you press Play (click to un-arm)${hiddenNote}`;
-    return `${pattern.name} — click to play once from the start (${grid} grid), drag to reorder${hiddenNote}`;
+    return `${pattern.name} — click to play once from the start (${grid} grid)${reorderHint}${hiddenNote}`;
   }
   if (status === 'playing') return `${pattern.name} — playing (click to stop when it loops)${hiddenNote}`;
   if (status === 'stopping') return `${pattern.name} — stopping when this loop ends (click again to keep playing)${hiddenNote}`;
   if (status === 'queued') return `${pattern.name} — queued, launches when the current pattern loops (click again to cancel)${hiddenNote}`;
   if (status === 'armed') return `${pattern.name} — will play when you press Play (click to un-arm)${hiddenNote}`;
-  return `${pattern.name} — click to launch, drag to reorder${hiddenNote}`;
+  return `${pattern.name} — click to launch${reorderHint}${hiddenNote}`;
 }
 </script>
 

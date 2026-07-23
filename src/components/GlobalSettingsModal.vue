@@ -200,6 +200,27 @@
                 ></span>
               </button>
             </div>
+
+            <div class="flex items-center justify-between gap-3 mt-4">
+              <div>
+                <span class="text-xs text-muted block">Lock Live pattern order</span>
+                <span class="text-[11px] text-muted-dim leading-snug">
+                  Prevent drag-rearranging clips in Live view so taps while performing stay launches only.
+                </span>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-5 rounded-full transition-colors relative flex-shrink-0"
+                :class="lockLivePatternOrder ? 'bg-accent' : 'bg-surface-hover'"
+                title="Lock Live pattern order"
+                @click="emit('lock-live-pattern-order-change', !lockLivePatternOrder)"
+              >
+                <span
+                  class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                  :class="lockLivePatternOrder ? 'left-5' : 'left-0.5'"
+                ></span>
+              </button>
+            </div>
           </section>
         </div>
       </div>
@@ -220,6 +241,7 @@ defineProps({
   hideLivePatternBarLength: Boolean,
   hideLivePatternLaunchMode: Boolean,
   hideLiveTrackDetails: Boolean,
+  lockLivePatternOrder: Boolean,
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
 });
@@ -237,5 +259,6 @@ const emit = defineEmits([
   'hide-live-pattern-bar-length-change',
   'hide-live-pattern-launch-mode-change',
   'hide-live-track-details-change',
+  'lock-live-pattern-order-change',
 ]);
 </script>

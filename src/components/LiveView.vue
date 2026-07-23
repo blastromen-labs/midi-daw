@@ -30,6 +30,7 @@
           :hide-pattern-bar-length="hidePatternBarLength"
           :hide-pattern-launch-mode="hidePatternLaunchMode"
           :hide-track-details="hideTrackDetails"
+          :lock-pattern-order="lockPatternOrder"
           :midi-outputs="midiOutputs"
           :can-move-up="index > 0"
           :can-move-down="index < liveSongs.length - 1"
@@ -77,6 +78,8 @@ defineProps({
   hidePatternLaunchMode: { type: Boolean, default: false },
   /** When true, omit category / MIDI lines on track boxes. */
   hideTrackDetails: { type: Boolean, default: false },
+  /** When true, disable drag-reorder of Live pattern clips. */
+  lockPatternOrder: { type: Boolean, default: false },
   midiOutputs: { type: Array, default: () => [] },
 });
 

@@ -15,6 +15,7 @@
         :songs="songs"
         :active-song-id="currentSongId"
         :show-hidden="showHiddenLive"
+        :edit-mode="liveEditMode"
         @toggle-play="togglePlay"
         @bpm-change="setBpm"
         @view-mode-change="viewMode = $event"
@@ -31,6 +32,7 @@
         @clock-output-change="syncSettings.clockOutputId = $event"
         @compact-navbar-change="globalSettings.compactNavbar = $event"
         @toggle-show-hidden="showHiddenLive = !showHiddenLive"
+        @toggle-edit-mode="liveEditMode = !liveEditMode"
       />
 
       <div class="relative flex-1 min-h-0 overflow-hidden">
@@ -76,6 +78,8 @@
           :active-scene-by-song="activeSceneBySong"
           :playing="playing"
           :show-hidden="showHiddenLive"
+          :edit-mode="liveEditMode"
+          :midi-outputs="midiOutputs"
           @trigger-pattern="queueOrLaunchPattern"
           @hold-pattern-down="onHoldPatternDown"
           @hold-pattern-up="onHoldPatternUp"
@@ -83,6 +87,8 @@
           @launch-scene="launchScene"
           @add-scene="startCreateScene"
           @edit-scene="startEditScene"
+          @edit-track="startEditLiveTrack"
+          @edit-pattern="startEditLivePattern"
           @move-song="onMoveLiveSong"
         />
       </div>
@@ -97,6 +103,34 @@
       @save="commitSceneEditor"
       @cancel="closeSceneEditor"
       @delete="confirmDeleteScene"
+    />
+
+    <!-- Live quick-edit: same modals as Roll menus, hosted here so any song in the set is editable. -->
+    <PatternEditorModal
+      v-if="patternEditorOpen"
+      mode="edit"
+      :initial="patternEditorInitial"
+      :scenes="patternEditorScenes"
+      :tracks="patternEditorTracks"
+      :track-id="patternEditorTrackId"
+      :pattern-id="patternEditorPatternId"
+      :can-delete="patternEditorCanDelete"
+      @save="commitLivePatternEditor"
+      @delete="confirmDeleteLivePattern"
+      @cancel="closePatternEditor"
+    />
+
+    <TrackEditorModal
+      v-if="trackEditorOpen"
+      mode="edit"
+      :kind="trackEditorKind"
+      :initial="trackEditorInitial"
+      :midi-outputs="midiOutputs"
+      @save="commitLiveTrackEditor"
+      @live-update="onLiveTrackEditorLiveUpdate"
+      @revert="onLiveTrackEditorRevert"
+      @delete="confirmDeleteLiveTrack"
+      @cancel="closeTrackEditor"
     />
 
     <div
@@ -126,6 +160,8 @@ import AppToolbar from './components/AppToolbar.vue';
 import PianoRoll from './components/PianoRoll.vue';
 import LiveView from './components/LiveView.vue';
 import SceneEditorModal from './components/SceneEditorModal.vue';
+import PatternEditorModal from './components/PatternEditorModal.vue';
+import TrackEditorModal from './components/TrackEditorModal.vue';
 import {
   createProject,
   createMidiTrack,
@@ -218,11 +254,25 @@ const mixBpm = ref(120);
 const viewMode = ref('roll');
 /** Live UI: show tracks/patterns marked Hide from Live (still play via scenes). */
 const showHiddenLive = ref(false);
+/** Live UI: show pen buttons that open track/pattern settings modals. */
+const liveEditMode = ref(false);
 const sceneEditorOpen = ref(false);
 const sceneEditorMode = ref('create');
 const sceneEditorId = ref(null);
 const sceneEditorSongId = ref(null);
 const sceneEditorInitial = ref({ name: '' });
+
+const patternEditorOpen = ref(false);
+const patternEditorSongId = ref(null);
+const patternEditorTrackId = ref(null);
+const patternEditorPatternId = ref(null);
+const patternEditorInitial = ref({});
+
+const trackEditorOpen = ref(false);
+const trackEditorSongId = ref(null);
+const trackEditorTrackId = ref(null);
+const trackEditorKind = ref('midi');
+const trackEditorInitial = ref({});
 // Per-song: which scene button last claimed Live playback in that song.
 const activeSceneBySong = reactive({});
 // Sync/clock routing is global — not per-song (scheduler still reads project.*).
@@ -345,6 +395,17 @@ const sceneEditorTracks = computed(
 const sceneEditorScenes = computed(
   () => getProjectForSong(sceneEditorSongId.value)?.scenes ?? project.scenes
 );
+
+const patternEditorTracks = computed(
+  () => getProjectForSong(patternEditorSongId.value)?.tracks ?? project.tracks
+);
+const patternEditorScenes = computed(
+  () => getProjectForSong(patternEditorSongId.value)?.scenes ?? project.scenes
+);
+const patternEditorCanDelete = computed(() => {
+  const track = findTrack(patternEditorTrackId.value, patternEditorSongId.value);
+  return (track?.patterns?.length ?? 0) > 1;
+});
 
 function clearActiveScenes() {
   for (const key of Object.keys(activeSceneBySong)) delete activeSceneBySong[key];
@@ -959,26 +1020,28 @@ function renamePattern(trackId, patternId, name) {
   if (pattern) pattern.name = name;
 }
 
-function updatePattern(trackId, patternId, changes) {
-  const track = findTrack(trackId);
+function updatePattern(trackId, patternId, changes, songId = currentSongId.value) {
+  const songProject = getProjectForSong(songId);
+  const track = findTrack(trackId, songId);
   const pattern = track?.patterns?.find((p) => p.id === patternId);
-  if (!pattern) return;
+  if (!pattern || !songProject) return;
   const { linkedPatternIds, ...rest } = changes ?? {};
   Object.assign(pattern, rest);
   if (changes?.sceneIds !== undefined) normalizePatternSceneIds(pattern);
   if (linkedPatternIds !== undefined) {
-    setPatternLinks(project.tracks, patternId, linkedPatternIds);
+    setPatternLinks(songProject.tracks, patternId, linkedPatternIds);
   }
 }
 
-function deletePattern(trackId, patternId) {
-  const track = findTrack(trackId);
-  if (!track?.patterns || track.patterns.length <= 1) return;
+function deletePattern(trackId, patternId, songId = currentSongId.value) {
+  const songProject = getProjectForSong(songId);
+  const track = findTrack(trackId, songId);
+  if (!track?.patterns || track.patterns.length <= 1 || !songProject) return;
 
   const idx = track.patterns.findIndex((p) => p.id === patternId);
   if (idx === -1) return;
 
-  clearLinksToPattern(project.tracks, patternId);
+  clearLinksToPattern(songProject.tracks, patternId);
   track.patterns.splice(idx, 1);
 
   if (track.activePatternId === patternId) {
@@ -990,10 +1053,14 @@ function deletePattern(trackId, patternId) {
   if (track.pendingLaunches) {
     track.pendingLaunches = track.pendingLaunches.filter((p) => p.patternId !== patternId);
   }
-  if (project.soloPreview?.trackId === trackId && project.soloPreview?.patternId === patternId) {
+  if (
+    songId === currentSongId.value &&
+    project.soloPreview?.trackId === trackId &&
+    project.soloPreview?.patternId === patternId
+  ) {
     project.soloPreview = null;
   }
-  for (const t of project.tracks) {
+  for (const t of songProject.tracks) {
     if (t.ghostTrackId === trackId && t.ghostPatternId === patternId) {
       t.ghostTrackId = null;
       t.ghostPatternId = null;
@@ -1205,6 +1272,122 @@ function confirmDeleteScene() {
   closeSceneEditor();
 }
 
+function patternToEditorDraft(pattern) {
+  return {
+    name: pattern.name,
+    color: pattern.color,
+    patternSteps: pattern.patternSteps ?? 16,
+    liveLaunchMode: pattern.liveLaunchMode ?? 'toggle',
+    liveSyncGrid: pattern.liveSyncGrid ?? '1/16',
+    cutOthers: pattern.cutOthers !== false,
+    hiddenFromLive: !!pattern.hiddenFromLive,
+    sceneIds: Array.isArray(pattern.sceneIds)
+      ? [...pattern.sceneIds]
+      : pattern.sceneId
+        ? [pattern.sceneId]
+        : [],
+    linkedPatternIds: Array.isArray(pattern.linkedPatternIds)
+      ? [...pattern.linkedPatternIds]
+      : [],
+  };
+}
+
+function trackToEditorDraft(track) {
+  return {
+    name: track.name,
+    color: track.color,
+    category: track.category,
+    midiOutputId: track.midiOutputId ?? '',
+    midiChannel: track.midiChannel ?? 0,
+    volume: track.volume ?? 1,
+    hiddenFromLive: !!track.hiddenFromLive,
+  };
+}
+
+function startEditLivePattern(songId, trackId, patternId) {
+  const track = findTrack(trackId, songId);
+  const pattern = track?.patterns?.find((p) => p.id === patternId);
+  if (!pattern) return;
+  patternEditorSongId.value = songId;
+  patternEditorTrackId.value = trackId;
+  patternEditorPatternId.value = patternId;
+  patternEditorInitial.value = patternToEditorDraft(pattern);
+  patternEditorOpen.value = true;
+}
+
+function closePatternEditor() {
+  patternEditorOpen.value = false;
+  patternEditorSongId.value = null;
+  patternEditorTrackId.value = null;
+  patternEditorPatternId.value = null;
+}
+
+function commitLivePatternEditor(values) {
+  const songId = patternEditorSongId.value;
+  const trackId = patternEditorTrackId.value;
+  const patternId = patternEditorPatternId.value;
+  if (songId && trackId && patternId) {
+    updatePattern(trackId, patternId, values, songId);
+  }
+  closePatternEditor();
+}
+
+function confirmDeleteLivePattern() {
+  const songId = patternEditorSongId.value;
+  const trackId = patternEditorTrackId.value;
+  const patternId = patternEditorPatternId.value;
+  if (songId && trackId && patternId) {
+    deletePattern(trackId, patternId, songId);
+  }
+  closePatternEditor();
+}
+
+function startEditLiveTrack(songId, trackId) {
+  const track = findTrack(trackId, songId);
+  if (!track) return;
+  trackEditorSongId.value = songId;
+  trackEditorTrackId.value = trackId;
+  trackEditorKind.value = track.kind;
+  trackEditorInitial.value = trackToEditorDraft(track);
+  trackEditorOpen.value = true;
+}
+
+function closeTrackEditor() {
+  trackEditorOpen.value = false;
+  trackEditorSongId.value = null;
+  trackEditorTrackId.value = null;
+}
+
+function commitLiveTrackEditor(values) {
+  const songId = trackEditorSongId.value;
+  const trackId = trackEditorTrackId.value;
+  if (songId && trackId) {
+    updateTrack(trackId, values, songId);
+  }
+  closeTrackEditor();
+}
+
+function onLiveTrackEditorLiveUpdate(changes) {
+  const songId = trackEditorSongId.value;
+  const trackId = trackEditorTrackId.value;
+  if (songId && trackId) updateTrack(trackId, changes, songId);
+}
+
+function onLiveTrackEditorRevert(changes) {
+  const songId = trackEditorSongId.value;
+  const trackId = trackEditorTrackId.value;
+  if (songId && trackId) updateTrack(trackId, changes, songId);
+}
+
+function confirmDeleteLiveTrack() {
+  const songId = trackEditorSongId.value;
+  const trackId = trackEditorTrackId.value;
+  if (songId && trackId) {
+    removeTrack(trackId, songId);
+  }
+  closeTrackEditor();
+}
+
 // Scene button — exclusive take-over across the whole Live set: cut every
 // sounding/queued clip in every song, launch this scene's patterns, and snap
 // the transport tempo to the scene's song at the same boundary (not on click).
@@ -1250,8 +1433,8 @@ function launchScene(songId, sceneId) {
   else applyMixTempo(sceneBpm, { songId });
 }
 
-function updateTrack(trackId, changes) {
-  const track = findTrack(trackId);
+function updateTrack(trackId, changes, songId = currentSongId.value) {
+  const track = findTrack(trackId, songId);
   if (track) {
     Object.assign(track, changes);
     if (track.kind === 'drum') normalizeDrumTrack(track);
@@ -1279,11 +1462,13 @@ function addTrack(kind, config = {}) {
   if (kind === 'drum') void hydrateDefaultDrumSamples();
 }
 
-function removeTrack(trackId) {
-  const idx = project.tracks.findIndex((t) => t.id === trackId);
+function removeTrack(trackId, songId = currentSongId.value) {
+  const songProject = getProjectForSong(songId);
+  if (!songProject) return;
+  const idx = songProject.tracks.findIndex((t) => t.id === trackId);
   if (idx === -1) return;
 
-  const track = project.tracks[idx];
+  const track = songProject.tracks[idx];
   if (track.kind === 'drum') {
     for (const pad of track.pads) {
       clearSample(pad.id);
@@ -1291,17 +1476,17 @@ function removeTrack(trackId) {
     }
   }
 
-  project.tracks.splice(idx, 1);
+  songProject.tracks.splice(idx, 1);
 
-  for (const t of project.tracks) {
+  for (const t of songProject.tracks) {
     if (t.ghostTrackId === trackId) {
       t.ghostTrackId = null;
       t.ghostPatternId = null;
     }
   }
 
-  if (activeTrackId.value === trackId) {
-    const fallback = project.tracks[idx] ?? project.tracks[idx - 1];
+  if (songId === currentSongId.value && activeTrackId.value === trackId) {
+    const fallback = songProject.tracks[idx] ?? songProject.tracks[idx - 1];
     activeTrackId.value = fallback?.id;
   }
 }

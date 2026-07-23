@@ -18,6 +18,8 @@
         :active-scene-id="activeSceneBySong[entry.id] ?? null"
         :playing="playing"
         :show-hidden="showHidden"
+        :edit-mode="editMode"
+        :midi-outputs="midiOutputs"
         :can-move-up="index > 0"
         :can-move-down="index < liveSongs.length - 1"
         @trigger-pattern="(songId, trackId, patternId) => emit('trigger-pattern', songId, trackId, patternId)"
@@ -27,6 +29,8 @@
         @launch-scene="(songId, sceneId) => emit('launch-scene', songId, sceneId)"
         @add-scene="(songId) => emit('add-scene', songId)"
         @edit-scene="(songId, sceneId) => emit('edit-scene', songId, sceneId)"
+        @edit-track="(songId, trackId) => emit('edit-track', songId, trackId)"
+        @edit-pattern="(songId, trackId, patternId) => emit('edit-pattern', songId, trackId, patternId)"
         @move-song="(songId, direction) => emit('move-song', songId, direction)"
       />
 
@@ -48,6 +52,9 @@ defineProps({
   playing: Boolean,
   /** When true, tracks/patterns marked Hide from Live stay visible in the grid. */
   showHidden: { type: Boolean, default: false },
+  /** When true, show pen buttons that open track/pattern edit modals. */
+  editMode: { type: Boolean, default: false },
+  midiOutputs: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
@@ -58,6 +65,8 @@ const emit = defineEmits([
   'launch-scene',
   'add-scene',
   'edit-scene',
+  'edit-track',
+  'edit-pattern',
   'move-song',
 ]);
 </script>

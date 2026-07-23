@@ -20,7 +20,7 @@
     <div class="daw-toolbar-divider"></div>
 
     <div class="daw-toolbar-secondary">
-      <!-- Live-only: reveal tracks/patterns marked Hide from Live. -->
+      <!-- Live-only: reveal hidden clips and/or quick-edit pens on tracks/patterns. -->
       <template v-if="viewMode === 'live'">
         <ToolbarField
           label="Hidden"
@@ -38,6 +38,25 @@
             @click="emit('toggle-show-hidden')"
           >
             Show
+          </button>
+        </ToolbarField>
+
+        <ToolbarField
+          label="Edit"
+          :title="editMode
+            ? 'Edit pens visible on tracks and patterns — click to hide'
+            : 'Show edit pens on tracks and patterns for quick settings'"
+        >
+          <button
+            type="button"
+            class="h-6 px-1.5 rounded text-[9px] font-semibold uppercase tracking-wider transition-colors"
+            :class="editMode
+              ? 'bg-surface-active text-white'
+              : 'bg-surface-hover text-muted hover:text-white hover:bg-surface-active'"
+            :aria-pressed="editMode"
+            @click="emit('toggle-edit-mode')"
+          >
+            Pens
           </button>
         </ToolbarField>
 
@@ -114,6 +133,7 @@ defineProps({
   songs: { type: Array, default: () => [] },
   activeSongId: String,
   showHidden: Boolean,
+  editMode: Boolean,
 });
 
 const emit = defineEmits([
@@ -133,5 +153,6 @@ const emit = defineEmits([
   'clock-output-change',
   'compact-navbar-change',
   'toggle-show-hidden',
+  'toggle-edit-mode',
 ]);
 </script>

@@ -138,12 +138,29 @@
         <div
           class="flex flex-col justify-center gap-0.5 w-36 flex-shrink-0 px-2 py-1.5 rounded-md bg-surface/60"
         >
-          <div class="flex items-center gap-1.5 min-w-0">
+          <div class="flex items-center gap-1 min-w-0">
             <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="{ background: track.color }"></span>
-            <span class="truncate text-xs font-semibold">{{ track.name }}</span>
+            <span class="truncate text-xs font-semibold flex-1 min-w-0">{{ track.name }}</span>
+            <button
+              v-if="editMode"
+              type="button"
+              class="w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
+              title="Edit track"
+              @click.stop="emit('edit-track', song.id, track.id)"
+            >
+              ✎
+            </button>
           </div>
           <span class="text-[9px] text-muted-dim uppercase tracking-wide">
             {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
+          </span>
+          <span
+            v-if="track.kind === 'midi'"
+            class="text-[9px] tracking-wide truncate"
+            :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
+            :title="trackMidiOutTitle(track)"
+          >
+            {{ trackMidiOutLabel(track) || 'No MIDI out' }}
           </span>
         </div>
 
@@ -154,53 +171,68 @@
               class="w-0.5 h-14 flex-shrink-0 rounded-full bg-white/80 self-center pointer-events-none"
               aria-hidden="true"
             ></div>
-            <button
-              type="button"
-              class="clip relative w-24 h-14 flex-shrink-0 rounded-md overflow-hidden text-left px-2 py-1 transition-transform active:scale-[0.97]"
-              :class="[
-                clipStateClass(track, pattern),
-                clipDragClass(track.id, index),
-                isHiddenFromLive(pattern) && !isHiddenFromLive(track) ? 'opacity-55' : '',
-              ]"
-              :style="clipStyle(track, pattern)"
-              :title="clipTitle(track, pattern)"
-              :data-track-id="track.id"
-              :data-clip-index="index"
-              @pointerdown="onClipPointerDown($event, track, index, pattern.id)"
-              @pointerup="onClipPointerUp($event, track)"
-              @pointercancel="onClipPointerUp($event, track)"
-              @click="onClipClick(track.id, pattern.id, pattern.liveLaunchMode)"
-            >
-              <span class="relative z-[1] block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
-              <span class="relative z-[1] flex items-center gap-1 min-w-0 mt-0.5 pr-3">
-                <span
-                  class="text-[8px] font-semibold uppercase tracking-wider opacity-80 flex-shrink-0"
-                  :title="launchModeLabel(pattern)"
-                >{{ launchModeShort(pattern) }}</span>
-                <span class="text-[9px] opacity-60 truncate">{{ patternStepsLabel(pattern.patternSteps) }}</span>
-              </span>
+            <!-- Wrapper keeps edit pen a sibling of the clip button (no nested <button>). -->
+            <div class="relative w-24 h-14 flex-shrink-0">
+              <button
+                type="button"
+                class="clip absolute inset-0 rounded-md overflow-hidden text-left px-2 py-1 transition-transform active:scale-[0.97]"
+                :class="[
+                  clipStateClass(track, pattern),
+                  clipDragClass(track.id, index),
+                  isHiddenFromLive(pattern) && !isHiddenFromLive(track) ? 'opacity-55' : '',
+                ]"
+                :style="clipStyle(track, pattern)"
+                :title="clipTitle(track, pattern)"
+                :data-track-id="track.id"
+                :data-clip-index="index"
+                @pointerdown="onClipPointerDown($event, track, index, pattern.id)"
+                @pointerup="onClipPointerUp($event, track)"
+                @pointercancel="onClipPointerUp($event, track)"
+                @click="onClipClick(track.id, pattern.id, pattern.liveLaunchMode)"
+              >
+                <span class="relative z-[1] block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
+                <span class="relative z-[1] flex items-center gap-1 min-w-0 mt-0.5 pr-3">
+                  <span
+                    class="text-[8px] font-semibold uppercase tracking-wider opacity-80 flex-shrink-0"
+                    :title="launchModeLabel(pattern)"
+                  >{{ launchModeShort(pattern) }}</span>
+                  <span class="text-[9px] opacity-60 truncate">{{ patternStepsLabel(pattern.patternSteps) }}</span>
+                </span>
 
-              <span
-                v-if="clipStatus(track, pattern) === 'playing'"
-                class="absolute top-1 right-1 z-[1] text-[10px] leading-none"
-              >▶</span>
-              <span
-                v-else-if="clipStatus(track, pattern) === 'stopping'"
-                class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
-              ></span>
-              <span
-                v-else-if="clipStatus(track, pattern) === 'queued'"
-                class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white animate-pulse"
-              ></span>
-              <span
-                v-else-if="clipStatus(track, pattern) === 'arming'"
-                class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
-              ></span>
-              <span
-                v-else-if="clipStatus(track, pattern) === 'armed'"
-                class="absolute top-1 right-1 z-[1] text-[10px] leading-none opacity-60"
-              >▶</span>
-            </button>
+                <span
+                  v-if="clipStatus(track, pattern) === 'playing'"
+                  class="absolute top-1 right-1 z-[1] text-[10px] leading-none"
+                >▶</span>
+                <span
+                  v-else-if="clipStatus(track, pattern) === 'stopping'"
+                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
+                ></span>
+                <span
+                  v-else-if="clipStatus(track, pattern) === 'queued'"
+                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+                ></span>
+                <span
+                  v-else-if="clipStatus(track, pattern) === 'arming'"
+                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                ></span>
+                <span
+                  v-else-if="clipStatus(track, pattern) === 'armed'"
+                  class="absolute top-1 right-1 z-[1] text-[10px] leading-none opacity-60"
+                >▶</span>
+              </button>
+
+              <button
+                v-if="editMode"
+                type="button"
+                class="absolute bottom-0.5 right-0.5 z-[2] w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
+                title="Edit pattern"
+                @pointerdown.stop
+                @pointerup.stop
+                @click.stop="emit('edit-pattern', song.id, track.id, pattern.id)"
+              >
+                ✎
+              </button>
+            </div>
           </template>
           <div
             v-if="isDropBefore(track.id, dropEndIndex(track))"
@@ -247,6 +279,8 @@ const props = defineProps({
   activeSceneId: { type: String, default: null },
   playing: Boolean,
   showHidden: { type: Boolean, default: false },
+  editMode: { type: Boolean, default: false },
+  midiOutputs: { type: Array, default: () => [] },
   canMoveUp: { type: Boolean, default: false },
   canMoveDown: { type: Boolean, default: false },
 });
@@ -259,6 +293,8 @@ const emit = defineEmits([
   'launch-scene',
   'add-scene',
   'edit-scene',
+  'edit-track',
+  'edit-pattern',
   'move-song',
 ]);
 
@@ -267,6 +303,27 @@ const absBeat = useAbsolutePlayheadBeat();
 const visibleTracks = computed(() =>
   props.tracks.filter((track) => props.showHidden || !isHiddenFromLive(track))
 );
+
+function midiOutputName(outputId) {
+  if (!outputId) return '';
+  return props.midiOutputs.find((d) => d.id === outputId)?.name ?? '';
+}
+
+/** Compact device line for the track box (channel included when connected). */
+function trackMidiOutLabel(track) {
+  const name = midiOutputName(track.midiOutputId);
+  if (!name) return track.midiOutputId ? 'Missing device' : '';
+  const ch = (track.midiChannel ?? 0) + 1;
+  return `${name} · ch ${ch}`;
+}
+
+function trackMidiOutTitle(track) {
+  const name = midiOutputName(track.midiOutputId);
+  const ch = (track.midiChannel ?? 0) + 1;
+  if (!track.midiOutputId) return 'Not connected to a MIDI output';
+  if (!name) return `MIDI output unavailable (ch ${ch})`;
+  return `${name} — MIDI channel ${ch}`;
+}
 
 function visiblePatternEntries(track) {
   const patterns = track?.patterns ?? [];

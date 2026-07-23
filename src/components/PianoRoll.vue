@@ -26,7 +26,7 @@
           :playing="playing"
           :solo-preview="soloPreview"
           :scenes="scenes"
-          :midi-io-enabled="activeTrack.kind === 'midi'"
+          :midi-io-enabled="activeTrack.kind === 'midi' || activeTrack.kind === 'multisampler'"
           :compact-navbar="compactNavbar"
           @select-pattern="(id) => emit('select-pattern', activeTrackId, id)"
           @add-pattern="(config) => emit('add-pattern', activeTrackId, config)"
@@ -102,6 +102,21 @@
         @copy="copySelection"
         @paste="pasteClipboard"
       />
+
+      <template v-if="isMultiSamplerTrack">
+        <div class="daw-toolbar-divider"></div>
+        <ToolbarField label="Smp">
+          <button
+            type="button"
+            class="daw-toolbar-menu-btn"
+            :class="compactNavbar ? 'daw-toolbar-menu-btn--compact' : ''"
+            title="Load samples and assign keyboard ranges"
+            @click="sampleZonesOpen = true"
+          >
+            Samples
+          </button>
+        </ToolbarField>
+      </template>
     </Teleport>
 
     <!-- Paste position — slim timeline under the toolbar; scrolls with the grid. -->
@@ -329,7 +344,7 @@
                 :style="marqueeStyle"
               ></div>
               <div
-                v-if="sampleDropPadId && isDrumTrack"
+                v-if="sampleDropPadId != null && (isDrumTrack || isMultiSamplerTrack)"
                 class="absolute left-0 right-0 pointer-events-none bg-accent/15 border-y border-accent/40"
                 :style="{ top: pitchToY(sampleDropPadId) + 'px', height: rowHeight + 'px' }"
               ></div>
@@ -424,6 +439,19 @@
       </div>
     </template>
 
+    <SampleZoneEditor
+      v-if="sampleZonesOpen && isMultiSamplerTrack && activeTrack"
+      :track-name="activeTrack.name"
+      :zones="activeTrack.zones"
+      :track-volume="activeTrack.volume ?? 1"
+      @close="sampleZonesOpen = false"
+      @update-zone="onUpdateZone"
+      @add-zone="onAddZone"
+      @remove-zone="onRemoveZone"
+      @load-sample="onLoadZoneSample"
+      @clear-sample="onClearZoneSample"
+    />
+
     <NoteVelocityModal
       v-if="velocityEditor"
       :initial-velocity="velocityEditor.initialVelocity"
@@ -461,8 +489,16 @@ import {
   importPatternFromMidi,
   readMidiFile,
 } from '../engine/midiFile.js';
-import { loadSampleFile, clearSample, playSample, resumeSamplerAudio } from '../engine/sampler.js';
+import {
+  loadSampleFile,
+  clearSample,
+  playSample,
+  resumeSamplerAudio,
+  stopSampleVoice,
+  hasSample,
+} from '../engine/sampler.js';
 import { padPlaybackOpts } from '../engine/padPlayback.js';
+import { findZoneForPitch, zonePlaybackOpts } from '../engine/sampleZones.js';
 import { audioFileFromDataTransfer, acceptFileDrag } from '../utils/audioFile.js';
 import { isEditableTarget } from '../utils/keyboard.js';
 import { beatToX as beatToGridX } from '../utils/grid.js';
@@ -470,6 +506,7 @@ import { shade } from '../utils/color.js';
 import { THEME } from '../theme.js';
 import VelocityLane from './VelocityLane.vue';
 import NoteVelocityModal from './NoteVelocityModal.vue';
+import SampleZoneEditor from './SampleZoneEditor.vue';
 import DrumPadList from './DrumPadList.vue';
 import DrumPadMuteStrip from './DrumPadMuteStrip.vue';
 import DrumEventLaneControls from './DrumEventLaneControls.vue';
@@ -529,6 +566,9 @@ const emit = defineEmits([
   'add-pad',
   'remove-pad',
   'rename-pad',
+  'update-zone',
+  'add-zone',
+  'remove-zone',
   'update-track',
   'delete-track',
   'marker-change',
@@ -615,6 +655,10 @@ const activePattern = computed(() => getActivePattern(activeTrack.value));
 const ghostSource = computed(() => getGhostSource(activeTrack.value, props.tracks));
 const ghostPattern = computed(() => ghostSource.value?.pattern ?? null);
 const isDrumTrack = computed(() => activeTrack.value?.kind === 'drum');
+const isMultiSamplerTrack = computed(() => activeTrack.value?.kind === 'multisampler');
+const sampleZonesOpen = ref(false);
+// pitch → voiceId for multi-sampler key preview (polyphonic across keys).
+const previewVoices = new Map();
 const activeLoopEndBeat = computed(() => patternLoopEndBeat(activePattern.value));
 // Playhead wraps to the active track's pattern length in the piano roll view.
 const displayPlayheadBeat = computed(() => {
@@ -1082,8 +1126,9 @@ function resolvePastePitch(item, sourceKind) {
   const targetKind = activeTrack.value?.kind;
   const targetRows = rows.value;
 
-  // MIDI → MIDI keeps absolute pitch numbers across synth tracks.
-  if (sourceKind === 'midi' && targetKind === 'midi') {
+  // Chromatic tracks (MIDI + multi-sampler) share absolute pitch numbers 0–127.
+  const chromatic = (k) => k === 'midi' || k === 'multisampler';
+  if (chromatic(sourceKind) && chromatic(targetKind)) {
     return item.pitch;
   }
 
@@ -1852,6 +1897,7 @@ function startDrawPreview(pitch, velocity = PREVIEW_VELOCITY) {
     return;
   }
 
+  // MIDI + multi-sampler share chromatic preview (keys light, hold until release).
   playPreview(pitch);
 }
 
@@ -1868,8 +1914,34 @@ async function onLoadSample(padId, file) {
   }
 }
 
+async function onLoadZoneSample(zoneId, file) {
+  try {
+    await loadSampleFile(zoneId, file);
+    emit('update-zone', props.activeTrackId, zoneId, { fileName: file.name });
+  } catch (err) {
+    console.error('Failed to load sample:', err);
+  }
+}
+
+function onClearZoneSample(zoneId) {
+  clearSample(zoneId, { discardStored: true });
+  emit('update-zone', props.activeTrackId, zoneId, { fileName: '' });
+}
+
+function onUpdateZone(zoneId, changes) {
+  emit('update-zone', props.activeTrackId, zoneId, changes);
+}
+
+function onAddZone() {
+  emit('add-zone', props.activeTrackId);
+}
+
+function onRemoveZone(zoneId) {
+  emit('remove-zone', props.activeTrackId, zoneId);
+}
+
 function acceptSampleDrag(e) {
-  if (!isDrumTrack.value) return false;
+  if (!isDrumTrack.value && !isMultiSamplerTrack.value) return false;
   return acceptFileDrag(e);
 }
 
@@ -1888,14 +1960,28 @@ function onSampleDragLeave(e) {
 }
 
 async function onSampleDrop(e) {
-  if (!isDrumTrack.value) return;
+  if (!isDrumTrack.value && !isMultiSamplerTrack.value) return;
   e.preventDefault();
   e.stopPropagation();
-  const padId = eventToGridPos(e).pitch ?? sampleDropPadId.value;
+  const pitch = eventToGridPos(e).pitch ?? sampleDropPadId.value;
   sampleDropPadId.value = null;
   const file = audioFileFromDataTransfer(e.dataTransfer);
-  if (!file || !padId) return;
-  await onLoadSample(padId, file);
+  if (!file || pitch == null) return;
+
+  if (isDrumTrack.value) {
+    await onLoadSample(pitch, file);
+    return;
+  }
+
+  // Drop onto a piano key loads into the zone covering that pitch (first match).
+  // Root follows the drop key so that note plays the sample at original pitch.
+  const track = activeTrack.value;
+  const zone = findZoneForPitch(track?.zones, pitch) ?? track?.zones?.[0];
+  if (!zone) return;
+  await onLoadZoneSample(zone.id, file);
+  if (typeof pitch === 'number') {
+    emit('update-zone', props.activeTrackId, zone.id, { rootNote: pitch });
+  }
 }
 
 function onClearSample(padId) {
@@ -2444,6 +2530,32 @@ function slidePreview(pitch) {
   playPreview(pitch);
 }
 
+function playMultiSamplerPreview(track, pitch, velocity = PREVIEW_VELOCITY) {
+  const zone = findZoneForPitch(track.zones, pitch);
+  if (!zone || !hasSample(zone.id)) return false;
+  resumeSamplerAudio();
+  const prev = previewVoices.get(pitch);
+  if (prev != null) stopSampleVoice(prev);
+  const gainMul = (zone.volume ?? 1) * (track.volume ?? 1);
+  const voiceId = playSample(
+    zone.id,
+    velocity,
+    0,
+    gainMul,
+    zonePlaybackOpts(zone, pitch)
+  );
+  if (voiceId != null) previewVoices.set(pitch, voiceId);
+  return true;
+}
+
+function stopMultiSamplerPreview(pitch) {
+  if (pitch == null) return;
+  const voiceId = previewVoices.get(pitch);
+  if (voiceId == null) return;
+  stopSampleVoice(voiceId);
+  previewVoices.delete(pitch);
+}
+
 function playPreview(pitch) {
   if (previewStopTimer) {
     clearTimeout(previewStopTimer);
@@ -2451,7 +2563,13 @@ function playPreview(pitch) {
   }
 
   const track = activeTrack.value;
-  if (track?.midiOutputId) {
+  if (track?.kind === 'multisampler') {
+    // Release previous key when sliding across the keyboard.
+    if (previewingPitch.value != null && previewingPitch.value !== pitch) {
+      stopMultiSamplerPreview(previewingPitch.value);
+    }
+    playMultiSamplerPreview(track, pitch);
+  } else if (track?.midiOutputId) {
     sendNoteOn(track.midiOutputId, track.midiChannel, pitch, PREVIEW_VELOCITY);
   }
   previewingPitch.value = pitch;
@@ -2467,7 +2585,9 @@ function stopPreviewNow() {
 
   const track = activeTrack.value;
   const pitch = previewingPitch.value;
-  if (pitch !== null && track?.midiOutputId) {
+  if (pitch !== null && track?.kind === 'multisampler') {
+    stopMultiSamplerPreview(pitch);
+  } else if (pitch !== null && track?.midiOutputId) {
     sendNoteOff(track.midiOutputId, track.midiChannel, pitch);
   }
   previewingPitch.value = null;

@@ -209,6 +209,14 @@
           </section>
 
           <section class="border-t border-line pt-4">
+            <DelayControls
+              :model="draft"
+              always-expanded
+              @update="(changes) => Object.assign(draft, changes)"
+            />
+          </section>
+
+          <section class="border-t border-line pt-4">
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
               Pad volume — {{ Math.round(draft.volume * 100) }}%
             </label>
@@ -262,7 +270,16 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { DRUM_PAD_COLORS, REVERB_DECAY_MIN, REVERB_DECAY_MAX, REVERB_DECAY_DEFAULT, PAD_GAIN_MIN, PAD_GAIN_MAX, PAD_GAIN_DEFAULT } from '../models/project.js';
+import {
+  DRUM_PAD_COLORS,
+  REVERB_DECAY_MIN,
+  REVERB_DECAY_MAX,
+  REVERB_DECAY_DEFAULT,
+  PAD_GAIN_MIN,
+  PAD_GAIN_MAX,
+  PAD_GAIN_DEFAULT,
+  createDelayDefaults,
+} from '../models/project.js';
 import {
   playSample,
   resumeSamplerAudio,
@@ -273,6 +290,7 @@ import {
 import { padPlaybackOpts, previewTrackOpts } from '../engine/padPlayback.js';
 import VolumeSlider from './VolumeSlider.vue';
 import SampleWaveformEditor from './SampleWaveformEditor.vue';
+import DelayControls from './DelayControls.vue';
 
 const PREVIEW_VELOCITY = 100;
 
@@ -304,6 +322,7 @@ const draft = reactive({
   reverbDecay: REVERB_DECAY_DEFAULT,
   gain: PAD_GAIN_DEFAULT,
   distortion: 0,
+  ...createDelayDefaults(),
 });
 
 const sampleLabel = computed(() => props.pad.fileName || (hasSample(props.pad.id) ? 'Loaded sample' : 'No sample loaded'));
@@ -328,6 +347,20 @@ function refreshWaveform() {
   waveformDuration.value = data?.duration ?? getSampleDuration(props.pad.id);
 }
 
+function delayFieldsFrom(source) {
+  const defaults = createDelayDefaults();
+  return {
+    delay: source.delay ?? defaults.delay,
+    delayFeedback: source.delayFeedback ?? defaults.delayFeedback,
+    delaySync: !!source.delaySync,
+    delayLeftMs: source.delayLeftMs ?? defaults.delayLeftMs,
+    delayRightMs: source.delayRightMs ?? defaults.delayRightMs,
+    delayLeftSync: source.delayLeftSync ?? defaults.delayLeftSync,
+    delayRightSync: source.delayRightSync ?? defaults.delayRightSync,
+    delayCutLow: !!source.delayCutLow,
+  };
+}
+
 function snapshotFromPad() {
   const p = props.pad;
   return {
@@ -343,6 +376,7 @@ function snapshotFromPad() {
     reverbDecay: p.reverbDecay ?? REVERB_DECAY_DEFAULT,
     gain: p.gain ?? PAD_GAIN_DEFAULT,
     distortion: p.distortion ?? 0,
+    ...delayFieldsFrom(p),
   };
 }
 
@@ -359,6 +393,7 @@ function liveChangesFromDraft() {
     reverbDecay: draft.reverbDecay,
     gain: draft.gain,
     distortion: draft.distortion,
+    ...delayFieldsFrom(draft),
   };
 }
 
@@ -376,6 +411,7 @@ function syncFromPad() {
   draft.reverbDecay = props.pad.reverbDecay ?? REVERB_DECAY_DEFAULT;
   draft.gain = props.pad.gain ?? PAD_GAIN_DEFAULT;
   draft.distortion = props.pad.distortion ?? 0;
+  Object.assign(draft, delayFieldsFrom(props.pad));
   if (initialSnapshot.value === null) {
     initialSnapshot.value = snapshotFromPad();
   }
@@ -437,6 +473,7 @@ function preview() {
     reverbDecay: draft.reverbDecay,
     gain: draft.gain,
     distortion: draft.distortion,
+    ...delayFieldsFrom(draft),
   };
   const track = previewTrackOpts({ pads: props.allPads });
   playSample(props.pad.id, PREVIEW_VELOCITY, 0, gainMul, padPlaybackOpts(previewPad, track));

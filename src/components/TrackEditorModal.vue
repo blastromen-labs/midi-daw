@@ -82,7 +82,18 @@
             <label class="text-[10px] uppercase tracking-wider text-muted-dim block mb-1.5">
               Volume — {{ Math.round(draft.volume * 100) }}%
             </label>
-            <VolumeSlider wide class="w-full" v-model="draft.volume" title="Drum track volume" />
+            <VolumeSlider
+              wide
+              class="w-full"
+              v-model="draft.volume"
+              :title="kind === 'multisampler' ? 'Sampler track volume' : 'Drum track volume'"
+            />
+            <p
+              v-if="kind === 'multisampler'"
+              class="text-[10px] text-muted-dim mt-2 leading-snug"
+            >
+              Load samples and set keyboard ranges from the Samples button in the piano-roll toolbar.
+            </p>
           </section>
 
           <section class="border-t border-line pt-4">
@@ -163,7 +174,7 @@ import VolumeSlider from './VolumeSlider.vue';
 
 const props = defineProps({
   mode: { type: String, required: true }, // 'create' | 'edit'
-  kind: { type: String, required: true }, // 'midi' | 'drum'
+  kind: { type: String, required: true }, // 'midi' | 'drum' | 'multisampler'
   initial: {
     type: Object,
     required: true,
@@ -191,11 +202,16 @@ const draft = reactive({
 });
 
 const heading = computed(() => {
-  if (props.mode === 'create') {
-    return props.kind === 'drum' ? 'New drum track' : 'New MIDI track';
-  }
-  return props.kind === 'drum' ? 'Edit drum track' : 'Edit MIDI track';
+  const labels = {
+    drum: 'drum track',
+    multisampler: 'sampler track',
+    midi: 'MIDI track',
+  };
+  const label = labels[props.kind] ?? 'track';
+  return props.mode === 'create' ? `New ${label}` : `Edit ${label}`;
 });
+
+const usesVolume = computed(() => props.kind === 'drum' || props.kind === 'multisampler');
 
 function syncFromInitial() {
   editorReady.value = false;
@@ -214,11 +230,11 @@ function syncFromInitial() {
 
 watch(() => props.initial, syncFromInitial, { immediate: true, deep: true });
 
-// Push drum track volume to the project immediately so pattern playback hears it.
+// Push sample-track volume to the project immediately so pattern playback hears it.
 watch(
   () => draft.volume,
   (volume) => {
-    if (!editorReady.value || props.kind !== 'drum') return;
+    if (!editorReady.value || !usesVolume.value) return;
     emit('live-update', { volume });
   },
 );
@@ -238,7 +254,7 @@ function submit() {
 }
 
 function cancelEdit() {
-  if (props.kind === 'drum' && initialSnapshot.value) {
+  if (usesVolume.value && initialSnapshot.value) {
     emit('revert', { ...initialSnapshot.value });
   }
   emit('cancel');

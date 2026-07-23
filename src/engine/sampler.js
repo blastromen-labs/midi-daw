@@ -8,6 +8,7 @@
 
 import { getSharedAudioContext, getMasterDestination, resumeSharedAudioContext } from './audioContext.js';
 import { getReverbInput } from './reverb.js';
+import { getDelayInputFromSource } from './delay.js';
 import { getDistortionCurve } from './padDistortion.js';
 import { decodeAiffToAudioBuffer, isAiffBuffer, isAiffFile } from './aiffDecode.js';
 import { deleteStoredSample, getStoredSample, putStoredSample } from './sampleStorage.js';
@@ -105,8 +106,14 @@ function applyCut(triggerPadId, trackPads, whenSec) {
   }
 }
 
+// Drum pads stay within ±24 semis (UI slider). Multi-sampler maps a single
+// root across the full MIDI keyboard, so allow ±60 when opts.widePitch is set.
+const PITCH_LIMIT_DEFAULT = 24;
+const PITCH_LIMIT_WIDE = 60;
+
 function playbackSettings(opts = {}) {
-  const pitch = Math.max(-24, Math.min(24, Number(opts.pitch) || 0));
+  const pitchLimit = opts.widePitch ? PITCH_LIMIT_WIDE : PITCH_LIMIT_DEFAULT;
+  const pitch = Math.max(-pitchLimit, Math.min(pitchLimit, Number(opts.pitch) || 0));
   const sampleLength = Math.max(0.01, Math.min(1, Number(opts.sampleLength) || 1));
   const fadeOut = Math.max(0, Math.min(1, Number(opts.fadeOut) || 0));
   const gain = Math.max(0.25, Math.min(2, Number(opts.gain) || 1));
@@ -225,14 +232,27 @@ export function getSampleWaveformPeaks(padId, peakCount = 240) {
   return { peaks, duration: buffer.duration };
 }
 
+/** Soft-stop every active voice for a sample id (preview release / clear). */
+export function stopSample(padId, whenSec) {
+  stopPadVoices(padId, whenSec);
+}
+
+/** Soft-stop one voice returned from playSample (per-key preview polyphony). */
+export function stopSampleVoice(id, whenSec) {
+  const voice = activeVoices.get(id);
+  if (voice) stopVoice(voice, whenSec);
+}
+
 // `delayMs` is relative to the shared transport AudioContext's currentTime —
 // same convention as _delayMs() in scheduler.js. Using the shared context
 // (see audioContext.js) keeps drum hits aligned with MIDI note scheduling.
 // `gainMul` scales the hit after velocity (pad volume × track volume).
-// `opts` may include pitch, sampleLength, fadeOut, cutBySelf, cutByPads, trackPads.
+// `opts` may include pitch, widePitch, durationSec, sampleLength, fadeOut,
+// cutBySelf, cutByPads, trackPads.
+// Returns the voice id (or undefined if no buffer) so callers can gate release.
 export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts = {}) {
   const buffer = bufferCache.get(padId);
-  if (!buffer) return;
+  if (!buffer) return undefined;
 
   const c = getSharedAudioContext();
   const out = getMasterDestination();
@@ -241,7 +261,14 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   if (trackPads.length) applyCut(padId, trackPads, when);
 
   const { sampleLength, fadeOut, rate, gain: padGain, distortion } = playbackSettings(opts);
-  const playDurationSec = (buffer.duration * sampleLength) / rate;
+  // Full buffer region at playback rate, optionally gated by note duration
+  // (multi-sampler) so long one-shots don't ring past the piano-roll note.
+  const naturalDurationSec = (buffer.duration * sampleLength) / rate;
+  const gated =
+    opts.durationSec != null && Number.isFinite(opts.durationSec)
+      ? Math.max(0.01, Number(opts.durationSec))
+      : null;
+  const playDurationSec = gated != null ? Math.min(naturalDurationSec, gated) : naturalDurationSec;
   const fadeDurationSec = playDurationSec * fadeOut;
   const fadeStartSec = when + playDurationSec - fadeDurationSec;
   const endTime = when + playDurationSec;
@@ -274,10 +301,12 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
   const velGain = Math.max(0, Math.min(1, velocity / 127));
   const peakGain = Math.max(0, Math.min(1, velGain * gainMul));
   const reverbSend = Math.max(0, Math.min(1, opts.reverb ?? 0));
+  const delayAmount = Math.max(0, Math.min(1, opts.delay ?? 0));
 
   tail.connect(gain);
   nodes.push(gain);
 
+  // Dry / reverb balance (crossfade). Delay is a parallel send on top.
   if (reverbSend > 0.001) {
     const dryGain = c.createGain();
     const wetGain = c.createGain();
@@ -292,10 +321,23 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
     gain.connect(out);
   }
 
+  if (delayAmount > 0.001) {
+    const delaySend = c.createGain();
+    delaySend.gain.value = delayAmount;
+    gain.connect(delaySend);
+    delaySend.connect(getDelayInputFromSource(padId, opts));
+    nodes.push(delaySend);
+  }
+
   gain.gain.setValueAtTime(peakGain, when);
   if (fadeOut > 0 && fadeDurationSec > 0.001) {
     gain.gain.setValueAtTime(peakGain, Math.max(when, fadeStartSec));
     gain.gain.linearRampToValueAtTime(0, when + playDurationSec);
+  } else if (gated != null) {
+    // Short release so gated multi-sampler notes don't click on stop.
+    const releaseSec = Math.min(CUT_RAMP_SEC, playDurationSec * 0.5);
+    gain.gain.setValueAtTime(peakGain, Math.max(when, endTime - releaseSec));
+    gain.gain.linearRampToValueAtTime(0, endTime);
   }
 
   const voice = { id: ++voiceId, padId, source: src, gain, nodes };
@@ -307,4 +349,5 @@ export function playSample(padId, velocity = 100, delayMs = 0, gainMul = 1, opts
 
   src.start(when, 0);
   src.stop(endTime);
+  return voice.id;
 }

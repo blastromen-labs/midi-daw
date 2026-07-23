@@ -82,6 +82,12 @@
             @input="onReverbDecay"
           />
         </div>
+
+        <DelayControls
+          class="border-t border-line pt-2"
+          :model="pad"
+          @update="(changes) => emit('update', changes)"
+        />
       </div>
     </div>
   </Teleport>
@@ -97,12 +103,13 @@ import {
   PAD_GAIN_MAX,
   PAD_GAIN_DEFAULT,
 } from '../models/project.js';
+import DelayControls from './DelayControls.vue';
 
 const PANEL_GAP = 4;
 const VIEWPORT_MARGIN = 8;
-const ESTIMATED_PANEL_HEIGHT = 240;
+const ESTIMATED_PANEL_HEIGHT = 360;
 const MIN_PANEL_HEIGHT = 120;
-const MAX_PANEL_HEIGHT = 320;
+const MAX_PANEL_HEIGHT = 420;
 
 const props = defineProps({
   pad: { type: Object, required: true },

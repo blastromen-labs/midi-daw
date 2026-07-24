@@ -50,7 +50,7 @@
                 v-for="c in accentColors"
                 :key="c"
                 type="button"
-                class="w-4 h-4 rounded-sm ring-1 transition-shadow"
+                class="w-4 h-4 ring-1 transition-shadow"
                 :class="draft.color === c ? 'ring-white' : 'ring-transparent hover:ring-line-light'"
                 :style="{ background: c }"
                 :title="c"

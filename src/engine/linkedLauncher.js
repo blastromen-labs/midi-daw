@@ -18,6 +18,7 @@ import {
   queuePatternOneShot,
   queuePatternStart,
   queuePatternStop,
+  silenceLiveTracks,
   stopPatternImmediately,
 } from './liveLauncher.js';
 
@@ -109,7 +110,12 @@ export function applyClipIntent(track, pattern, intent, absBeat) {
  * @param {object[]} tracks
  * @param {string} primaryPatternId
  * @param {string} intent from resolveClipIntent
- * @param {{ startPlayback: () => void, getAbsBeat: () => number, transportPlaying: boolean }} opts
+ * @param {{
+ *   startPlayback: () => void,
+ *   getAbsBeat: () => number,
+ *   transportPlaying: boolean,
+ *   allTracks?: object[],
+ * }} opts
  */
 export function runLinkedClipIntent(tracks, primaryPatternId, intent, opts) {
   const group = getLinkedPatternGroup(tracks, primaryPatternId);
@@ -120,6 +126,16 @@ export function runLinkedClipIntent(tracks, primaryPatternId, intent, opts) {
       applyClipIntent(track, pattern, intent, 0);
     }
     return;
+  }
+
+  // From a stopped transport, a clip click must be exclusive: tracks still on
+  // liveLaunches=null would otherwise follow activePatternId and all start
+  // with Play. Silence the whole Live set first, then arm only this group.
+  if (
+    !opts.transportPlaying &&
+    (intent === 'launch-immediate' || intent === 'oneshot-start')
+  ) {
+    silenceLiveTracks(opts.allTracks?.length ? opts.allTracks : tracks);
   }
 
   if (intent === 'launch-immediate') {

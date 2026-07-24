@@ -62,8 +62,20 @@ export function normalizeProjectNotes(tracks) {
   }
 }
 
-// Accent swatches for the track menu — independent of piano-roll note color.
-export const TRACK_ACCENT_COLORS = ['#a7d7af', '#6699ff', '#ff9d6c', '#e0779b', '#7ec8e3', '#e0c15c'];
+// Accent swatches for tracks / Live clips — saturated session-view colors
+// (Ableton-like), not soft pastels. Independent of piano-roll note color.
+export const TRACK_ACCENT_COLORS = [
+  '#ff3b4a', // hot red
+  '#ff7a1a', // orange
+  '#ffcc00', // yellow
+  '#7cff2e', // acid green
+  '#00e5a0', // neon teal
+  '#00c2ff', // cyan
+  '#3d7eff', // electric blue
+  '#b44dff', // violet
+  '#ff2bd6', // magenta
+  '#ff6b9d', // pink
+];
 
 /** Instrument role / mix grouping for a track (saved per track in the song). */
 export const TRACK_CATEGORIES = [
@@ -478,9 +490,9 @@ export function createLiveLaunch(patternId, overrides = {}) {
     holdMuted: false,
     pendingUnmuteBeat: null,
     stopBeat: null,
-    // Absolute beat when this clip's content beat 0 fires. Set for One Shots
-    // and scene-launched Loops so they restart from the beginning; ordinary
-    // Loop clip launches leave this null and phase-lock to the master grid.
+    // Absolute beat when this clip's content beat 0 fires. Set for Holds,
+    // One Shots, and scene-launched Loops so they restart from the beginning;
+    // ordinary Loop clip launches leave this null and phase-lock to the master grid.
     startBeat: null,
     ...overrides,
   };
@@ -1154,7 +1166,7 @@ export function snapOptionLabel(entry, compact = false) {
 export const LIVE_LAUNCH_MODES = {
   /** One click toggles loop on/off (default Live clip behavior). */
   TOGGLE: 'toggle',
-  /** Hold to hear: loops muted in sync until the next grid line, then audibly while held. */
+  /** Hold to hear: muted until the next sync grid, then plays from pattern beat 0 while held. */
   HOLD: 'hold',
   /** One click plays the pattern through once, then the track goes silent. */
   ONE_SHOT: 'oneShot',

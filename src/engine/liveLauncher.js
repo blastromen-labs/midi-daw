@@ -273,6 +273,17 @@ export function stopTrackImmediately(track) {
   track.pendingLaunches = [];
 }
 
+/**
+ * Clear Live arming on every track. Uses [] (not null) so follow-active
+ * activePatternId clips stay silent when transport starts — required for
+ * exclusive clip/scene launches from a stopped transport.
+ */
+export function silenceLiveTracks(tracks) {
+  for (const track of tracks ?? []) {
+    stopTrackImmediately(track);
+  }
+}
+
 export function stopPatternImmediately(track, patternId) {
   if (!track) return;
   materializeFollowActive(track);
@@ -300,6 +311,8 @@ function cutTransientOthers(track, patternId) {
 
 // Hold-to-play: own launch slot; cutOthers only replaces other fills — never
 // Loops or their pending swaps. Hold/One Shot are overlays on the Loop lane.
+// Always restarts from pattern beat 0 at the sync unmute (like One Shot) —
+// Hold is a momentary fill, not a phase-locked Loop.
 export function holdPatternDown(track, patternId, currentAbsBeat) {
   if (!track) return;
 
@@ -312,6 +325,8 @@ export function holdPatternDown(track, patternId, currentAbsBeat) {
     holdActive: true,
     holdMuted: true,
     pendingUnmuteBeat: boundary,
+    // Content beat 0 lands on the unmute boundary so every press starts clean.
+    startBeat: boundary,
   });
 
   if (patternCutsOthers(pattern)) {

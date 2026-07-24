@@ -102,6 +102,7 @@
         :hide-live-pattern-bar-length="hideLivePatternBarLength"
         :hide-live-pattern-launch-mode="hideLivePatternLaunchMode"
         :hide-live-track-details="hideLiveTrackDetails"
+        :hide-live-track-color="hideLiveTrackColor"
         :lock-live-pattern-order="lockLivePatternOrder"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
@@ -114,6 +115,7 @@
         @hide-live-pattern-bar-length-change="(v) => emit('hide-live-pattern-bar-length-change', v)"
         @hide-live-pattern-launch-mode-change="(v) => emit('hide-live-pattern-launch-mode-change', v)"
         @hide-live-track-details-change="(v) => emit('hide-live-track-details-change', v)"
+        @hide-live-track-color-change="(v) => emit('hide-live-track-color-change', v)"
         @lock-live-pattern-order-change="(v) => emit('lock-live-pattern-order-change', v)"
       />
     </div>
@@ -142,6 +144,7 @@ defineProps({
   hideLivePatternBarLength: Boolean,
   hideLivePatternLaunchMode: Boolean,
   hideLiveTrackDetails: Boolean,
+  hideLiveTrackColor: Boolean,
   lockLivePatternOrder: Boolean,
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
@@ -171,6 +174,7 @@ const emit = defineEmits([
   'hide-live-pattern-bar-length-change',
   'hide-live-pattern-launch-mode-change',
   'hide-live-track-details-change',
+  'hide-live-track-color-change',
   'lock-live-pattern-order-change',
   'toggle-show-hidden',
   'toggle-edit-mode',

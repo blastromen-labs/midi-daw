@@ -14,6 +14,8 @@ export function defaultGlobalSettings() {
     hideLivePatternLaunchMode: false,
     /** When true, omit category / MIDI / sampler lines on Live track boxes. */
     hideLiveTrackDetails: false,
+    /** When true, omit the color rail on Live track boxes. */
+    hideLiveTrackColor: false,
     /** When true, Live clips cannot be drag-reordered (safer while performing). */
     lockLivePatternOrder: false,
   };
@@ -35,6 +37,7 @@ export function loadGlobalSettings() {
     merged.hideLivePatternBarLength = !!merged.hideLivePatternBarLength;
     merged.hideLivePatternLaunchMode = !!merged.hideLivePatternLaunchMode;
     merged.hideLiveTrackDetails = !!merged.hideLiveTrackDetails;
+    merged.hideLiveTrackColor = !!merged.hideLiveTrackColor;
     merged.lockLivePatternOrder = !!merged.lockLivePatternOrder;
     return merged;
   } catch {

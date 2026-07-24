@@ -1,57 +1,68 @@
 <template>
   <!-- shrink-0: never compress a tall song — LiveView scrolls instead. -->
-  <section class="song-live-block flex flex-col shrink-0 border border-line/50 rounded-md overflow-hidden bg-surface/20">
+  <section class="song-live-block flex flex-col shrink-0 overflow-hidden">
     <!-- Song header — name, tempo hint, reorder within the Live set. -->
-    <div class="flex items-center gap-2 px-2 py-1.5 border-b border-line/50 bg-surface/40">
+    <div class="flex items-stretch border-b border-[#22262c] bg-[#12151a]">
+      <!-- Full-height color rail. -->
       <span
-        class="w-2.5 h-2.5 rounded-sm flex-shrink-0 ring-1 ring-line/60"
-        :style="{ background: song.color || '#6699ff' }"
+        class="w-1.5 flex-shrink-0 self-stretch"
+        :style="{ background: song.color || '#00c2ff' }"
+        aria-hidden="true"
       ></span>
-      <div class="flex-1 min-w-0 flex items-baseline gap-2">
-        <span class="truncate text-sm font-semibold">{{ song.name }}</span>
-        <span class="text-[10px] text-muted-dim tabular-nums flex-shrink-0">{{ song.bpm }} BPM</span>
-      </div>
-      <div class="flex items-center gap-0.5 flex-shrink-0">
-        <button
-          type="button"
-          class="w-7 h-7 rounded text-xs text-muted hover:text-white hover:bg-surface-active disabled:opacity-25 disabled:pointer-events-none"
-          :disabled="!canMoveUp"
-          @click="emit('move-song', song.id, 'up')"
-        >↑</button>
-        <button
-          type="button"
-          class="w-7 h-7 rounded text-xs text-muted hover:text-white hover:bg-surface-active disabled:opacity-25 disabled:pointer-events-none"
-          :disabled="!canMoveDown"
-          @click="emit('move-song', song.id, 'down')"
-        >↓</button>
+      <div class="flex flex-1 items-center gap-2 min-w-0 px-2 py-1">
+        <div class="flex-1 min-w-0 flex items-baseline gap-2">
+          <span class="truncate text-xs font-semibold uppercase tracking-wide">{{ song.name }}</span>
+          <span class="text-[9px] text-[#6a7280] tabular-nums flex-shrink-0">{{ song.bpm }} BPM</span>
+        </div>
+        <div class="flex items-center gap-px flex-shrink-0">
+          <button
+            v-if="editMode"
+            type="button"
+            class="w-7 h-7 text-[11px] leading-none text-[#6a7280] hover:text-white hover:bg-[#2a3038]"
+            title="Edit song"
+            @click="emit('edit-song', song.id)"
+          >✎</button>
+          <button
+            type="button"
+            class="w-7 h-7 text-xs text-[#6a7280] hover:text-white hover:bg-[#2a3038] disabled:opacity-25 disabled:pointer-events-none"
+            :disabled="!canMoveUp"
+            @click="emit('move-song', song.id, 'up')"
+          >↑</button>
+          <button
+            type="button"
+            class="w-7 h-7 text-xs text-[#6a7280] hover:text-white hover:bg-[#2a3038] disabled:opacity-25 disabled:pointer-events-none"
+            :disabled="!canMoveDown"
+            @click="emit('move-song', song.id, 'down')"
+          >↓</button>
+        </div>
       </div>
     </div>
 
     <!-- Scenes — batch-launch shortcuts for this song only. -->
-    <div class="flex items-stretch gap-2 px-2 pt-2 pb-1 border-b border-line/40 flex-shrink-0">
+    <div class="flex items-stretch gap-1 px-1.5 pt-1.5 pb-1 border-b border-[#22262c] flex-shrink-0 bg-[#0e1115]">
       <div class="relative flex items-center w-36 flex-shrink-0" ref="sceneMenuRootRef">
         <button
           ref="sceneMenuTriggerRef"
           type="button"
-          class="w-full h-14 px-2 rounded-md text-left text-xs font-medium ring-1 ring-line-light bg-surface/60 hover:ring-white/40 flex items-center gap-1.5"
+          class="w-full h-14 px-2 text-left text-xs font-semibold border border-[#2e353e] bg-[#161a20] hover:border-[#7cff2e]/60 hover:bg-[#1c2128] flex items-center gap-1.5"
           @click="toggleSceneMenu"
         >
-          <span class="truncate flex-1 min-w-0 uppercase tracking-wider text-muted-dim text-[10px] font-semibold">Scenes</span>
-          <span class="text-[9px] text-muted-dim flex-shrink-0">▾</span>
+          <span class="truncate flex-1 min-w-0 uppercase tracking-[0.14em] text-[#8a92a0] text-[9px] font-bold">Scenes</span>
+          <span class="text-[9px] text-[#6a7280] flex-shrink-0">▾</span>
         </button>
 
         <Teleport to="body">
           <div
             v-if="sceneMenuOpen"
             ref="sceneMenuPanelRef"
-            class="fixed z-50 w-56 bg-panel border border-line rounded-md shadow-lg overflow-hidden"
+            class="fixed z-50 w-56 bg-[#12151a] border border-[#2e353e] overflow-hidden"
             :style="sceneMenuStyle"
           >
-            <div class="max-h-64 overflow-y-auto py-1">
+            <div class="max-h-64 overflow-y-auto py-0.5">
               <div
                 v-for="scene in scenes"
                 :key="scene.id"
-                class="flex items-center gap-1 px-1 hover:bg-surface-hover"
+                class="flex items-center gap-1 px-1 hover:bg-[#1c2128]"
               >
                 <button
                   type="button"
@@ -62,20 +73,20 @@
                 </button>
                 <button
                   type="button"
-                  class="w-7 h-7 flex-shrink-0 rounded text-sm text-muted hover:text-white hover:bg-surface-active"
+                  class="w-7 h-7 flex-shrink-0 text-sm text-[#6a7280] hover:text-white hover:bg-[#2a3038]"
                   @click="onEditScene(scene.id)"
                 >
                   ✎
                 </button>
               </div>
-              <div v-if="!scenes.length" class="px-2 py-2 text-xs text-muted-dim">
+              <div v-if="!scenes.length" class="px-2 py-2 text-xs text-[#6a7280]">
                 No scenes yet
               </div>
             </div>
-            <div class="border-t border-line">
+            <div class="border-t border-[#2e353e]">
               <button
                 type="button"
-                class="w-full text-left text-xs px-2 py-1.5 hover:bg-surface-hover text-muted hover:text-white"
+                class="w-full text-left text-xs px-2 py-1.5 hover:bg-[#1c2128] text-[#8a92a0] hover:text-white uppercase tracking-wider"
                 @click="onAddScene"
               >
                 + New Scene
@@ -85,7 +96,7 @@
         </Teleport>
       </div>
 
-      <div class="flex flex-wrap gap-1.5 flex-1 content-start min-w-0">
+      <div class="flex flex-wrap gap-1 flex-1 content-start min-w-0">
         <!-- Wrapper keeps edit pen a sibling of the scene button (no nested <button>). -->
         <div
           v-for="scene in scenes"
@@ -96,7 +107,7 @@
         >
           <button
             type="button"
-            class="scene-btn absolute inset-0 rounded-md overflow-hidden text-left px-2 py-1 pr-5 text-[11px] font-medium transition-transform active:scale-[0.97]"
+            class="scene-btn absolute inset-0 overflow-hidden text-left px-2 py-1 pr-5 text-[11px] font-bold uppercase tracking-wide"
             :class="sceneStateClass(scene)"
             @click="emit('launch-scene', song.id, scene.id)"
           >
@@ -107,17 +118,17 @@
             >▶</span>
             <span
               v-else-if="sceneStatus(scene) === 'queued'"
-              class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+              class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-black animate-pulse"
             ></span>
             <span
               v-else-if="sceneStatus(scene) === 'armed'"
-              class="absolute top-1 right-1 text-[10px] leading-none opacity-60"
+              class="absolute top-1 right-1 text-[10px] leading-none opacity-70"
             >▶</span>
           </button>
           <button
             v-if="editMode"
             type="button"
-            class="absolute bottom-0.5 right-0.5 z-[2] w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
+            class="absolute bottom-0 right-0 z-[2] w-5 h-5 text-[11px] leading-none bg-black/55 text-white/90 hover:bg-black/75 hover:text-white"
             @click.stop="emit('edit-scene', song.id, scene.id)"
           >
             ✎
@@ -125,7 +136,7 @@
         </div>
         <p
           v-if="!scenes.length"
-          class="text-[10px] text-muted-dim self-center px-1"
+          class="text-[9px] text-[#6a7280] self-center px-1 uppercase tracking-wider"
         >
           Open Scenes ▾ to create one, then assign patterns (a pattern can be in many scenes)
         </p>
@@ -133,24 +144,32 @@
     </div>
 
     <!-- Launch grid — one row per track, one clip button per pattern. -->
-    <div class="p-2">
+    <div class="p-1.5 bg-[#0b0d10]">
       <div
         v-for="track in visibleTracks"
         :key="track.id"
-        class="flex items-stretch gap-2 mb-2 last:mb-0"
+        class="flex items-stretch gap-1 mb-1 last:mb-0"
         :class="isHiddenFromLive(track) ? 'opacity-55' : ''"
       >
         <div
-          class="relative flex items-stretch w-36 flex-shrink-0 rounded-md bg-surface/60 overflow-hidden min-h-[2.75rem]"
+          class="relative flex items-stretch w-36 flex-shrink-0 overflow-hidden min-h-[2.75rem] border border-[#2e353e] bg-[#161a20]"
         >
+          <!-- Track color rail (Ableton session-view cue). -->
+          <span
+            v-if="!hideTrackColor"
+            class="w-1 flex-shrink-0 self-stretch"
+            :style="{ background: track.color || '#3d7eff' }"
+            aria-hidden="true"
+          ></span>
+
           <!-- Title centered across the whole track box (sits above HP + mute halves). -->
           <span
             class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none px-5"
             aria-hidden="true"
           >
             <span
-              class="truncate text-xs font-semibold text-center max-w-full drop-shadow-[0_1px_1px_rgba(0,0,0,0.65)]"
-              :class="cutLowHzByTrack[track.id] != null ? 'text-white' : ''"
+              class="truncate text-[11px] font-bold uppercase tracking-wide text-center max-w-full"
+              :class="cutLowHzByTrack[track.id] != null ? 'text-white' : 'text-[#d7dce2]'"
             >
               {{ track.name }}
             </span>
@@ -160,11 +179,11 @@
           <button
             v-if="track.kind === 'drum' || track.kind === 'multisampler'"
             type="button"
-            class="relative z-0 w-1/2 flex-shrink-0 self-stretch flex flex-col items-start justify-start gap-0.5 p-1 text-[9px] font-bold tracking-tight transition-colors select-none touch-none"
+            class="relative z-0 w-1/2 flex-shrink-0 self-stretch flex flex-col items-start justify-start gap-0.5 p-1 text-[9px] font-bold tracking-tight select-none touch-none"
             :class="
               cutLowHzByTrack[track.id] != null
-                ? 'text-white/90 bg-accent'
-                : 'text-muted-dim hover:text-muted hover:bg-surface-active'
+                ? 'text-black bg-[#ffe56b]'
+                : 'text-[#6a7280] hover:text-[#d7dce2] hover:bg-[#1c2128]'
             "
             :title="'Tap: latch 500 Hz · hold & drag up: 500–2000 Hz · release after drag clears'"
             :aria-label="`${track.name} high-pass`"
@@ -190,13 +209,13 @@
             <div class="flex items-start justify-end gap-0.5 min-w-0">
               <button
                 type="button"
-                class="relative z-20 flex items-center justify-center w-5 h-5 flex-shrink-0 rounded hover:bg-surface-active transition-colors"
+                class="relative z-20 flex items-center justify-center w-5 h-5 flex-shrink-0 hover:bg-[#2a3038]"
                 :aria-label="`${track.name} mute`"
                 @click.stop="emit('toggle-track-mute', song.id, track.id)"
                 @contextmenu.prevent.stop="emit('toggle-track-solo', song.id, track.id)"
               >
                 <span
-                  class="w-2 h-2 rounded-full ring-1 transition-all pointer-events-none"
+                  class="w-2 h-2 border border-black/40 pointer-events-none"
                   :class="trackMuteSoloLedClass(track)"
                   aria-hidden="true"
                 ></span>
@@ -204,7 +223,7 @@
               <button
                 v-if="editMode"
                 type="button"
-                class="relative z-20 w-5 h-5 flex-shrink-0 rounded text-[11px] leading-none text-muted hover:text-white hover:bg-surface-active"
+                class="relative z-20 w-5 h-5 flex-shrink-0 text-[11px] leading-none text-[#6a7280] hover:text-white hover:bg-[#2a3038]"
                 @click.stop="emit('edit-track', song.id, track.id)"
               >
                 ✎
@@ -212,19 +231,19 @@
             </div>
             <template v-if="!hideTrackDetails">
               <div class="flex flex-col items-end gap-0 min-w-0">
-                <span class="text-[9px] text-muted-dim uppercase tracking-wide truncate max-w-full">
+                <span class="text-[9px] text-[#6a7280] uppercase tracking-wide truncate max-w-full">
                   {{ track.category }}{{ isHiddenFromLive(track) ? ' · hidden' : '' }}
                 </span>
                 <span
                   v-if="track.kind === 'midi'"
                   class="text-[9px] tracking-wide truncate max-w-full"
-                  :class="trackMidiOutLabel(track) ? 'text-muted' : 'text-muted-dim'"
+                  :class="trackMidiOutLabel(track) ? 'text-[#8a92a0]' : 'text-[#6a7280]'"
                 >
                   {{ trackMidiOutLabel(track) || 'No MIDI out' }}
                 </span>
                 <span
                   v-else-if="track.kind === 'multisampler'"
-                  class="text-[9px] tracking-wide truncate max-w-full text-muted-dim"
+                  class="text-[9px] tracking-wide truncate max-w-full text-[#6a7280]"
                 >
                   Sampler
                 </span>
@@ -233,18 +252,18 @@
           </div>
         </div>
 
-        <div class="flex flex-wrap gap-1.5 flex-1 content-start relative" :data-clip-track="track.id">
+        <div class="flex flex-wrap gap-1 flex-1 content-start relative" :data-clip-track="track.id">
           <template v-for="{ pattern, index } in visiblePatternEntries(track)" :key="pattern.id">
             <div
               v-if="isDropBefore(track.id, index)"
-              class="w-0.5 h-14 flex-shrink-0 rounded-full bg-white/80 self-center pointer-events-none"
+              class="w-0.5 h-14 flex-shrink-0 bg-[#ffe56b] self-center pointer-events-none"
               aria-hidden="true"
             ></div>
             <!-- Wrapper keeps edit pen a sibling of the clip button (no nested <button>). -->
             <div class="relative w-24 h-14 flex-shrink-0">
               <button
                 type="button"
-                class="clip absolute inset-0 rounded-md overflow-hidden text-left px-2 py-1 transition-[transform,opacity,filter] active:scale-[0.97]"
+                class="clip absolute inset-0 overflow-hidden text-left px-2 py-1"
                 :class="[
                   clipStateClass(track, pattern),
                   clipDragClass(track.id, index),
@@ -260,18 +279,18 @@
                 @contextmenu.prevent
                 @click="onClipClick(track.id, pattern.id, pattern.liveLaunchMode)"
               >
-                <span class="relative z-[1] block text-[11px] font-medium truncate pr-3">{{ pattern.name }}</span>
+                <span class="relative z-[1] block text-[11px] font-bold truncate pr-3">{{ pattern.name }}</span>
                 <span
                   v-if="!hidePatternLaunchMode || !hidePatternBarLength"
                   class="relative z-[1] flex items-center gap-1 min-w-0 mt-0.5 pr-3"
                 >
                   <span
                     v-if="!hidePatternLaunchMode"
-                    class="text-[8px] font-semibold uppercase tracking-wider opacity-80 flex-shrink-0"
+                    class="text-[8px] font-bold uppercase tracking-wider opacity-85 flex-shrink-0"
                   >{{ launchModeShort(pattern) }}</span>
                   <span
                     v-if="!hidePatternBarLength"
-                    class="text-[9px] opacity-60 truncate"
+                    class="text-[9px] opacity-70 truncate"
                   >{{ patternStepsLabel(pattern.patternSteps) }}</span>
                 </span>
 
@@ -281,35 +300,35 @@
                 >▶</span>
                 <span
                   v-else-if="clipStatus(track, pattern) === 'stopping'"
-                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-red-300 animate-pulse"
+                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 bg-[#ff3b4a] animate-pulse"
                 ></span>
                 <span
                   v-else-if="clipStatus(track, pattern) === 'queued'"
-                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 bg-white animate-pulse"
                 ></span>
                 <span
                   v-else-if="clipStatus(track, pattern) === 'arming'"
-                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                  class="absolute top-1 right-1 z-[1] w-1.5 h-1.5 bg-white/80 animate-pulse"
                 ></span>
                 <span
                   v-else-if="clipStatus(track, pattern) === 'armed'"
-                  class="absolute top-1 right-1 z-[1] text-[10px] leading-none opacity-60"
+                  class="absolute top-1 right-1 z-[1] text-[10px] leading-none opacity-70"
                 >▶</span>
               </button>
 
               <div
                 v-if="editMode"
-                class="absolute bottom-0.5 right-0.5 z-[2] flex items-center gap-0.5"
+                class="absolute bottom-0 right-0 z-[2] flex items-center gap-px"
               >
                 <button
                   type="button"
-                  class="w-5 h-5 rounded flex items-center justify-center bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
+                  class="w-5 h-5 flex items-center justify-center bg-black/55 text-white/90 hover:bg-black/75 hover:text-white"
                   @pointerdown.stop
                   @pointerup.stop
                   @click.stop="emit('open-pattern-roll', song.id, track.id, pattern.id)"
                 >
                   <svg viewBox="0 0 16 12" class="w-3 h-2.5" aria-hidden="true">
-                    <rect x="0.5" y="0.5" width="15" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1" />
+                    <rect x="0.5" y="0.5" width="15" height="11" fill="none" stroke="currentColor" stroke-width="1" />
                     <path
                       fill="currentColor"
                       d="M3 1h2v6H3zm4 0h2v6H7zm4 0h2v6h-2z"
@@ -318,7 +337,7 @@
                 </button>
                 <button
                   type="button"
-                  class="w-5 h-5 rounded text-[11px] leading-none bg-black/35 text-white/90 hover:bg-black/55 hover:text-white"
+                  class="w-5 h-5 text-[11px] leading-none bg-black/55 text-white/90 hover:bg-black/75 hover:text-white"
                   @pointerdown.stop
                   @pointerup.stop
                   @click.stop="emit('edit-pattern', song.id, track.id, pattern.id)"
@@ -330,17 +349,17 @@
           </template>
           <div
             v-if="isDropBefore(track.id, dropEndIndex(track))"
-            class="w-0.5 h-14 flex-shrink-0 rounded-full bg-white/80 self-center pointer-events-none"
+            class="w-0.5 h-14 flex-shrink-0 bg-[#ffe56b] self-center pointer-events-none"
             aria-hidden="true"
           ></div>
 
-          <div v-if="!visiblePatternEntries(track).length" class="text-xs text-muted-dim px-2 py-4">
+          <div v-if="!visiblePatternEntries(track).length" class="text-[10px] text-[#6a7280] px-2 py-4 uppercase tracking-wider">
             {{ track.patterns?.length ? 'No visible patterns' : 'No patterns' }}
           </div>
         </div>
       </div>
 
-      <div v-if="!visibleTracks.length" class="text-sm text-muted-dim px-2 py-2">
+      <div v-if="!visibleTracks.length" class="text-xs text-[#6a7280] px-2 py-2 uppercase tracking-wider">
         {{ tracks.length ? 'No visible tracks — turn on Show hidden' : 'No tracks yet' }}
       </div>
     </div>
@@ -368,7 +387,7 @@ import {
   cutLowHzFromDragPx,
   TRACK_LOW_CUT_TAP_HZ,
 } from '../engine/trackLowCut.js';
-import { shade } from '../utils/color.js';
+import { shade, contrastTextColor } from '../utils/color.js';
 import { useAbsolutePlayheadBeat } from '../composables/usePlayheadBeat.js';
 import { useHoldPointer } from '../composables/useHoldPointer.js';
 
@@ -387,6 +406,8 @@ const props = defineProps({
   hidePatternLaunchMode: { type: Boolean, default: false },
   /** When true, omit category / MIDI / sampler lines on track boxes. */
   hideTrackDetails: { type: Boolean, default: false },
+  /** When true, omit the color rail on track boxes. */
+  hideTrackColor: { type: Boolean, default: false },
   /** When true, disable drag-reorder of pattern clips (performance lock). */
   lockPatternOrder: { type: Boolean, default: false },
   midiOutputs: { type: Array, default: () => [] },
@@ -408,6 +429,7 @@ const emit = defineEmits([
   'edit-pattern',
   'open-pattern-roll',
   'move-song',
+  'edit-song',
 ]);
 
 /** Live HP UI: trackId → cutoff Hz while latched or actively dragging. */
@@ -483,13 +505,11 @@ function onCutLowLostCapture(trackId) {
   if (cutLowDrag.has(trackId)) endCutLowGesture(trackId);
 }
 
-/** Green = audible, yellow = soloed, dark = muted. */
+/** Green = audible, yellow = soloed, dark = muted — flat LEDs, no soft glow. */
 function trackMuteSoloLedClass(track) {
-  if (track.muted) return 'bg-[#1a2420] ring-line/50';
-  if (track.soloed) {
-    return 'bg-[#facc15] ring-[#facc15]/50 shadow-[0_0_5px_rgba(250,204,21,0.55)]';
-  }
-  return 'bg-[#4ade80] ring-[#4ade80]/50 shadow-[0_0_5px_rgba(74,222,128,0.55)]';
+  if (track.muted) return 'bg-[#1a1e24]';
+  if (track.soloed) return 'bg-[#ffe56b]';
+  return 'bg-[#7cff2e]';
 }
 
 const absBeat = useAbsolutePlayheadBeat();
@@ -637,13 +657,14 @@ function sceneStatus(scene) {
 }
 
 function sceneStateClass(scene) {
+  // Light grey idle; green when playing / hovered — yellow was too loud in the grid.
   const status = sceneStatus(scene);
-  if (status === 'playing') return 'ring-2 ring-white/90 bg-accent/80 text-white';
-  if (status === 'queued') return 'ring-2 ring-white/60 animate-pulse bg-accent/50 text-white';
-  if (status === 'armed') return 'ring-2 ring-white/40 bg-accent/40 text-white';
-  if (status === 'partial') return 'ring-1 ring-white/40 bg-surface text-white';
-  if (status === 'empty') return 'ring-1 ring-line-light bg-surface/40 text-muted';
-  return 'ring-1 ring-line-light bg-surface hover:ring-white/40 text-white';
+  if (status === 'playing') return 'border-2 border-black bg-[#7cff2e] text-black';
+  if (status === 'queued') return 'border-2 border-black bg-[#7cff2e] text-black animate-pulse';
+  if (status === 'armed') return 'border border-black/70 bg-[#5fbf22] text-black';
+  if (status === 'partial') return 'border border-[#7cff2e] bg-[#1a2a14] text-[#7cff2e]';
+  if (status === 'empty') return 'border border-[#2e353e] bg-[#161a20] text-[#6a7280]';
+  return 'border border-[#4a515c] bg-[#8b929e] text-[#1a1e24] hover:bg-[#7cff2e] hover:border-black hover:text-black';
 }
 
 /** Highlight scene members / dim others while a scene button is hovered. */
@@ -772,7 +793,7 @@ function isDropBefore(trackId, index) {
 function clipDragClass(trackId, index) {
   if (props.lockPatternOrder) return '';
   if (!drag.value || drag.value.trackId !== trackId) return '';
-  if (drag.value.fromIndex === index && drag.value.moved) return 'opacity-40 scale-95 cursor-grabbing pointer-events-none';
+  if (drag.value.fromIndex === index && drag.value.moved) return 'opacity-40 cursor-grabbing pointer-events-none';
   if (drag.value.moved) return 'cursor-grabbing';
   return 'cursor-grab';
 }
@@ -805,8 +826,10 @@ function clipProgress(track, pattern) {
       : null);
   if (origin != null) {
     const elapsed = absBeat.value - origin;
+    // Before startBeat (Hold arming / queued restart) show empty, not wrapped.
+    if (elapsed < 0) return 0;
     if (patternLaunchMode(pattern) === LIVE_LAUNCH_MODES.ONE_SHOT) {
-      return Math.min(1, Math.max(0, elapsed / len));
+      return Math.min(1, elapsed / len);
     }
     return (((elapsed % len) + len) % len) / len;
   }
@@ -839,12 +862,12 @@ function clipStatus(track, pattern) {
 
 function clipStateClass(track, pattern) {
   const status = clipStatus(track, pattern);
-  if (status === 'playing') return 'ring-2 ring-white/90 shadow-lg';
-  if (status === 'arming') return 'ring-2 ring-white/50 animate-pulse';
-  if (status === 'stopping') return 'ring-2 ring-red-300/80 animate-pulse';
-  if (status === 'queued') return 'ring-2 ring-white/60 animate-pulse';
-  if (status === 'armed') return 'ring-2 ring-white/40';
-  return 'ring-1 ring-black/20 hover:ring-white/40';
+  if (status === 'playing') return 'outline outline-2 outline-white -outline-offset-2';
+  if (status === 'arming') return 'outline outline-2 outline-white/70 -outline-offset-2 animate-pulse';
+  if (status === 'stopping') return 'outline outline-2 outline-[#ff3b4a] -outline-offset-2 animate-pulse';
+  if (status === 'queued') return 'outline outline-2 outline-white/80 -outline-offset-2 animate-pulse';
+  if (status === 'armed') return 'outline outline-2 outline-white/55 -outline-offset-2';
+  return 'outline outline-1 outline-black/50 -outline-offset-1 hover:outline-white/50';
 }
 
 function clipStyle(track, pattern) {
@@ -855,49 +878,67 @@ function clipStyle(track, pattern) {
     status === 'arming' ||
     status === 'queued';
   const isLit = status === 'playing' || status === 'stopping' || status === 'armed' || status === 'arming';
-  const base = pattern.color;
+  const base = pattern.color || '#3d7eff';
 
+  // Flat fills + hard progress split (session-view), not soft pastel gradients.
   if (showProgress) {
     const p = clipProgress(track, pattern) * 100;
-    const played = shade(base, 0.14);
-    const remaining = shade(base, -0.42);
+    const played = shade(base, 0.08);
+    const remaining = shade(base, -0.55);
     return {
       background: `linear-gradient(90deg, ${played} ${p}%, ${remaining} ${p}%)`,
-      color: shade(base, 0.78),
+      color: contrastTextColor(played),
+    };
+  }
+
+  if (isLit) {
+    return {
+      background: base,
+      color: contrastTextColor(base),
     };
   }
 
   return {
-    background: isLit
-      ? `linear-gradient(180deg, ${shade(base, 0.15)}, ${shade(base, -0.15)})`
-      : `linear-gradient(180deg, ${shade(base, -0.35)}, ${shade(base, -0.5)})`,
-    color: isLit ? shade(base, -0.65) : shade(base, 0.55),
+    background: shade(base, -0.58),
+    color: shade(base, 0.72),
   };
 }
 
 </script>
 
 <style scoped>
+.song-live-block {
+  background: #0e1115;
+  border: 1px solid #22262c;
+  border-radius: 0;
+}
+
 .clip,
 .scene-btn {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  border-radius: 0;
 }
 
-/* Outline (not ring) so this doesn't fight playing/queued ring utilities.
+/* Punch up legacy pastel clip colors without migrating saved projects. */
+.clip {
+  filter: saturate(1.35) contrast(1.06);
+}
+
+/* Outline (not ring) so this doesn't fight playing/queued outline utilities.
    Full opacity so hidden-from-Live members still read clearly in the preview. */
 .clip.scene-hover-member {
-  outline: 2px solid rgba(255, 255, 255, 0.9);
-  outline-offset: 1px;
-  filter: brightness(1.12);
+  outline: 2px solid #7cff2e;
+  outline-offset: -2px;
+  filter: saturate(1.45) contrast(1.08) brightness(1.08);
   opacity: 1;
   z-index: 1;
 }
 
 .clip.scene-hover-dim {
-  opacity: 0.3;
-  filter: saturate(0.55);
+  opacity: 0.28;
+  filter: saturate(0.4) brightness(0.75);
 }
 </style>

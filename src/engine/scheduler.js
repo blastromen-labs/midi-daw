@@ -92,8 +92,8 @@ function trackSchedulingSegments(track, rangeStart, rangeEnd, useLiveLaunch, sol
     const pendingSelf = pending.find((p) => p.patternId === pattern.id && p.launchBeat != null);
     if (pendingSelf) end = Math.min(end, pendingSelf.launchBeat - 1e-6);
     if (end >= rangeStart) {
-      // Any launch with startBeat set (One Shot or scene-restarted Loop) origins
-      // content beat 0 there; null startBeat → phase-lock below.
+      // Any launch with startBeat set (Hold / One Shot / scene-restarted Loop)
+      // origins content beat 0 there; null startBeat → phase-lock below.
       segments.push({
         pattern,
         rangeStart,

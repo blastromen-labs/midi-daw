@@ -14,6 +14,7 @@
         :hide-live-pattern-bar-length="globalSettings.hideLivePatternBarLength"
         :hide-live-pattern-launch-mode="globalSettings.hideLivePatternLaunchMode"
         :hide-live-track-details="globalSettings.hideLiveTrackDetails"
+        :hide-live-track-color="globalSettings.hideLiveTrackColor"
         :lock-live-pattern-order="globalSettings.lockLivePatternOrder"
         :midi-inputs="midiInputs"
         :midi-outputs="midiOutputs"
@@ -40,6 +41,7 @@
         @hide-live-pattern-bar-length-change="globalSettings.hideLivePatternBarLength = $event"
         @hide-live-pattern-launch-mode-change="globalSettings.hideLivePatternLaunchMode = $event"
         @hide-live-track-details-change="globalSettings.hideLiveTrackDetails = $event"
+        @hide-live-track-color-change="globalSettings.hideLiveTrackColor = $event"
         @lock-live-pattern-order-change="globalSettings.lockLivePatternOrder = $event"
         @toggle-show-hidden="showHiddenLive = !showHiddenLive"
         @toggle-edit-mode="liveEditMode = !liveEditMode"
@@ -97,6 +99,7 @@
           :hide-pattern-bar-length="globalSettings.hideLivePatternBarLength"
           :hide-pattern-launch-mode="globalSettings.hideLivePatternLaunchMode"
           :hide-track-details="globalSettings.hideLiveTrackDetails"
+          :hide-track-color="globalSettings.hideLiveTrackColor"
           :lock-pattern-order="globalSettings.lockLivePatternOrder"
           :midi-outputs="midiOutputs"
           @trigger-pattern="queueOrLaunchPattern"
@@ -112,6 +115,7 @@
           @edit-pattern="startEditLivePattern"
           @open-pattern-roll="openPatternInRoll"
           @move-song="onMoveLiveSong"
+          @edit-song="startEditLiveSong"
         />
       </div>
     </div>
@@ -155,6 +159,15 @@
       @cancel="closeTrackEditor"
     />
 
+    <SongEditorModal
+      v-if="songEditorOpen"
+      :initial="songEditorInitial"
+      :can-delete="songs.length > 1"
+      @save="commitLiveSongEditor"
+      @delete="confirmDeleteLiveSong"
+      @cancel="closeSongEditor"
+    />
+
     <div
       v-if="midiError"
       class="fixed bottom-4 right-4 flex items-start gap-2 bg-red-900/90 text-red-200 pl-4 pr-2 py-2 rounded text-sm max-w-sm"
@@ -184,6 +197,7 @@ import LiveView from './components/LiveView.vue';
 import SceneEditorModal from './components/SceneEditorModal.vue';
 import PatternEditorModal from './components/PatternEditorModal.vue';
 import TrackEditorModal from './components/TrackEditorModal.vue';
+import SongEditorModal from './components/SongEditorModal.vue';
 import {
   createProject,
   createMidiTrack,
@@ -260,6 +274,7 @@ import {
   queueSceneLaunch,
   armSceneLoops,
   holdPatternUp,
+  silenceLiveTracks,
 } from './engine/liveLauncher.js';
 import {
   resolveClipIntent,
@@ -287,7 +302,7 @@ const mixBpm = ref(120);
 const viewMode = ref('roll');
 /** Live UI: show tracks/patterns marked Hide from Live (still play via scenes). */
 const showHiddenLive = ref(false);
-/** Live UI: show pen buttons that open track/pattern/scene settings modals. */
+/** Live UI: show pen buttons that open song/track/pattern/scene settings modals. */
 const liveEditMode = ref(false);
 const sceneEditorOpen = ref(false);
 const sceneEditorMode = ref('create');
@@ -306,6 +321,11 @@ const trackEditorSongId = ref(null);
 const trackEditorTrackId = ref(null);
 const trackEditorKind = ref('midi');
 const trackEditorInitial = ref({});
+
+const songEditorOpen = ref(false);
+const songEditorSongId = ref(null);
+const songEditorInitial = ref({});
+
 // Per-song: which scene button last claimed Live playback in that song.
 const activeSceneBySong = reactive({});
 // Sync/clock routing is global — not per-song (scheduler still reads project.*).
@@ -1123,7 +1143,8 @@ function deletePattern(trackId, patternId, songId = currentSongId.value) {
 }
 
 // Live mode click handling — Loop clips toggle; One Shot clips play once:
-//   - stopped transport, different pattern -> launches it and starts playing.
+//   - stopped transport, idle clip -> exclusive arm + start (only that clip /
+//     its link group; other tracks stay silent, no follow-active pile-on).
 //   - stopped transport, already-armed pattern -> un-arms it (stays stopped).
 //   - playing transport, Loop: queue swap / toggle-off at the next boundary.
 //   - playing transport, One Shot: queue a single playthrough, then auto-stop.
@@ -1145,6 +1166,8 @@ function queueOrLaunchPattern(songId, trackId, patternId) {
     transportPlaying: playing.value,
     startPlayback: () => startPlayback(undefined, { forceLive: true }),
     getAbsBeat: () => getActiveClock().getAbsoluteBeat(),
+    // Whole Live set — other songs' follow-active tracks must stay silent too.
+    allTracks: getAllLiveTracks(),
   });
 }
 
@@ -1162,6 +1185,8 @@ function onHoldPatternDown(songId, trackId, patternId) {
   project.soloPreview = null;
   engageLivePlayback();
   if (!playing.value) {
+    // Same exclusive start as a Loop/One Shot clip click from stop.
+    silenceLiveTracks(getAllLiveTracks());
     startPlayback(undefined, { forceLive: true });
   }
   // Read abs beat only after the transport is running — otherwise
@@ -1450,6 +1475,36 @@ function confirmDeleteLiveTrack() {
     removeTrack(trackId, songId);
   }
   closeTrackEditor();
+}
+
+function startEditLiveSong(songId) {
+  const song = songs.value.find((s) => s.id === songId);
+  if (!song) return;
+  const proj = getProjectForSong(songId);
+  songEditorSongId.value = songId;
+  songEditorInitial.value = {
+    name: song.name,
+    color: song.color,
+    bpm: proj?.bpm ?? song.project?.bpm ?? 120,
+  };
+  songEditorOpen.value = true;
+}
+
+function closeSongEditor() {
+  songEditorOpen.value = false;
+  songEditorSongId.value = null;
+}
+
+function commitLiveSongEditor(values) {
+  const songId = songEditorSongId.value;
+  if (songId) updateSong(songId, values);
+  closeSongEditor();
+}
+
+function confirmDeleteLiveSong() {
+  const songId = songEditorSongId.value;
+  if (songId) deleteSong(songId);
+  closeSongEditor();
 }
 
 // Scene button — exclusive take-over across the whole Live set: cut every

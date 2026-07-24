@@ -4,7 +4,7 @@
     the scroll area grows to fit every song and the outer h-full box clips
     content with no scrollbar (classic flex min-height:auto pitfall).
   -->
-  <div class="live-view flex flex-col h-full min-h-0 bg-panel overflow-hidden">
+  <div class="live-view flex flex-col h-full min-h-0 overflow-hidden">
     <div
       class="live-view__scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain"
     >
@@ -13,7 +13,7 @@
         targets and getBoundingClientRect-based menus stay aligned on tablets.
       -->
       <div
-        class="live-view__scale p-2 flex flex-col gap-3"
+        class="live-view__scale p-1.5 flex flex-col gap-1"
         :style="{ zoom: uiScale / 100 }"
       >
         <SongLiveBlock
@@ -30,6 +30,7 @@
           :hide-pattern-bar-length="hidePatternBarLength"
           :hide-pattern-launch-mode="hidePatternLaunchMode"
           :hide-track-details="hideTrackDetails"
+          :hide-track-color="hideTrackColor"
           :lock-pattern-order="lockPatternOrder"
           :midi-outputs="midiOutputs"
           :can-move-up="index > 0"
@@ -47,9 +48,10 @@
           @edit-pattern="(songId, trackId, patternId) => emit('edit-pattern', songId, trackId, patternId)"
           @open-pattern-roll="(songId, trackId, patternId) => emit('open-pattern-roll', songId, trackId, patternId)"
           @move-song="(songId, direction) => emit('move-song', songId, direction)"
+          @edit-song="(songId) => emit('edit-song', songId)"
         />
 
-        <div v-if="!liveSongs.length" class="text-sm text-muted-dim px-2 py-4 shrink-0">
+        <div v-if="!liveSongs.length" class="text-xs text-muted-dim px-2 py-4 shrink-0 uppercase tracking-wider">
           No songs yet — create one from the Song menu in Roll view
         </div>
       </div>
@@ -78,6 +80,8 @@ defineProps({
   hidePatternLaunchMode: { type: Boolean, default: false },
   /** When true, omit category / MIDI lines on track boxes. */
   hideTrackDetails: { type: Boolean, default: false },
+  /** When true, omit the color rail on track boxes. */
+  hideTrackColor: { type: Boolean, default: false },
   /** When true, disable drag-reorder of Live pattern clips. */
   lockPatternOrder: { type: Boolean, default: false },
   midiOutputs: { type: Array, default: () => [] },
@@ -97,5 +101,14 @@ const emit = defineEmits([
   'edit-pattern',
   'open-pattern-roll',
   'move-song',
+  'edit-song',
 ]);
 </script>
+
+<style scoped>
+/* Near-black session grid — high contrast vs soft panel greens elsewhere. */
+.live-view {
+  background: #0b0d10;
+  color: #e8ecef;
+}
+</style>

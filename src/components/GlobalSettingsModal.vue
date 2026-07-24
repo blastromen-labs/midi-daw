@@ -5,12 +5,12 @@
       @mousedown.self="emit('close')"
     >
       <div
-        class="w-full max-w-sm bg-panel border border-line rounded-lg shadow-xl overflow-hidden"
+        class="w-full max-w-sm max-h-[calc(100dvh-2rem)] flex flex-col bg-panel border border-line rounded-lg shadow-xl overflow-hidden"
         role="dialog"
         aria-labelledby="settings-title"
         @mousedown.stop
       >
-        <div class="flex items-center justify-between px-4 py-3 border-b border-line">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-line shrink-0">
           <h2 id="settings-title" class="text-sm font-semibold">Settings</h2>
           <button
             type="button"
@@ -22,7 +22,7 @@
           </button>
         </div>
 
-        <div class="px-4 py-3 space-y-4">
+        <div class="px-4 py-3 space-y-4 min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <section>
             <h3 class="text-[10px] uppercase tracking-wider text-muted-dim mb-2">Sync</h3>
             <p class="text-[11px] text-muted mb-2 leading-snug">
@@ -184,7 +184,7 @@
               <div>
                 <span class="text-xs text-muted block">Hide track details in Live view</span>
                 <span class="text-[11px] text-muted-dim leading-snug">
-                  Show only color, name, and mute/solo on Live track boxes (hide category and MIDI).
+                  Show only name and mute/solo on Live track boxes (hide category and MIDI).
                 </span>
               </div>
               <button
@@ -197,6 +197,27 @@
                 <span
                   class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
                   :class="hideLiveTrackDetails ? 'left-5' : 'left-0.5'"
+                ></span>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 mt-4">
+              <div>
+                <span class="text-xs text-muted block">Hide track color in Live view</span>
+                <span class="text-[11px] text-muted-dim leading-snug">
+                  Hide the colored rail on Live track boxes.
+                </span>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-5 rounded-full transition-colors relative flex-shrink-0"
+                :class="hideLiveTrackColor ? 'bg-accent' : 'bg-surface-hover'"
+                title="Hide track color in Live view"
+                @click="emit('hide-live-track-color-change', !hideLiveTrackColor)"
+              >
+                <span
+                  class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                  :class="hideLiveTrackColor ? 'left-5' : 'left-0.5'"
                 ></span>
               </button>
             </div>
@@ -241,6 +262,7 @@ defineProps({
   hideLivePatternBarLength: Boolean,
   hideLivePatternLaunchMode: Boolean,
   hideLiveTrackDetails: Boolean,
+  hideLiveTrackColor: Boolean,
   lockLivePatternOrder: Boolean,
   midiInputs: { type: Array, default: () => [] },
   midiOutputs: { type: Array, default: () => [] },
@@ -259,6 +281,7 @@ const emit = defineEmits([
   'hide-live-pattern-bar-length-change',
   'hide-live-pattern-launch-mode-change',
   'hide-live-track-details-change',
+  'hide-live-track-color-change',
   'lock-live-pattern-order-change',
 ]);
 </script>
